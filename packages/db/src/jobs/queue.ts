@@ -26,7 +26,7 @@ export async function enqueue(db: Db, options: EnqueueOptions): Promise<JobRecor
     VALUES (
       ${options.type},
       ${JSON.stringify(options.payload ?? {})}::jsonb,
-      ${options.runAt ?? new Date()},
+      ${options.runAt ?? sql`now()`},
       ${options.maxAttempts ?? 3}
     )
     RETURNING id, type, payload, attempts, max_attempts
