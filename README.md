@@ -9,3 +9,8 @@
 | TypeScript | 7.0.2 |
 | Vitest | 4.1.10 |
 | PostgreSQL | 17.10 |
+| Drizzle ORM | 0.45.2 |
+| node-postgres (`pg`) | 8.22.0 |
+| Drizzle Kit | 0.31.10 |
+| Testcontainers PostgreSQL | 12.0.4 |
+| `@types/pg` | 8.20.0 |

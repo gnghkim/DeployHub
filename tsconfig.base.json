@@ -8,8 +8,6 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "composite": true
+    "skipLibCheck": true
   }
 }
