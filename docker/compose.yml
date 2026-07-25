@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: deployhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: deployhub
+      POSTGRES_USER: deployhub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deployhub -d deployhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [deployhub]
+    labels:
+      deployhub.project: "deployhub"
+      deployhub.component: "postgres"
+      deployhub.environment: "production"
+
+volumes:
+  postgres_data:
+
+networks:
+  deployhub:

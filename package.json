@@ -1,0 +1,17 @@
+{
+  "name": "deployhub",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit --project tsconfig.base.json",
+    "test": "vitest run",
+    "db:up": "docker compose -f docker/compose.yml up -d postgres",
+    "db:down": "docker compose -f docker/compose.yml down"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
