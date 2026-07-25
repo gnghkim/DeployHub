@@ -1194,8 +1194,13 @@ Task 2에서 확정한 원칙을 따른다 — 이 저장소에서 `tsc`는 빌�
 
 ```bash
 pnpm --filter worker add '@deployhub/db@workspace:*' '@deployhub/shared@workspace:*'
+pnpm --filter worker add 'drizzle-orm@^0.45.2'
 pnpm --filter worker add -D tsup
 ```
+
+**`drizzle-orm` 버전을 `packages/db`와 일치시킨다.** `runner.test.ts`가 `eq`를 직접 쓰고, M3에서는 worker 운영 코드가 DB에 기록한다. 두 패키지가 서로 다른 drizzle 인스턴스를 갖게 되면 `schema` 객체의 타입 동일성이 깨지고 런타임에서도 미묘한 불일치가 생기므로, 같은 범위를 지정해 pnpm이 단일 인스턴스로 dedupe하게 한다. `devDependencies`가 아니라 `dependencies`인 이유는 M3에서 운영 코드가 쓰게 되기 때문이다.
+
+설치 후 확인: `pnpm ls drizzle-orm --depth 0 --recursive`가 단일 버전만 보고해야 한다.
 
 **`workspace:*`를 반드시 명시한다.** pnpm 9 이후 `link-workspace-packages` 기본값이 `false`라서, 이를 빼면 pnpm이 `@deployhub/db`를 npm registry에서 찾다가 404로 실패한다(미발행 사설 패키지). `.npmrc`에 `link-workspace-packages=true`를 넣는 방식은 쓰지 않는다 — 전역 해석 규칙을 바꾸면 의도치 않게 로컬 패키지가 연결될 수 있고, 명시적 `workspace:*`가 `package.json`에 남아 자기 설명적이다.
 
@@ -1458,10 +1463,13 @@ Task 2에서 `tsconfig.base.json`의 `composite`·`declaration`을 제거했으�
 ```bash
 pnpm --filter web add next react react-dom next-auth
 pnpm --filter web add '@deployhub/db@workspace:*' '@deployhub/shared@workspace:*'
+pnpm --filter web add 'drizzle-orm@^0.45.2'
 pnpm --filter web add -D @types/react @types/react-dom
 ```
 
 내부 패키지는 `workspace:*`를 명시해 별도 명령으로 설치한다. 이유는 Task 4 Step 0-3과 같다 — 명시하지 않으면 pnpm이 registry를 조회해 404로 실패한다.
+
+`drizzle-orm`이 필요한 이유는 Step 6의 `auth/config.ts`가 `eq`를 직접 쓰기 때문이다. Task 4와 같은 범위를 지정해 단일 인스턴스를 유지한다.
 - Create: `apps/web/src/auth/config.ts`
 - Create: `apps/web/src/app/api/auth/[...nextauth]/route.ts`
 - Create: `apps/web/src/app/layout.tsx`, `apps/web/src/app/page.tsx`
