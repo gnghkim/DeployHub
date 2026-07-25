@@ -14,3 +14,4 @@
 | Drizzle Kit | 0.31.10 |
 | Testcontainers PostgreSQL | 12.0.4 |
 | `@types/pg` | 8.20.0 |
+| tsup | 8.5.1 |
