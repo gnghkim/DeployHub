@@ -1055,7 +1055,7 @@ export async function enqueue(db: Db, options: EnqueueOptions): Promise<JobRecor
     VALUES (
       ${options.type},
       ${JSON.stringify(options.payload ?? {})}::jsonb,
-      ${options.runAt ?? new Date()},
+      ${options.runAt ?? sql`now()`},
       ${options.maxAttempts ?? 3}
     )
     RETURNING id, type, payload, attempts, max_attempts
@@ -1115,6 +1115,10 @@ export async function fail(db: Db, jobId: string, error: string): Promise<void> 
 ```
 
 **`FOR UPDATE SKIP LOCKED`가 서브쿼리 안에 있어야 한다.** 바깥 `UPDATE`에 붙이면 잠금이 걸리지 않아 중복 claim이 발생한다. 이 배치를 바꾸지 않는다.
+
+**시간은 DB 시계 하나만 쓴다.** 기본 `run_at`이 `sql\`now()\``인 것이 핵심이다. 여기에 앱 시계(`new Date()`)를 쓰면 `claim`의 `run_at <= now()` 비교가 서로 다른 시계를 대조하게 되고, 앱 시계가 DB보다 앞선 순간 방금 넣은 job이 "미래"로 보여 claim되지 않는다. 운영에서 web과 worker는 별도 컨테이너이므로 편차가 그대로 남아 **에러 없이 job이 처리되지 않는** 결함이 된다.
+
+이 계획의 초안은 실제로 `new Date()`를 썼고, Task 3 실행 중 Testcontainers에서 9건 중 7건 실패(동시 claim 20건 중 0건·2건만 획득)로 드러났다. 앱에서 만든 시각을 DB 시각과 비교하는 경로를 새로 만들지 않는다.
 
 - [ ] **Step 5: 재export**
 
