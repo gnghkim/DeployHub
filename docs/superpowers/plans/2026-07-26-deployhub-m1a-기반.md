@@ -20,6 +20,8 @@
 - **TypeScript strict 모드 필수.** `strict: true`, `noUncheckedIndexedAccess: true`. `any` 사용 금지 — 불가피하면 `unknown` + 좁히기.
 - **PostgreSQL 17.** 호스트 포트를 매핑하지 않는다(구축방안 3.1).
 - **버전 고정:** 의존성은 설치 시점의 최신 안정판을 쓰되, 설치 후 실제 resolve된 버전을 `README.md`의 "확정 버전" 표에 기록한다. `latest` 태그를 `package.json`에 남기지 않는다.
+- **의존성 설치는 각 Task 안에서 한다.** 뒤 Task에서 쓸 패키지를 미리 설치하지 않는다. 각 Task의 Step에 그 Task가 필요로 하는 설치 명령이 명시돼 있다.
+- **내부 패키지는 소스를 직접 노출한다.** `packages/*`의 `package.json`은 `main`/`types`를 `dist`가 아니라 `./src/index.ts`로 지정한다. `dist`를 가리키면 테스트 실행 전에 빌드가 필요해져 테스트가 빌드 순서에 묶인다.
 - **비밀값 금지:** 실제 토큰·비밀번호·키를 저장소에 커밋하지 않는다. `.env.example`에는 **변수 이름만** 넣는다(구축방안 R4·R9).
 - **줄바꿈:** `.gitattributes`가 `*.sh`, `Dockerfile`, `Caddyfile`, `*.yml`을 LF로 고정한다. 이를 해제하지 않는다.
 - **커밋 메시지:** Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`). 한국어 본문 허용.
@@ -94,7 +96,15 @@ deployhub/
 
 ---
 
-## Task 1: 워크스페이스 뼈대와 PostgreSQL
+## Task 1: 워크스페이스 뼈대와 PostgreSQL — ✅ 완료 (`7b78de0`, merge `422d589`)
+
+**확정된 결과** (계획 작성 시점과 다른 부분):
+
+- 루트 `devDependencies`: `typescript@7.0.2`, `vitest@4.1.10`, `@types/node@26.1.1` — 원래 계획 블록에 누락돼 있던 것을 보완
+- `vitest.workspace.ts`는 설치된 Vitest 4에서 제거되어 **`vitest.config.ts`의 `test.projects: ['packages/*', 'apps/*']`** 로 대체
+- 루트 typecheck 명령: `tsc --noEmit --project tsconfig.base.json` (TypeScript 7에서 `composite: true`와 `--noEmit` 공존 가능)
+- `packages/shared/package.json`의 `main`/`types`는 `./src/index.ts`
+- 확정 버전: Node 22.23.1 · pnpm 9.15.0 · TypeScript 7.0.2 · Vitest 4.1.10 · PostgreSQL 17.10
 
 **Files:**
 - Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `vitest.workspace.ts`, `.env.example`
@@ -327,6 +337,52 @@ git commit -m "feat: pnpm workspace 뼈대와 PostgreSQL compose 구성"
 - Create: `packages/db/src/schema/schema.test.ts`
 - Create: `packages/db/test/helpers/pg.ts` (Testcontainers 부트스트랩)
 - Create: `drizzle/` (마이그레이션 생성 산출물)
+- Create: `packages/shared/tsconfig.json`, `packages/db/tsconfig.json`
+- Modify: `package.json` (typecheck 스크립트 교체)
+
+**Step 0: 의존성 설치와 typecheck 구조 정비** (이 Task의 나머지 Step보다 먼저 수행한다)
+
+- [ ] **0-1: 필요한 패키지를 설치한다**
+
+```bash
+pnpm --filter @deployhub/db add drizzle-orm pg
+pnpm --filter @deployhub/db add -D drizzle-kit @types/pg @testcontainers/postgresql
+```
+
+- [ ] **0-2: 패키지별 tsconfig.json을 만든다**
+
+Task 1이 남긴 `tsc --noEmit --project tsconfig.base.json` 방식은 **Task 5에서 깨진다.** `tsconfig.base.json`의 `lib`이 `["ES2023"]`이라 DOM이 없고 `jsx` 설정도 없어서, `apps/web`의 React/TSX 파일이 들어오는 순간 타입 오류가 쏟아진다. 지금 패키지별 tsconfig로 바꿔 그 사태를 예방한다.
+
+`packages/shared/tsconfig.json`과 `packages/db/tsconfig.json` 모두 아래 형태로 만든다:
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src" },
+  "include": ["src", "test"]
+}
+```
+
+각 패키지 `package.json`에 스크립트를 추가한다:
+
+```json
+"scripts": { "typecheck": "tsc --noEmit" }
+```
+
+- [ ] **0-3: 루트 typecheck를 재귀 실행으로 바꾼다**
+
+루트 `package.json`의 `typecheck`를 아래로 교체한다.
+
+```json
+"typecheck": "pnpm -r typecheck"
+```
+
+이제 각 패키지가 자기 tsconfig로 검사하므로, Task 5에서 `apps/web`이 Next.js용 `jsx`·DOM 설정을 자기 tsconfig에 넣어도 다른 패키지에 영향을 주지 않는다.
+
+- [ ] **0-4: 검증**
+
+Run: `pnpm typecheck`
+Expected: exit 0. 그리고 `pnpm --filter @deployhub/shared exec tsc --noEmit --listFilesOnly`로 `env.ts`가 실제 검사 대상에 포함되는지 확인한다. **exit 0이 "검사할 파일이 0개"를 뜻하지 않는지 반드시 확인한다.**
 
 **Interfaces:**
 - Consumes: `packages/shared` → `loadEnv`, `Env`
@@ -1094,8 +1150,46 @@ git commit -m "feat: SKIP LOCKED 기반 job 큐 구현"
 ## Task 4: worker 폴링 루프
 
 **Files:**
-- Create: `apps/worker/package.json`, `apps/worker/src/index.ts`, `apps/worker/src/runner.ts`
+- Create: `apps/worker/package.json`, `apps/worker/tsconfig.json`, `apps/worker/src/index.ts`, `apps/worker/src/runner.ts`
 - Create: `apps/worker/src/runner.test.ts`
+
+**Step 0: 패키지 설정** (나머지 Step보다 먼저)
+
+- [ ] **0-1: 의존성과 빌드 도구를 설치한다**
+
+```bash
+pnpm --filter worker add @deployhub/db @deployhub/shared
+pnpm --filter worker add -D tsup
+```
+
+`@deployhub/*`는 workspace 프로토콜(`workspace:*`)로 잡혀야 한다.
+
+- [ ] **0-2: `apps/worker/package.json`을 구성한다**
+
+Task 6의 compose가 `apps/worker/dist/index.js`를 실행하므로 번들 산출물 경로를 여기서 고정한다.
+
+```json
+{
+  "name": "worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --out-dir dist --target node22",
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+- [ ] **0-3: `apps/worker/tsconfig.json`을 만든다**
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src" },
+  "include": ["src"]
+}
+```
 
 **Interfaces:**
 - Consumes: Task 3 → `claim`, `complete`, `fail`, `JobRecord`; Task 1 → `loadEnv`
@@ -1303,8 +1397,51 @@ git commit -m "feat: worker 폴링 루프와 graceful shutdown"
 ## Task 5: GitHub OAuth 인증과 화이트리스트
 
 **Files:**
-- Create: `apps/web/package.json`, `apps/web/next.config.ts`
+- Create: `apps/web/package.json`, `apps/web/next.config.ts`, `apps/web/tsconfig.json`
 - Create: `apps/web/src/auth/allowlist.ts`, `apps/web/src/auth/allowlist.test.ts`
+
+**Step 0: 패키지 설정** (나머지 Step보다 먼저)
+
+- [ ] **0-1: 의존성을 설치한다**
+
+```bash
+pnpm --filter web add next react react-dom next-auth @deployhub/db @deployhub/shared
+pnpm --filter web add -D @types/react @types/react-dom
+```
+
+- [ ] **0-2: `apps/web/tsconfig.json`을 만든다**
+
+**여기가 Task 2 Step 0-2에서 패키지별 tsconfig로 바꿔둔 이유다.** web만 DOM과 JSX가 필요하고, 다른 패키지는 그것을 받으면 안 된다.
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "composite": false,
+    "noEmit": true,
+    "allowJs": true,
+    "incremental": true,
+    "paths": { "@/*": ["./src/*"] },
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["src", "next-env.d.ts", ".next/types/**/*.ts"]
+}
+```
+
+`composite: false`와 `noEmit: true`로 덮어쓰는 이유는 Next.js가 자체 빌드 파이프라인을 쓰기 때문이다. 베이스의 `composite: true`를 그대로 두면 `tsc --noEmit`이 충돌한다.
+
+- [ ] **0-3: `apps/web/package.json`에 스크립트를 넣는다**
+
+```json
+"scripts": {
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "typecheck": "tsc --noEmit"
+}
+```
 - Create: `apps/web/src/auth/config.ts`
 - Create: `apps/web/src/app/api/auth/[...nextauth]/route.ts`
 - Create: `apps/web/src/app/layout.tsx`, `apps/web/src/app/page.tsx`
