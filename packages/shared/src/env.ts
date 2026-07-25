@@ -1,0 +1,32 @@
+const NODE_ENVS = ['development', 'production', 'test'] as const;
+
+export type NodeEnv = (typeof NODE_ENVS)[number];
+
+export type Env = {
+  DATABASE_URL: string;
+  NODE_ENV: NodeEnv;
+};
+
+function requireString(
+  source: Record<string, string | undefined>,
+  key: string,
+): string {
+  const value = source[key];
+  if (value === undefined || value.trim() === '') {
+    throw new Error(`환경변수 ${key}가 설정되지 않았습니다.`);
+  }
+  return value;
+}
+
+export function loadEnv(source: Record<string, string | undefined>): Env {
+  const rawNodeEnv = source.NODE_ENV ?? 'development';
+  if (!(NODE_ENVS as readonly string[]).includes(rawNodeEnv)) {
+    throw new Error(
+      `환경변수 NODE_ENV 값이 올바르지 않습니다: ${rawNodeEnv} (허용: ${NODE_ENVS.join(', ')})`,
+    );
+  }
+  return {
+    DATABASE_URL: requireString(source, 'DATABASE_URL'),
+    NODE_ENV: rawNodeEnv as NodeEnv,
+  };
+}
