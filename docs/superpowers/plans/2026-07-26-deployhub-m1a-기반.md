@@ -1159,18 +1159,11 @@ git commit -m "feat: SKIP LOCKED 기반 job 큐 구현"
 
 **Step 0: 패키지 설정** (나머지 Step보다 먼저)
 
-- [ ] **0-1: 의존성과 빌드 도구를 설치한다**
+> **순서 주의:** `pnpm --filter worker`는 대상 `package.json`이 존재해야 성립한다. 반드시 파일 생성 → 설치 순으로 진행한다.
 
-```bash
-pnpm --filter worker add @deployhub/db @deployhub/shared
-pnpm --filter worker add -D tsup
-```
+- [ ] **0-1: `apps/worker/package.json`을 먼저 만든다**
 
-`@deployhub/*`는 workspace 프로토콜(`workspace:*`)로 잡혀야 한다.
-
-- [ ] **0-2: `apps/worker/package.json`을 구성한다**
-
-Task 6의 compose가 `apps/worker/dist/index.js`를 실행하므로 번들 산출물 경로를 여기서 고정한다.
+Task 6의 compose가 `apps/worker/dist/index.js`를 실행하므로 번들 산출물 경로를 여기서 고정한다. 의존성은 다음 단계에서 `pnpm add`가 채우므로 비워 둔다.
 
 ```json
 {
@@ -1185,15 +1178,26 @@ Task 6의 compose가 `apps/worker/dist/index.js`를 실행하므로 번들 산�
 }
 ```
 
-- [ ] **0-3: `apps/worker/tsconfig.json`을 만든다**
+- [ ] **0-2: `apps/worker/tsconfig.json`을 만든다**
+
+Task 2에서 확정한 원칙을 따른다 — 이 저장소에서 `tsc`는 빌드하지 않고 타입체크만 하며, worker 번들은 tsup이 만든다. 따라서 `rootDir`/`outDir`을 넣지 않는다.
 
 ```json
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "outDir": "dist", "rootDir": "src" },
+  "compilerOptions": { "noEmit": true },
   "include": ["src"]
 }
 ```
+
+- [ ] **0-3: 의존성과 빌드 도구를 설치한다**
+
+```bash
+pnpm --filter worker add @deployhub/db @deployhub/shared
+pnpm --filter worker add -D tsup
+```
+
+`@deployhub/*`는 workspace 프로토콜(`workspace:*`)로 잡혀야 한다.
 
 **Interfaces:**
 - Consumes: Task 3 → `claim`, `complete`, `fail`, `JobRecord`; Task 1 → `loadEnv`
@@ -1406,11 +1410,25 @@ git commit -m "feat: worker 폴링 루프와 graceful shutdown"
 
 **Step 0: 패키지 설정** (나머지 Step보다 먼저)
 
-- [ ] **0-1: 의존성을 설치한다**
+> **순서 주의:** `pnpm --filter web`은 대상 `package.json`이 존재해야 성립한다. 반드시 파일 생성 → 설치 순으로 진행한다. Task 4에서 같은 순서 오류가 드러났다.
 
-```bash
-pnpm --filter web add next react react-dom next-auth @deployhub/db @deployhub/shared
-pnpm --filter web add -D @types/react @types/react-dom
+- [ ] **0-1: `apps/web/package.json`을 먼저 만든다**
+
+의존성은 다음 단계의 `pnpm add`가 채우므로 비워 둔다.
+
+```json
+{
+  "name": "web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  }
+}
 ```
 
 - [ ] **0-2: `apps/web/tsconfig.json`을 만든다**
@@ -1434,17 +1452,13 @@ pnpm --filter web add -D @types/react @types/react-dom
 }
 ```
 
-`composite: false`와 `noEmit: true`로 덮어쓰는 이유는 Next.js가 자체 빌드 파이프라인을 쓰기 때문이다. 베이스의 `composite: true`를 그대로 두면 `tsc --noEmit`이 충돌한다.
+Task 2에서 `tsconfig.base.json`의 `composite`·`declaration`을 제거했으므로 여기서 그것을 덮어쓸 필요는 없다. web에만 필요한 것은 `lib`의 DOM과 `jsx`다.
 
-- [ ] **0-3: `apps/web/package.json`에 스크립트를 넣는다**
+- [ ] **0-3: 의존성을 설치한다**
 
-```json
-"scripts": {
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "typecheck": "tsc --noEmit"
-}
+```bash
+pnpm --filter web add next react react-dom next-auth @deployhub/db @deployhub/shared
+pnpm --filter web add -D @types/react @types/react-dom
 ```
 - Create: `apps/web/src/auth/config.ts`
 - Create: `apps/web/src/app/api/auth/[...nextauth]/route.ts`
