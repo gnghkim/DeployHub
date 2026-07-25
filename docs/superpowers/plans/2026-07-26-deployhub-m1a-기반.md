@@ -1193,11 +1193,11 @@ Task 2에서 확정한 원칙을 따른다 — 이 저장소에서 `tsc`는 빌�
 - [ ] **0-3: 의존성과 빌드 도구를 설치한다**
 
 ```bash
-pnpm --filter worker add @deployhub/db @deployhub/shared
+pnpm --filter worker add '@deployhub/db@workspace:*' '@deployhub/shared@workspace:*'
 pnpm --filter worker add -D tsup
 ```
 
-`@deployhub/*`는 workspace 프로토콜(`workspace:*`)로 잡혀야 한다.
+**`workspace:*`를 반드시 명시한다.** pnpm 9 이후 `link-workspace-packages` 기본값이 `false`라서, 이를 빼면 pnpm이 `@deployhub/db`를 npm registry에서 찾다가 404로 실패한다(미발행 사설 패키지). `.npmrc`에 `link-workspace-packages=true`를 넣는 방식은 쓰지 않는다 — 전역 해석 규칙을 바꾸면 의도치 않게 로컬 패키지가 연결될 수 있고, 명시적 `workspace:*`가 `package.json`에 남아 자기 설명적이다.
 
 **Interfaces:**
 - Consumes: Task 3 → `claim`, `complete`, `fail`, `JobRecord`; Task 1 → `loadEnv`
@@ -1456,9 +1456,12 @@ Task 2에서 `tsconfig.base.json`의 `composite`·`declaration`을 제거했으�
 - [ ] **0-3: 의존성을 설치한다**
 
 ```bash
-pnpm --filter web add next react react-dom next-auth @deployhub/db @deployhub/shared
+pnpm --filter web add next react react-dom next-auth
+pnpm --filter web add '@deployhub/db@workspace:*' '@deployhub/shared@workspace:*'
 pnpm --filter web add -D @types/react @types/react-dom
 ```
+
+내부 패키지는 `workspace:*`를 명시해 별도 명령으로 설치한다. 이유는 Task 4 Step 0-3과 같다 — 명시하지 않으면 pnpm이 registry를 조회해 404로 실패한다.
 - Create: `apps/web/src/auth/config.ts`
 - Create: `apps/web/src/app/api/auth/[...nextauth]/route.ts`
 - Create: `apps/web/src/app/layout.tsx`, `apps/web/src/app/page.tsx`
