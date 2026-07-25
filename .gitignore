@@ -36,5 +36,6 @@ coverage/
 
 # Backups and dumps
 *.sql
+!drizzle/*.sql
 *.dump
 backups/
