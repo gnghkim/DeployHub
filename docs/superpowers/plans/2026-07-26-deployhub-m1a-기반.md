@@ -1441,7 +1441,6 @@ git commit -m "feat: worker 폴링 루프와 graceful shutdown"
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
-    "composite": false,
     "noEmit": true,
     "allowJs": true,
     "incremental": true,
