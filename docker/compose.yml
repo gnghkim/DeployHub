@@ -20,8 +20,63 @@ services:
       deployhub.component: "postgres"
       deployhub.environment: "production"
 
+  web:
+    image: deployhub:${TAG:-local}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: deployhub-web
+    restart: unless-stopped
+    command: ["node", "apps/web/server.js"]
+    env_file: [../.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [deployhub]
+    labels:
+      deployhub.project: "deployhub"
+      deployhub.component: "web"
+      deployhub.environment: "production"
+
+  worker:
+    image: deployhub:${TAG:-local}
+    container_name: deployhub-worker
+    restart: unless-stopped
+    command: ["node", "apps/worker/dist/index.js"]
+    env_file: [../.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [deployhub]
+    labels:
+      deployhub.project: "deployhub"
+      deployhub.component: "worker"
+      deployhub.environment: "production"
+
+  caddy:
+    image: deployhub-caddy:${TAG:-local}
+    build:
+      context: ..
+      dockerfile: docker/Caddyfile.Dockerfile
+    container_name: deployhub-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN:?HUB_DOMAIN required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    networks: [deployhub]
+
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   deployhub:

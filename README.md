@@ -19,3 +19,5 @@
 | Auth.js (`next-auth`) | 5.0.0-beta.32 |
 | React | 19.2.8 |
 | React DOM | 19.2.8 |
+| Caddy | 2.11.4 |
+| caddy-ratelimit | v0.1.1-0.20260612195517-5625512f24f6 |

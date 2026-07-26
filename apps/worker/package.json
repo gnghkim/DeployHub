@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --out-dir dist --target node22",
+    "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
