@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createDb } from '@deployhub/db';
 import { loadEnv } from '@deployhub/shared';
-import { createRunner } from './runner.js';
+import { createRunner } from './runner';
 
 const POLL_INTERVAL_MS = 5_000;
 

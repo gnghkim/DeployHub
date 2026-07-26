@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import type { Db } from '../client.js';
-import type { EnqueueOptions, JobRecord } from './types.js';
+import type { Db } from '../client';
+import type { EnqueueOptions, JobRecord } from './types';
 
 type JobRow = {
   id: string;

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { startTestDb } from '../../test/helpers/pg.js';
-import { schema, type Db } from '../index.js';
+import { startTestDb } from '../../test/helpers/pg';
+import { schema, type Db } from '../index';
 
 let db: Db;
 let stop: () => Promise<void>;

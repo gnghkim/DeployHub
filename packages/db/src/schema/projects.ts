@@ -2,7 +2,7 @@ import { relations } from 'drizzle-orm';
 import {
   index, jsonb, pgTable, smallint, text, timestamp, unique, uuid,
 } from 'drizzle-orm/pg-core';
-import { componentType, projectLifecycle, projectStatus } from './enums.js';
+import { componentType, projectLifecycle, projectStatus } from './enums';
 
 export const projects = pgTable('projects', {
   id: uuid('id').primaryKey().defaultRandom(),
