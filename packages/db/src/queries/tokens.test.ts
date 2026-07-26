@@ -14,6 +14,7 @@ import {
   hashToken,
   issueToken,
   revokeToken,
+  verifyToken,
 } from './tokens';
 
 let db: Db;
@@ -64,8 +65,60 @@ describe('registration tokens', () => {
       tokenId: issued.id,
       scope: 'project:draft:create',
       repositoryConstraint: 'ktgo/deployhub',
+      projectSlugConstraint: null,
     });
   });
+
+  it('verifies a token repeatedly without consuming its single use', async () => {
+    const issued = await issue({
+      projectSlugConstraint: 'deployhub',
+      maxUses: 1,
+    });
+
+    const expected = {
+      ok: true,
+      tokenId: issued.id,
+      scope: 'project:draft:create',
+      repositoryConstraint: 'ktgo/deployhub',
+      projectSlugConstraint: 'deployhub',
+    };
+    await expect(verifyToken(db, issued.raw)).resolves.toEqual(expected);
+    await expect(verifyToken(db, issued.raw)).resolves.toEqual(expected);
+    await expect(consumeToken(db, issued.raw)).resolves.toEqual(expected);
+  });
+
+  it.each([
+    ['unknown', 'dh_reg_not-a-real-token', 'not_found'],
+    ['expired', undefined, 'expired'],
+    ['revoked', undefined, 'revoked'],
+    ['exhausted', undefined, 'exhausted'],
+  ] as const)(
+    'reports a %s token while verifying',
+    async (kind, rawOverride, reason) => {
+      if (kind === 'unknown') {
+        await expect(verifyToken(db, rawOverride ?? '')).resolves.toEqual({
+          ok: false,
+          reason,
+        });
+        return;
+      }
+
+      const issued = await issue({
+        ...(kind === 'expired'
+          ? { expiresAt: new Date(Date.now() - 1_000) }
+          : {}),
+      });
+      if (kind === 'revoked') await revokeToken(db, issued.id);
+      if (kind === 'exhausted') {
+        expect((await consumeToken(db, issued.raw)).ok).toBe(true);
+      }
+
+      await expect(verifyToken(db, issued.raw)).resolves.toEqual({
+        ok: false,
+        reason,
+      });
+    },
+  );
 
   it('never stores the raw token in any database column', async () => {
     const issued = await issue();

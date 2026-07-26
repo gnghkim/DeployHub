@@ -157,8 +157,16 @@ export async function submitProjectDraft({
 export type CurrentProjectOptions = {
   baseUrl: string;
   slug: string;
+  token: string;
   fetchImpl?: typeof fetch;
 };
+
+export class ProjectNotFoundError extends Error {
+  constructor(slug: string) {
+    super(`DeployHub project "${slug}" is not registered`);
+    this.name = 'ProjectNotFoundError';
+  }
+}
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
@@ -222,12 +230,24 @@ function isCurrentProject(value: unknown): value is CurrentProject {
 export async function getCurrentProject({
   baseUrl: serverUrl,
   slug,
+  token,
   fetchImpl = globalThis.fetch,
 }: CurrentProjectOptions): Promise<CurrentProject> {
-  const response = await fetchImpl(
-    `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/manifest`,
-    { headers: { Accept: 'application/json' } },
-  );
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/manifest`,
+      {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+  } catch {
+    throw new Error('Unable to reach the DeployHub project lookup endpoint');
+  }
+  if (response.status === 404) throw new ProjectNotFoundError(slug);
   if (!response.ok) {
     throw new Error(
       `DeployHub project lookup failed with HTTP ${response.status}`,
@@ -246,10 +266,70 @@ export async function getCurrentProject({
 
 export type ProjectStatus = {
   registered: boolean;
-  projectStatus: string;
-  connectionStatus: string;
-  projectUrl?: string;
+  slug: string;
+  name: string | null;
+  status: 'active' | 'paused' | 'maintenance' | 'archived' | null;
+  lifecycle:
+    | 'experimental'
+    | 'development'
+    | 'production'
+    | 'deprecated'
+    | null;
+  componentCount: number;
+  linkedResourceCount: number;
+  latestDraft: {
+    id: string;
+    status:
+      | 'draft'
+      | 'validation_failed'
+      | 'pending_review'
+      | 'approved'
+      | 'rejected'
+      | 'superseded';
+    createdAt: string;
+  } | null;
+  projectUrl: string | null;
 };
+
+const PROJECT_STATUSES = new Set([
+  'active',
+  'paused',
+  'maintenance',
+  'archived',
+]);
+const PROJECT_LIFECYCLES = new Set([
+  'experimental',
+  'development',
+  'production',
+  'deprecated',
+]);
+const DRAFT_STATUSES = new Set([
+  'draft',
+  'validation_failed',
+  'pending_review',
+  'approved',
+  'rejected',
+  'superseded',
+]);
+
+function isNullableMember(value: unknown, allowed: Set<string>): boolean {
+  return value === null || (
+    typeof value === 'string'
+    && allowed.has(value)
+  );
+}
+
+function isLatestDraft(value: unknown): boolean {
+  if (value === null) return true;
+  if (typeof value !== 'object' || Array.isArray(value)) return false;
+  const draft = value as Record<string, unknown>;
+  return (
+    typeof draft.id === 'string'
+    && typeof draft.status === 'string'
+    && DRAFT_STATUSES.has(draft.status)
+    && typeof draft.createdAt === 'string'
+  );
+}
 
 function isProjectStatus(value: unknown): value is ProjectStatus {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -258,24 +338,40 @@ function isProjectStatus(value: unknown): value is ProjectStatus {
   const status = value as Record<string, unknown>;
   return (
     typeof status.registered === 'boolean'
-    && typeof status.projectStatus === 'string'
-    && typeof status.connectionStatus === 'string'
-    && (
-      status.projectUrl === undefined
-      || typeof status.projectUrl === 'string'
-    )
+    && typeof status.slug === 'string'
+    && isNullableString(status.name)
+    && isNullableMember(status.status, PROJECT_STATUSES)
+    && isNullableMember(status.lifecycle, PROJECT_LIFECYCLES)
+    && Number.isInteger(status.componentCount)
+    && Number(status.componentCount) >= 0
+    && Number.isInteger(status.linkedResourceCount)
+    && Number(status.linkedResourceCount) >= 0
+    && isLatestDraft(status.latestDraft)
+    && isNullableString(status.projectUrl)
   );
 }
 
 export async function getProjectStatus({
   baseUrl: serverUrl,
   slug,
+  token,
   fetchImpl = globalThis.fetch,
 }: CurrentProjectOptions): Promise<ProjectStatus> {
-  const response = await fetchImpl(
-    `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/status`,
-    { headers: { Accept: 'application/json' } },
-  );
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/status`,
+      {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+  } catch {
+    throw new Error('Unable to reach the DeployHub project status endpoint');
+  }
+  if (response.status === 404) throw new ProjectNotFoundError(slug);
   if (!response.ok) {
     throw new Error(
       `DeployHub project status failed with HTTP ${response.status}`,

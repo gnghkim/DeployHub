@@ -125,6 +125,7 @@ export function createCli(
       const exitCode = await dependencies.diff({
         rootDir: dependencies.cwd(),
         baseUrl: requiredEnvironment(dependencies, 'DEPLOYHUB_URL'),
+        token: requiredEnvironment(dependencies, 'DEPLOYHUB_TOKEN'),
         output: dependencies.output,
       });
       dependencies.setExitCode(exitCode);
@@ -151,6 +152,7 @@ export function createCli(
       const exitCode = await dependencies.status({
         rootDir: dependencies.cwd(),
         baseUrl: requiredEnvironment(dependencies, 'DEPLOYHUB_URL'),
+        token: requiredEnvironment(dependencies, 'DEPLOYHUB_TOKEN'),
         output: dependencies.output,
       });
       dependencies.setExitCode(exitCode);

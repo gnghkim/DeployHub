@@ -39,6 +39,7 @@ spec:
 
 describe('runDiff', () => {
   it('compares the local manifest with the server declaration', async () => {
+    const token = 'dh_reg_diff-token';
     const output: string[] = [];
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -68,6 +69,7 @@ describe('runDiff', () => {
     const exitCode = await runDiff({
       rootDir: await projectManifest(),
       baseUrl: 'https://hub.example',
+      token,
       output: (line) => output.push(line),
       fetchImpl,
     });
@@ -75,10 +77,52 @@ describe('runDiff', () => {
     expect(exitCode).toBe(0);
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://hub.example/api/v1/projects/example/manifest',
-      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+      expect.objectContaining({
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      }),
     );
     expect(output.join('\n')).toContain(
       'description: Old description -> New description',
     );
+    expect(output.join('\n')).not.toContain(token);
+  });
+
+  it('fails before a server request when DEPLOYHUB_TOKEN is missing', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+
+    await expect(runDiff({
+      rootDir: await projectManifest(),
+      baseUrl: 'https://hub.example',
+      token: '',
+      output: () => undefined,
+      fetchImpl,
+    })).rejects.toThrow('DEPLOYHUB_TOKEN environment variable is required');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes read transport errors that contain the token', async () => {
+    const token = 'dh_reg_IDENTIFIABLE_DIFF_SECRET';
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error(`request failed with ${token}`));
+
+    let message = '';
+    try {
+      await runDiff({
+        rootDir: await projectManifest(),
+        baseUrl: 'https://hub.example',
+        token,
+        output: () => undefined,
+        fetchImpl,
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe('Unable to reach the DeployHub project lookup endpoint');
+    expect(message).not.toContain(token);
   });
 });

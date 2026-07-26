@@ -8,6 +8,7 @@ import {
 export type DiffOptions = {
   rootDir: string;
   baseUrl: string;
+  token: string;
   output?: CommandOutput;
   fetchImpl?: typeof fetch;
 };
@@ -64,12 +65,16 @@ export function printManifestDiff(
 
 export async function runDiff(options: DiffOptions): Promise<0 | 1> {
   const output = options.output ?? console.log;
+  if (!options.token.trim()) {
+    throw new Error('DEPLOYHUB_TOKEN environment variable is required');
+  }
   const local = await readLocalManifest(options.rootDir, output);
   if (!local) return 1;
 
   const current = await getCurrentProject({
     baseUrl: options.baseUrl,
     slug: local.manifest.metadata.slug,
+    token: options.token,
     fetchImpl: options.fetchImpl,
   });
   printManifestDiff(diffManifest(local.manifest, current), output);

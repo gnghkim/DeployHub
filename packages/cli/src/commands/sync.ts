@@ -39,6 +39,7 @@ export async function runSync(options: SyncOptions): Promise<0 | 1> {
   const current = await getCurrentProject({
     baseUrl: options.baseUrl,
     slug: local.manifest.metadata.slug,
+    token: options.token,
     fetchImpl: options.fetchImpl,
   });
   const detection = await (options.detector ?? detectProject)(options.rootDir);
