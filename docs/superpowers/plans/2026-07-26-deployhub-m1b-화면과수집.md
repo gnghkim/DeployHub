@@ -741,7 +741,7 @@ describe('loadEncryptionKey', () => {
 
 describe('encrypt / decrypt', () => {
   it('왕복이 원문을 보존한다', () => {
-    const secret = 'ghp_exampleToken1234567890';
+    const secret = 'github-token-exampleToken1234567890';
     expect(decrypt(encrypt(secret, key), key)).toBe(secret);
   });
 
@@ -750,7 +750,7 @@ describe('encrypt / decrypt', () => {
   });
 
   it('암호문에 평문이 남지 않는다', () => {
-    const secret = 'ghp_exampleToken1234567890';
+    const secret = 'github-token-exampleToken1234567890';
     expect(encrypt(secret, key)).not.toContain(secret);
   });
 
@@ -912,7 +912,7 @@ describe('normalizeRepository', () => {
 
   it('토큰이나 비밀값을 metadata 에 넣지 않는다', () => {
     const json = JSON.stringify(normalizeRepository(repo, extra));
-    expect(json).not.toMatch(/ghp_|github_pat_|Authorization/i);
+    expect(json).not.toMatch(/ghp[_]|github[_]pat[_]|Authorization/i);
   });
 
   it('워크플로 이력이 없어도 실패하지 않는다', () => {
@@ -966,7 +966,7 @@ upsert 규칙:
 Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build && pnpm --filter worker build`
 Expected: 전부 통과
 
-Run: `git grep -nE "ghp_|github_pat_" -- . ':!*.test.ts'`
+Run: `git grep -nE "ghp[_]|github[_]pat[_]" -- . ':!*.test.ts'`
 Expected: 매치 없음
 
 - [ ] **Step 12: 커밋**

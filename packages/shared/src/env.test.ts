@@ -9,6 +9,7 @@ describe('loadEnv', () => {
       AUTH_SECRET: 's',
       AUTH_GITHUB_ID: 'id',
       AUTH_GITHUB_SECRET: 'secret',
+      ENCRYPTION_KEY: 'key',
     });
     expect(env.DATABASE_URL).toBe('postgres://u:p@localhost:5432/deployhub');
     expect(env.NODE_ENV).toBe('test');
@@ -21,6 +22,7 @@ describe('loadEnv', () => {
         AUTH_SECRET: 's',
         AUTH_GITHUB_ID: 'id',
         AUTH_GITHUB_SECRET: 'secret',
+        ENCRYPTION_KEY: 'key',
       }),
     ).toThrow(/DATABASE_URL/);
   });
@@ -31,6 +33,7 @@ describe('loadEnv', () => {
       AUTH_SECRET: 's',
       AUTH_GITHUB_ID: 'id',
       AUTH_GITHUB_SECRET: 'secret',
+      ENCRYPTION_KEY: 'key',
     });
     expect(env.NODE_ENV).toBe('development');
   });
@@ -43,6 +46,7 @@ describe('loadEnv', () => {
         AUTH_SECRET: 's',
         AUTH_GITHUB_ID: 'id',
         AUTH_GITHUB_SECRET: 'secret',
+        ENCRYPTION_KEY: 'key',
       }),
     ).toThrow(/NODE_ENV/);
   });
@@ -53,6 +57,7 @@ describe('loadEnv', () => {
         DATABASE_URL: 'postgres://u:p@localhost:5432/d',
         AUTH_GITHUB_ID: 'id',
         AUTH_GITHUB_SECRET: 'secret',
+        ENCRYPTION_KEY: 'key',
       }),
     ).toThrow(/AUTH_SECRET/);
   });
@@ -63,6 +68,7 @@ describe('loadEnv', () => {
       AUTH_SECRET: 's',
       AUTH_GITHUB_ID: 'id',
       AUTH_GITHUB_SECRET: 'secret',
+      ENCRYPTION_KEY: 'key',
     });
     expect(env.ALLOWED_GITHUB_LOGINS).toBeUndefined();
   });
