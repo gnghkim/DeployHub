@@ -39,6 +39,33 @@ describe('projectInputSchema', () => {
   it('빈 문자열 repository 는 undefined 로 정규화한다', () => {
     expect(projectInputSchema.parse({ ...valid, repository: '' }).repository).toBeUndefined();
   });
+
+  it('문자열 필드의 앞뒤 공백을 제거한다', () => {
+    const parsed = projectInputSchema.parse({
+      ...valid,
+      name: '  LinkVault  ',
+      description: '  링크 저장소  ',
+      owner: '  platform-team  ',
+      repository: '  ktgo/workwiki  ',
+    });
+
+    expect(parsed).toMatchObject({
+      name: 'LinkVault',
+      description: '링크 저장소',
+      owner: 'platform-team',
+      repository: 'ktgo/workwiki',
+    });
+  });
+
+  it('공백만 있는 name 을 거부한다', () => {
+    expect(() => projectInputSchema.parse({ ...valid, name: '   ' })).toThrow();
+  });
+
+  it('repository 공백을 제거한 뒤 owner/name 형식을 검사한다', () => {
+    expect(
+      projectInputSchema.parse({ ...valid, repository: '  ktgo/workwiki  ' }).repository,
+    ).toBe('ktgo/workwiki');
+  });
 });
 
 describe('componentInputSchema', () => {
@@ -57,5 +84,26 @@ describe('componentInputSchema', () => {
     const parsed = componentInputSchema.parse({ ...valid, framework: '', runtime: 'nodejs' });
     expect(parsed.framework).toBeUndefined();
     expect(parsed.runtime).toBe('nodejs');
+  });
+
+  it('문자열 필드의 앞뒤 공백을 제거하고 공백뿐인 선택값은 undefined 로 만든다', () => {
+    const parsed = componentInputSchema.parse({
+      ...valid,
+      name: '  web  ',
+      framework: '  Next.js  ',
+      runtime: '   ',
+      language: '  TypeScript  ',
+    });
+
+    expect(parsed).toMatchObject({
+      name: 'web',
+      framework: 'Next.js',
+      language: 'TypeScript',
+    });
+    expect(parsed.runtime).toBeUndefined();
+  });
+
+  it('공백만 있는 name 을 거부한다', () => {
+    expect(() => componentInputSchema.parse({ ...valid, name: '   ' })).toThrow();
   });
 });

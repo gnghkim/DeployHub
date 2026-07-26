@@ -15,6 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from '../../components/ui/table';
+import { removeResourceLink } from '../../actions/links';
+import { Button } from '../../components/ui/button';
 import { db } from '../../lib/db';
 import { suggestMatches } from '../../lib/matcher';
 import { githubResourceDetails } from '../../lib/resource-view';
@@ -48,6 +50,14 @@ export default async function ResourcesPage() {
   const projectDetails = await Promise.all(
     projects.map((project) => getProjectBySlug(db, project.slug)),
   );
+  const componentOptions = projectDetails.flatMap((project) => (
+    project
+      ? project.components.map((component) => ({
+        id: component.id,
+        name: `${project.name} / ${component.name}`,
+      }))
+      : []
+  ));
   const unlinkedResources = resources.filter(
     (resource) => resource.links.length === 0,
   );
@@ -55,8 +65,7 @@ export default async function ResourcesPage() {
     (resource) => resource.resourceType === 'github_repository',
   );
   const suggestions = suggestMatches(
-    unlinkedResources
-      .filter((resource) => resource.resourceType === 'github_repository')
+    repositories
       .map((resource) => ({
         id: resource.id,
         externalId: resource.externalId,
@@ -99,6 +108,7 @@ export default async function ResourcesPage() {
                   <TableHead>마지막 커밋</TableHead>
                   <TableHead>워크플로</TableHead>
                   <TableHead>연결된 프로젝트</TableHead>
+                  <TableHead>연결 추가</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -154,20 +164,44 @@ export default async function ResourcesPage() {
                       </TableCell>
                       <TableCell>
                         {resource.links.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="space-y-2">
                             {resource.links.map((link) => (
-                              <Link
+                              <div
                                 key={link.linkId}
-                                href={`/projects/${link.projectSlug}`}
-                                className="text-sm text-[var(--color-info)] hover:underline"
+                                className="flex flex-wrap items-center gap-2"
                               >
-                                {link.projectName} / {link.componentName}
-                              </Link>
+                                <Link
+                                  href={`/projects/${link.projectSlug}`}
+                                  className="text-sm text-[var(--color-info)] hover:underline"
+                                >
+                                  {link.projectName} / {link.componentName}
+                                </Link>
+                                <form action={removeResourceLink}>
+                                  <input
+                                    type="hidden"
+                                    name="linkId"
+                                    value={link.linkId}
+                                  />
+                                  <Button
+                                    type="submit"
+                                    variant="tertiary"
+                                    className="h-7 px-2 text-xs"
+                                  >
+                                    연결 해제
+                                  </Button>
+                                </form>
+                              </div>
                             ))}
                           </div>
                         ) : (
                           <Badge>Unlinked</Badge>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <SuggestionForm
+                          resourceId={resource.id}
+                          components={componentOptions}
+                        />
                       </TableCell>
                     </TableRow>
                   );
