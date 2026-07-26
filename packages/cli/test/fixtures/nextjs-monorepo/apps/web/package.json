@@ -1,0 +1,10 @@
+{
+  "name": "web",
+  "private": true,
+  "dependencies": {
+    "next": "16.2.12"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
