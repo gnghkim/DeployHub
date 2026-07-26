@@ -167,6 +167,44 @@ describe('detectProject', () => {
     });
   });
 
+  it('ignores package manifests inside test fixtures', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'deployhub-detector-'));
+    temporaryDirectories.push(rootDir);
+    await mkdir(join(rootDir, 'apps', 'web'), { recursive: true });
+    await mkdir(
+      join(rootDir, 'packages', 'cli', 'test', 'fixtures', 'sample'),
+      { recursive: true },
+    );
+    await writeFile(
+      join(rootDir, 'apps', 'web', 'package.json'),
+      JSON.stringify({
+        name: 'web',
+        dependencies: { next: '16.2.12' },
+      }),
+    );
+    await writeFile(
+      join(
+        rootDir,
+        'packages',
+        'cli',
+        'test',
+        'fixtures',
+        'sample',
+        'package.json',
+      ),
+      JSON.stringify({
+        name: 'fixture-backend',
+        dependencies: { express: '5.1.0' },
+      }),
+    );
+
+    const result = await detectProject(rootDir);
+
+    expect(result.manifest.spec?.components.map(({ name }) => name)).toEqual([
+      'web',
+    ]);
+  });
+
   it('normalizes a scoped package name into a manifest slug', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'deployhub-metadata-'));
     temporaryDirectories.push(rootDir);

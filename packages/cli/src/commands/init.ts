@@ -7,14 +7,11 @@ import {
   type FieldSource,
 } from '../detectors/index';
 
-const DEFAULT_SCHEMA_URL =
-  'https://hub.nolzza.net/schemas/deployhub-v1.json';
-
 export type InitOptions = {
   rootDir: string;
   detect: boolean;
   force?: boolean;
-  schemaUrl?: string;
+  schemaUrl: string;
   output?: (line: string) => void;
   detector?: (rootDir: string) => Promise<DetectionResult>;
 };
@@ -73,7 +70,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
 
   const detection = await (options.detector ?? detectProject)(options.rootDir);
-  const header = `# yaml-language-server: $schema=${options.schemaUrl ?? DEFAULT_SCHEMA_URL}`;
+  const header = `# yaml-language-server: $schema=${options.schemaUrl}`;
   const yamlText = `${header}\n${stringify(detection.manifest, {
     lineWidth: 0,
   })}`;

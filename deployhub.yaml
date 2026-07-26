@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://hub.nolzza.net/schemas/deployhub-v1.json
+apiVersion: deployhub.io/v1
+kind: Project
+metadata:
+  name: DeployHub
+  slug: deployhub
+  description: 통합 프로젝트·인프라 관리 시스템
+spec:
+  lifecycle: production
+  importance: 4
+  owner: gnghkim
+  repository:
+    provider: github
+    slug: gnghkim/DeployHub
+  components:
+    - name: web
+      type: frontend
+      framework: nextjs
+      runtime: nodejs
+      language: typescript
+      criticality: 4
+      path: apps/web
+    - name: worker
+      type: worker
+      runtime: nodejs
+      language: typescript
+      criticality: 3
+      path: apps/worker
+    - name: database
+      type: database
+      runtime: postgresql
+      criticality: 5
+  domains:
+    - domain: hub.nolzza.net
+      environment: production
+  documents:
+    - type: readme
+      path: README.md

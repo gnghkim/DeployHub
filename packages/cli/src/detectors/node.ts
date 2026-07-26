@@ -45,6 +45,17 @@ function cleanComponentName(value: string): string {
 
 async function findPackageJsonFiles(rootDir: string): Promise<string[]> {
   const packageFiles: string[] = [];
+  const ignoredDirectories = new Set([
+    '.git',
+    '.next',
+    '__fixtures__',
+    '__tests__',
+    'dist',
+    'fixtures',
+    'node_modules',
+    'test',
+    'tests',
+  ]);
 
   async function visit(directory: string): Promise<void> {
     const { readdir } = await import('node:fs/promises');
@@ -52,7 +63,7 @@ async function findPackageJsonFiles(rootDir: string): Promise<string[]> {
     for (const entry of entries) {
       if (
         entry.isDirectory() &&
-        !['node_modules', '.git', 'dist', '.next'].includes(entry.name)
+        !ignoredDirectories.has(entry.name)
       ) {
         await visit(join(directory, entry.name));
       } else if (entry.isFile() && entry.name === 'package.json') {

@@ -1,4 +1,8 @@
-import type { ParseResult } from '@deployhub/manifest';
+import type {
+  CurrentProject,
+  ManifestDiff,
+  ParseResult,
+} from '@deployhub/manifest';
 
 export type RemoteValidationOptions = {
   baseUrl: string;
@@ -63,6 +67,223 @@ export async function validateRemoteManifest({
     throw new Error(
       'Remote manifest validation returned an invalid response',
     );
+  }
+  return result;
+}
+
+export type DraftSubmissionResult = {
+  id: string;
+  status: string;
+  url: string;
+};
+
+export type SubmitProjectDraftOptions = {
+  baseUrl: string;
+  token: string;
+  manifestYaml: string;
+  fieldSources: Record<string, unknown>;
+  diff?: ManifestDiff;
+  fetchImpl?: typeof fetch;
+};
+
+function baseUrl(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function isDraftSubmissionResult(
+  value: unknown,
+): value is DraftSubmissionResult {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.id === 'string'
+    && typeof result.status === 'string'
+    && typeof result.url === 'string'
+  );
+}
+
+export async function submitProjectDraft({
+  baseUrl: serverUrl,
+  token,
+  manifestYaml,
+  fieldSources,
+  diff,
+  fetchImpl = globalThis.fetch,
+}: SubmitProjectDraftOptions): Promise<DraftSubmissionResult> {
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `${baseUrl(serverUrl)}/api/v1/project-drafts`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+        body: JSON.stringify({
+          manifestYaml,
+          fieldSources,
+          ...(diff ? { diff } : {}),
+        }),
+      },
+    );
+  } catch {
+    throw new Error(
+      'Unable to reach the DeployHub Draft submission endpoint',
+    );
+  }
+  if (!response.ok) {
+    throw new Error(
+      `DeployHub Draft submission failed with HTTP ${response.status}`,
+    );
+  }
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(
+      'DeployHub Draft submission returned an invalid response',
+    );
+  }
+  if (!isDraftSubmissionResult(result)) {
+    throw new Error('DeployHub Draft submission returned an invalid response');
+  }
+  return result;
+}
+
+export type CurrentProjectOptions = {
+  baseUrl: string;
+  slug: string;
+  fetchImpl?: typeof fetch;
+};
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isCurrentProject(value: unknown): value is CurrentProject {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.name === 'string'
+    && typeof project.slug === 'string'
+    && isNullableString(project.description)
+    && typeof project.lifecycle === 'string'
+    && typeof project.importance === 'number'
+    && isNullableString(project.owner)
+    && isNullableString(project.repository)
+    && Array.isArray(project.components)
+    && project.components.every((component) => {
+      if (
+        component === null
+        || typeof component !== 'object'
+        || Array.isArray(component)
+      ) {
+        return false;
+      }
+      const item = component as Record<string, unknown>;
+      return (
+        typeof item.name === 'string'
+        && typeof item.componentType === 'string'
+        && isNullableString(item.framework)
+        && isNullableString(item.runtime)
+        && isNullableString(item.language)
+        && typeof item.criticality === 'number'
+      );
+    })
+    && (
+      project.domains === undefined
+      || (
+        Array.isArray(project.domains)
+        && project.domains.every((domain) => {
+          if (
+            domain === null
+            || typeof domain !== 'object'
+            || Array.isArray(domain)
+          ) {
+            return false;
+          }
+          const item = domain as Record<string, unknown>;
+          return (
+            typeof item.domain === 'string'
+            && typeof item.environment === 'string'
+          );
+        })
+      )
+    )
+  );
+}
+
+export async function getCurrentProject({
+  baseUrl: serverUrl,
+  slug,
+  fetchImpl = globalThis.fetch,
+}: CurrentProjectOptions): Promise<CurrentProject> {
+  const response = await fetchImpl(
+    `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/manifest`,
+    { headers: { Accept: 'application/json' } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `DeployHub project lookup failed with HTTP ${response.status}`,
+    );
+  }
+  const result: unknown = await response.json();
+  const project =
+    result !== null && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, unknown>).project
+      : undefined;
+  if (!isCurrentProject(project)) {
+    throw new Error('DeployHub project lookup returned an invalid response');
+  }
+  return project;
+}
+
+export type ProjectStatus = {
+  registered: boolean;
+  projectStatus: string;
+  connectionStatus: string;
+  projectUrl?: string;
+};
+
+function isProjectStatus(value: unknown): value is ProjectStatus {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const status = value as Record<string, unknown>;
+  return (
+    typeof status.registered === 'boolean'
+    && typeof status.projectStatus === 'string'
+    && typeof status.connectionStatus === 'string'
+    && (
+      status.projectUrl === undefined
+      || typeof status.projectUrl === 'string'
+    )
+  );
+}
+
+export async function getProjectStatus({
+  baseUrl: serverUrl,
+  slug,
+  fetchImpl = globalThis.fetch,
+}: CurrentProjectOptions): Promise<ProjectStatus> {
+  const response = await fetchImpl(
+    `${baseUrl(serverUrl)}/api/v1/projects/${encodeURIComponent(slug)}/status`,
+    { headers: { Accept: 'application/json' } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `DeployHub project status failed with HTTP ${response.status}`,
+    );
+  }
+  const result: unknown = await response.json();
+  if (!isProjectStatus(result)) {
+    throw new Error('DeployHub project status returned an invalid response');
   }
   return result;
 }
