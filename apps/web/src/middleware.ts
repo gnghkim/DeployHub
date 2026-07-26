@@ -12,6 +12,6 @@ export default auth;
 
 export const config = {
   matcher: [
-    '/((?!api/auth(?:/|$)|api/v1/manifest/(?:schema|template|validate)/?$|schemas/deployhub-v1[.]json/?$|_next/static|_next/image|favicon[.]ico$).*)',
+    '/((?!api/auth(?:/|$)|api/v1/manifest/(?:schema|template|validate)/?$|api/v1/project-drafts/?$|schemas/deployhub-v1[.]json/?$|_next/static|_next/image|favicon[.]ico$).*)',
   ],
 };

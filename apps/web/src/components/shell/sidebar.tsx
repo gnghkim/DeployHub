@@ -5,6 +5,8 @@ const ACTIVE_ITEMS = [
   { label: 'Projects', href: '/projects' },
   { label: 'Providers', href: '/providers' },
   { label: 'Resources', href: '/resources' },
+  { label: 'Drafts', href: '/drafts' },
+  { label: 'Registration tokens', href: '/settings/tokens' },
 ] as const;
 
 const INACTIVE_ITEMS = [
@@ -14,7 +16,6 @@ const INACTIVE_ITEMS = [
   'Domains',
   'Alerts',
   'Documents',
-  'Settings',
 ] as const;
 
 export function Sidebar() {

@@ -10,3 +10,8 @@ export {
   type ValidationIssue,
 } from './parse';
 export { manifestJsonSchema, manifestTemplate } from './json-schema';
+export {
+  diffManifest,
+  type CurrentProject,
+  type ManifestDiff,
+} from './diff';
