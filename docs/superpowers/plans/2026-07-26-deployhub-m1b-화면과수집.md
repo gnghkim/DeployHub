@@ -966,8 +966,12 @@ upsert 규칙:
 Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build && pnpm --filter worker build`
 Expected: 전부 통과
 
-Run: `git grep -nE "ghp_|github_pat_" -- . ':!*.test.ts'`
+Run: `git grep -nE 'ghp_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}' -- apps packages ':!*.test.ts'`
 Expected: 매치 없음
+
+**검사 범위를 `apps`·`packages`로 한정하는 이유:** 저장소 전체를 훑으면 이 계획서 자체가 매치된다. 문서에는 예제 토큰과 이 grep 명령문이 정당하게 들어 있다. 검사의 목적은 *소스 코드에 실제 토큰이 커밋되지 않았는가*이지 *문서에 그 문자열이 없는가*가 아니다. 접두사 뒤 16자 이상을 요구하는 것도 같은 이유로, 산문에 등장하는 접두사만으로는 매치되지 않게 한다.
+
+**문서를 고쳐서 이 검사를 통과시키지 마라.** 검사가 오탐하면 검사를 고치는 것이 맞다.
 
 - [ ] **Step 12: 커밋**
 
