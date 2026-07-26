@@ -1,10 +1,14 @@
 import { asc, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../client';
-import { components, projects } from '../schema/projects';
+import { components, domains, projects } from '../schema/projects';
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type ComponentRow = typeof components.$inferSelect;
-export type ProjectDetail = ProjectRow & { components: ComponentRow[] };
+export type DomainRow = typeof domains.$inferSelect;
+export type ProjectDetail = ProjectRow & {
+  components: ComponentRow[];
+  domains: DomainRow[];
+};
 
 export async function listProjects(db: Db): Promise<ProjectRow[]> {
   return db.select().from(projects).where(isNull(projects.archivedAt)).orderBy(asc(projects.name));
@@ -18,5 +22,10 @@ export async function getProjectBySlug(db: Db, slug: string): Promise<ProjectDet
     .from(components)
     .where(eq(components.projectId, project.id))
     .orderBy(asc(components.name));
-  return { ...project, components: rows };
+  const domainRows = await db
+    .select()
+    .from(domains)
+    .where(eq(domains.projectId, project.id))
+    .orderBy(asc(domains.domain));
+  return { ...project, components: rows, domains: domainRows };
 }

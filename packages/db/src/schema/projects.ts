@@ -49,13 +49,53 @@ export const components = pgTable(
   ],
 );
 
+export const domains = pgTable(
+  'domains',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    componentId: uuid('component_id').references(() => components.id, {
+      onDelete: 'set null',
+    }),
+    domain: text('domain').notNull(),
+    environment: text('environment').notNull(),
+    dnsProvider: text('dns_provider'),
+    sslExpiresAt: timestamp('ssl_expires_at', { withTimezone: true }),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('domains_project_domain_environment_unique').on(
+      t.projectId,
+      t.domain,
+      t.environment,
+    ),
+    index('domains_project_idx').on(t.projectId),
+  ],
+);
+
 export const projectsRelations = relations(projects, ({ many }) => ({
   components: many(components),
+  domains: many(domains),
 }));
 
 export const componentsRelations = relations(components, ({ one }) => ({
   project: one(projects, {
     fields: [components.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const domainsRelations = relations(domains, ({ one }) => ({
+  project: one(projects, {
+    fields: [domains.projectId],
+    references: [projects.id],
+  }),
+  component: one(components, {
+    fields: [domains.componentId],
+    references: [components.id],
   }),
 }));
