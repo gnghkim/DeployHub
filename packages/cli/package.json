@@ -1,0 +1,21 @@
+{
+  "name": "@deployhub/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "deployhub": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --out-dir dist --target node22",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deployhub/manifest": "workspace:*",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}
