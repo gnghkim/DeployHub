@@ -34,3 +34,11 @@ export const providerType = pgEnum('provider_type', [
 export const jobStatus = pgEnum('job_status', [
   'pending', 'running', 'succeeded', 'failed',
 ]);
+
+export const draftStatus = pgEnum('draft_status', [
+  'draft', 'validation_failed', 'pending_review', 'approved', 'rejected', 'superseded',
+]);
+
+export const draftSourceType = pgEnum('draft_source_type', ['cli', 'manual']);
+
+export const submitterType = pgEnum('submitter_type', ['token', 'user']);
