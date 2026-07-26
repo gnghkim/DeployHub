@@ -8,6 +8,13 @@
       "when": 1785009191715,
       "tag": "0000_familiar_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785034958898,
+      "tag": "0001_greedy_whirlwind",
+      "breakpoints": true
     }
   ]
 }
