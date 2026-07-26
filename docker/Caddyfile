@@ -1,0 +1,32 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$HUB_DOMAIN} {
+	encode gzip
+	rate_limit {
+		zone api {
+			match {
+				path /api/*
+			}
+			key {remote_host}
+			events 60
+			window 1m
+		}
+		zone general {
+			key {remote_host}
+			events 300
+			window 1m
+		}
+	}
+	reverse_proxy web:3000
+}
+
+# 설정된 호스트명과 일치하지 않는 요청(공인 IP 직접 접근 포함)은 끊는다.
+:80 {
+	abort
+}
+
+:443 {
+	abort
+}
