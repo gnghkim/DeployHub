@@ -1,8 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { confirmResourceLink } from '../../actions/links';
+import { useActionState, useState } from 'react';
+import {
+  confirmResourceLink,
+  type ResourceLinkActionState,
+} from '../../actions/links';
 import { Button } from '../../components/ui/button';
 
 type ComponentOption = {
@@ -10,16 +13,22 @@ type ComponentOption = {
   name: string;
 };
 
+const INITIAL_STATE: ResourceLinkActionState = { status: 'idle' };
+
 export function SuggestionForm({
   resourceId,
   projectSlug,
   components,
 }: {
   resourceId: string;
-  projectSlug: string;
+  projectSlug?: string;
   components: ComponentOption[];
 }) {
   const [ignored, setIgnored] = useState(false);
+  const [state, formAction, pending] = useActionState(
+    confirmResourceLink,
+    INITIAL_STATE,
+  );
 
   if (ignored) {
     return (
@@ -34,7 +43,7 @@ export function SuggestionForm({
       <p className="text-sm text-[var(--color-mute)]">
         연결할 구성요소가 없습니다.{' '}
         <Link
-          href={`/projects/${projectSlug}/components/new`}
+          href={projectSlug ? `/projects/${projectSlug}/components/new` : '/projects'}
           className="text-[var(--color-info)] hover:underline"
         >
           구성요소 추가
@@ -45,7 +54,7 @@ export function SuggestionForm({
   }
 
   return (
-    <form action={confirmResourceLink} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="resourceId" value={resourceId} />
       <label className="text-xs text-[var(--color-mute)]">
         구성요소
@@ -61,7 +70,9 @@ export function SuggestionForm({
           ))}
         </select>
       </label>
-      <Button type="submit" variant="primary">확인</Button>
+      <Button type="submit" variant="primary" disabled={pending}>
+        {pending ? '연결 중…' : '확인'}
+      </Button>
       <Button
         type="button"
         variant="tertiary"
@@ -69,6 +80,18 @@ export function SuggestionForm({
       >
         무시
       </Button>
+      {state.message ? (
+        <p
+          role="status"
+          className={`w-full text-xs ${
+            state.status === 'success'
+              ? 'text-[var(--color-success)]'
+              : 'text-[var(--color-error)]'
+          }`}
+        >
+          {state.message}
+        </p>
+      ) : null}
     </form>
   );
 }

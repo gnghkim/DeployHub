@@ -20,6 +20,22 @@ describe('자원 화면 구성', () => {
     expect(page).toContain('Unlinked');
   });
 
+  it('이미 연결된 자원도 자원 행에서 다른 구성요소에 추가 연결할 수 있다', () => {
+    const page = source('./page.tsx');
+
+    expect(page).not.toMatch(/suggestMatches\(\s*unlinkedResources/);
+    expect(page).toContain('const componentOptions');
+    expect(page).toContain('components={componentOptions}');
+  });
+
+  it('각 기존 연결에 연결 해제 버튼이 있다', () => {
+    const page = source('./page.tsx');
+
+    expect(page).toContain('removeResourceLink');
+    expect(page).toContain('name="linkId"');
+    expect(page).toContain('연결 해제');
+  });
+
   it('프로젝트 상세에 연결된 자원 섹션이 있다', () => {
     const page = source('../projects/[slug]/page.tsx');
     expect(page).toContain('연결된 자원');
