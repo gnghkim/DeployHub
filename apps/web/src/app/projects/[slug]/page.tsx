@@ -1,13 +1,23 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getProjectBySlug } from '@deployhub/db';
+import { deleteComponent } from '../../../actions/components';
 import { archiveProject } from '../../../actions/projects';
 import { Topbar } from '../../../components/shell/topbar';
 import { Badge, type Tone } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
 import { Card } from '../../../components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../../../components/ui/table';
 import { db } from '../../../lib/db';
 import { ProjectForm } from '../project-form';
+import { ComponentForm } from './components/component-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,21 +68,71 @@ export default async function ProjectDetailPage({
 
         <Card>
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">구성요소</h3>
-            <span className="text-xs text-[var(--color-mute)]">{project.components.length}개</span>
+            <div className="flex items-center gap-3">
+              <h3 className="text-base font-medium text-[var(--color-ink)]">구성요소</h3>
+              <span className="text-xs text-[var(--color-mute)]">{project.components.length}개</span>
+            </div>
+            <Link
+              href={`/projects/${project.slug}/components/new`}
+              className="inline-flex h-9 items-center rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-surface-card)]"
+            >
+              구성요소 추가
+            </Link>
           </div>
           {project.components.length ? (
-            <ul className="mt-4 divide-y divide-[var(--color-hairline)]">
-              {project.components.map((component) => (
-                <li key={component.id} className="flex items-center justify-between py-3 text-sm">
-                  <span className="font-medium text-[var(--color-ink)]">{component.name}</span>
-                  <span className="text-[var(--color-mute)]">{component.componentType}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <Table className="mt-4">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>이름</TableHead>
+                    <TableHead>타입</TableHead>
+                    <TableHead>Framework</TableHead>
+                    <TableHead>Runtime</TableHead>
+                    <TableHead>Language</TableHead>
+                    <TableHead>중요도</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {project.components.map((component) => (
+                    <TableRow key={component.id}>
+                      <TableCell className="font-medium text-[var(--color-ink)]">
+                        {component.name}
+                      </TableCell>
+                      <TableCell>{component.componentType}</TableCell>
+                      <TableCell>{component.framework ?? '—'}</TableCell>
+                      <TableCell>{component.runtime ?? '—'}</TableCell>
+                      <TableCell>{component.language ?? '—'}</TableCell>
+                      <TableCell>{component.criticality}/5</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <div className="mt-6 space-y-3">
+                {project.components.map((component) => {
+                  const deleteAction = deleteComponent.bind(null, component.id);
+                  return (
+                    <details
+                      key={component.id}
+                      className="rounded-[var(--radius-card)] border border-[var(--color-hairline)] px-4 py-3"
+                    >
+                      <summary className="cursor-pointer text-sm font-medium text-[var(--color-ink)]">
+                        {component.name} 수정
+                      </summary>
+                      <div className="mt-5">
+                        <ComponentForm projectId={project.id} component={component} />
+                        <form action={deleteAction} className="mt-3">
+                          <Button type="submit" variant="tertiary">구성요소 삭제</Button>
+                        </form>
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            </>
           ) : (
             <p className="mt-4 text-sm text-[var(--color-mute)]">
-              아직 연결된 구성요소가 없습니다.
+              아직 등록된 구성요소가 없습니다.
             </p>
           )}
         </Card>
