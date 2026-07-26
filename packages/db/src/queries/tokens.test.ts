@@ -46,7 +46,7 @@ beforeEach(async () => {
 
 function issue(overrides: Partial<Parameters<typeof issueToken>[1]> = {}) {
   return issueToken(db, {
-    scope: 'project:register',
+    scope: 'project:draft:create',
     repositoryConstraint: 'ktgo/deployhub',
     expiresAt: new Date(Date.now() + 60_000),
     maxUses: 1,
@@ -62,7 +62,7 @@ describe('registration tokens', () => {
     await expect(consumeToken(db, issued.raw)).resolves.toEqual({
       ok: true,
       tokenId: issued.id,
-      scope: 'project:register',
+      scope: 'project:draft:create',
       repositoryConstraint: 'ktgo/deployhub',
     });
   });

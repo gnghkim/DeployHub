@@ -71,7 +71,7 @@ beforeEach(async () => {
 const issue = (
   overrides: Partial<Parameters<typeof issueToken>[1]> = {},
 ) => issueToken(db, {
-  scope: 'project:register',
+  scope: 'project:draft:create',
   expiresAt: new Date(Date.now() + 60_000),
   createdBy,
   ...overrides,

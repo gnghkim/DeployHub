@@ -101,7 +101,7 @@ export function createProjectDraftHandler(database: Db) {
     }
 
     const consumed = await consumeToken(database, rawToken);
-    if (!consumed.ok || consumed.scope !== 'project:register') {
+    if (!consumed.ok || consumed.scope !== 'project:draft:create') {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

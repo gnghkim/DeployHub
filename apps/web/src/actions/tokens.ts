@@ -44,7 +44,7 @@ export async function issueRegistrationToken(
     Date.now() + expiresInHours * 60 * 60 * 1_000,
   );
   const issued = await issueToken(db, {
-    scope: 'project:register',
+    scope: 'project:draft:create',
     repositoryConstraint: optionalText(
       formData.get('repositoryConstraint'),
     ),
