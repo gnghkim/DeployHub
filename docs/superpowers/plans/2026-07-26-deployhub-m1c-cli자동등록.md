@@ -694,6 +694,10 @@ Run: `pnpm typecheck && pnpm vitest run && pnpm --filter @deployhub/cli build`
 
 **Files:**
 - Create: `packages/cli/src/commands/{register,diff,sync,status}.ts`
+- Create: `apps/web/src/app/api/v1/projects/[slug]/manifest/route.ts`
+- Create: `apps/web/src/app/api/v1/projects/[slug]/status/route.ts`
+- Modify: `packages/db/src/queries/tokens.ts` (`verifyToken` 추가)
+- Modify: `apps/web/src/middleware.ts` (두 읽기 경로 제외)
 - Create: `packages/cli/src/commands/*.test.ts`
 - Create: `AGENTS.md`
 - Create: `deployhub.yaml` (DeployHub 자신의 manifest)
@@ -701,6 +705,12 @@ Run: `pnpm typecheck && pnpm vitest run && pnpm --filter @deployhub/cli build`
 
 **Interfaces:**
 - Consumes: Task 3 제출 API, Task 4 detector·schema-client
+
+**읽기 API 두 개를 함께 만든다.** 구축방안 43절이 `GET /api/v1/projects/:slug/manifest`를 규정하는데 이 계획서 초안이 파일 구조에서 빠뜨렸다. 읽기 API가 없으면 `diff`와 `status`는 대역 테스트에서만 동작하는 죽은 코드가 된다 — 있는 것처럼 보이지만 실제로는 안 되므로 안 만든 것보다 나쁘다.
+
+**토큰 의미:** 등록 토큰은 1회용인데 `diff`가 먼저 읽고 `register`가 쓰는 흐름에서 읽기가 토큰을 소비하면 등록을 못 한다. 그래서 `verifyToken`을 새로 둔다 — `consumeToken`과 같은 조건을 검사하지만 `used_count`를 증가시키지 않는다. 읽기는 `verifyToken`, 쓰기는 `consumeToken`이다. 10분 창 안에서 읽기를 여러 번 허용해도 노출되는 것은 프로젝트의 선언 정보뿐이고 비밀값이 아니다.
+
+두 라우트 모두 `Authorization: Bearer` 헤더로만 토큰을 받고, 토큰 없으면 DB 조회 전에 401, 제약 불일치는 403, 없는 slug는 404다. 응답에 `provider_accounts.encrypted_token` 같은 비밀값을 넣지 않는다. 미들웨어 matcher에서 **정확히 그 두 경로만** 제외한다 — `/api/v1/projects/*`를 와일드카드로 열지 마라.
 
 - [ ] **Step 1: 실패하는 명령 테스트 작성**
 
