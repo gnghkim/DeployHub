@@ -14,13 +14,17 @@ const isAuthenticatedPath = (pathname: string): boolean =>
   new RegExp(`^${matcher}$`).test(pathname);
 
 describe('middleware matcher', () => {
-  it('leaves only the manifest endpoints and Draft submission unauthenticated', () => {
+  it('leaves only the public API endpoints unauthenticated', () => {
     for (const pathname of [
       '/schemas/deployhub-v1.json',
       '/api/v1/manifest/schema',
       '/api/v1/manifest/template',
       '/api/v1/manifest/validate',
       '/api/v1/project-drafts',
+      '/api/v1/projects/deployhub/manifest',
+      '/api/v1/projects/deployhub/status',
+      '/api/v1/projects/slug-with-dashes/manifest/',
+      '/api/v1/projects/slug-with-dashes/status/',
     ]) {
       expect(isAuthenticatedPath(pathname), pathname).toBe(false);
     }
@@ -34,6 +38,10 @@ describe('middleware matcher', () => {
       '/api/v1/manifest/schema-private',
       '/api/v1/project-drafts-private',
       '/api/v1/project-drafts/draft-id',
+      '/api/v1/projects',
+      '/api/v1/projects/deployhub',
+      '/api/v1/projects/deployhub/manifest-private',
+      '/api/v1/projects/deployhub/status/private',
     ]) {
       expect(isAuthenticatedPath(pathname), pathname).toBe(true);
     }

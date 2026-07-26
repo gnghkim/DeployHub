@@ -119,6 +119,45 @@ describe('createCli', () => {
     });
   });
 
+  it.each(['diff', 'status'] as const)(
+    'passes DEPLOYHUB_TOKEN to the %s command',
+    async (command) => {
+      let received:
+        | { baseUrl: string; token: string; rootDir: string }
+        | undefined;
+      const cli = createCli({
+        cwd: () => 'C:/project',
+        output: () => undefined,
+        init: async () => undefined,
+        validate: async () => 0,
+        register: async () => 0,
+        sync: async () => 0,
+        diff: async (options) => {
+          if (command === 'diff') received = options;
+          return 0;
+        },
+        status: async (options) => {
+          if (command === 'status') received = options;
+          return 0;
+        },
+        getenv: (name) => {
+          if (name === 'DEPLOYHUB_URL') return 'https://hub.example';
+          if (name === 'DEPLOYHUB_TOKEN') return 'dh_reg_environment-only';
+          return undefined;
+        },
+        setExitCode: () => undefined,
+      });
+
+      await cli.parseAsync(['node', 'deployhub', command]);
+
+      expect(received).toMatchObject({
+        rootDir: 'C:/project',
+        baseUrl: 'https://hub.example',
+        token: 'dh_reg_environment-only',
+      });
+    },
+  );
+
   it('does not expose a --token option on any command', () => {
     const cli = createCli({
       cwd: () => 'C:/project',
@@ -168,6 +207,37 @@ describe('createCli', () => {
       cli.parseAsync(['node', 'deployhub', 'register', '--draft']),
     ).rejects.toThrow('DEPLOYHUB_TOKEN environment variable is required');
   });
+
+  it.each(['diff', 'status'] as const)(
+    'fails before invoking %s when DEPLOYHUB_TOKEN is absent',
+    async (command) => {
+      let invoked = false;
+      const cli = createCli({
+        cwd: () => 'C:/project',
+        output: () => undefined,
+        init: async () => undefined,
+        validate: async () => 0,
+        register: async () => 0,
+        sync: async () => 0,
+        diff: async () => {
+          invoked = true;
+          return 0;
+        },
+        status: async () => {
+          invoked = true;
+          return 0;
+        },
+        getenv: (name) =>
+          name === 'DEPLOYHUB_URL' ? 'https://hub.example' : undefined,
+        setExitCode: () => undefined,
+      });
+
+      await expect(
+        cli.parseAsync(['node', 'deployhub', command]),
+      ).rejects.toThrow('DEPLOYHUB_TOKEN environment variable is required');
+      expect(invoked).toBe(false);
+    },
+  );
 });
 
 describe('isMainModule', () => {

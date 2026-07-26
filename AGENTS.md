@@ -6,10 +6,17 @@
 사전 준비:
 
 - `DEPLOYHUB_URL`은 DeployHub 서버 URL로 설정되어 있어야 한다.
-- Draft 제출 시에만 `DEPLOYHUB_TOKEN`을 환경변수로 전달한다.
+- `DEPLOYHUB_TOKEN`은 명령 인자가 아닌 환경변수로만 전달한다.
 - 토큰, 사용자 비밀번호, Provider Secret 등 비밀값을 파일, 명령 인자,
   로그 또는 대화에 기록하지 않는다.
 - 먼저 `pnpm --filter @deployhub/cli build`로 CLI를 빌드한다.
+
+명령별 토큰 요구사항:
+
+| 명령 | `DEPLOYHUB_TOKEN` |
+|---|---|
+| `init`, `validate` (`--remote` 포함) | 불필요 |
+| `register --draft`, `sync --draft`, `diff`, `status` | 필수 |
 
 신규 프로젝트:
 

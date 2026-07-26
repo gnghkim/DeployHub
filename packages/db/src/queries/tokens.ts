@@ -25,6 +25,20 @@ export type ConsumeResult =
     tokenId: string;
     scope: string;
     repositoryConstraint: string | null;
+    projectSlugConstraint: string | null;
+  }
+  | {
+    ok: false;
+    reason: 'not_found' | 'expired' | 'exhausted' | 'revoked';
+  };
+
+export type VerifyResult =
+  | {
+    ok: true;
+    tokenId: string;
+    scope: string;
+    repositoryConstraint: string | null;
+    projectSlugConstraint: string | null;
   }
   | {
     ok: false;
@@ -58,6 +72,7 @@ export async function issueToken(
 
 export async function consumeToken(db: Db, raw: string): Promise<ConsumeResult> {
   const tokenHash = hashToken(raw);
+  const now = new Date();
   const [consumed] = await db
     .update(registrationTokens)
     .set({
@@ -66,19 +81,53 @@ export async function consumeToken(db: Db, raw: string): Promise<ConsumeResult> 
     .where(and(
       eq(registrationTokens.tokenHash, tokenHash),
       lt(registrationTokens.usedCount, registrationTokens.maxUses),
-      gt(registrationTokens.expiresAt, new Date()),
+      gt(registrationTokens.expiresAt, now),
       isNull(registrationTokens.revokedAt),
     ))
     .returning({
       tokenId: registrationTokens.id,
       scope: registrationTokens.scope,
       repositoryConstraint: registrationTokens.repositoryConstraint,
+      projectSlugConstraint: registrationTokens.projectSlugConstraint,
     });
 
   if (consumed) {
     return { ok: true, ...consumed };
   }
 
+  return tokenFailureResult(db, tokenHash, now);
+}
+
+export async function verifyToken(db: Db, raw: string): Promise<VerifyResult> {
+  const tokenHash = hashToken(raw);
+  const now = new Date();
+  const [verified] = await db
+    .select({
+      tokenId: registrationTokens.id,
+      scope: registrationTokens.scope,
+      repositoryConstraint: registrationTokens.repositoryConstraint,
+      projectSlugConstraint: registrationTokens.projectSlugConstraint,
+    })
+    .from(registrationTokens)
+    .where(and(
+      eq(registrationTokens.tokenHash, tokenHash),
+      lt(registrationTokens.usedCount, registrationTokens.maxUses),
+      gt(registrationTokens.expiresAt, now),
+      isNull(registrationTokens.revokedAt),
+    ));
+
+  if (verified) {
+    return { ok: true, ...verified };
+  }
+
+  return tokenFailureResult(db, tokenHash, now);
+}
+
+async function tokenFailureResult(
+  db: Db,
+  tokenHash: string,
+  now: Date,
+): Promise<Extract<ConsumeResult, { ok: false }>> {
   const [token] = await db
     .select({
       expiresAt: registrationTokens.expiresAt,
@@ -91,7 +140,7 @@ export async function consumeToken(db: Db, raw: string): Promise<ConsumeResult> 
 
   if (!token) return { ok: false, reason: 'not_found' };
   if (token.revokedAt) return { ok: false, reason: 'revoked' };
-  if (token.expiresAt <= new Date()) return { ok: false, reason: 'expired' };
+  if (token.expiresAt <= now) return { ok: false, reason: 'expired' };
   if (token.usedCount >= token.maxUses) return { ok: false, reason: 'exhausted' };
   return { ok: false, reason: 'not_found' };
 }
