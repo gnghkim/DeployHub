@@ -11,5 +11,7 @@ const { auth } = NextAuth(edgeAuthConfig);
 export default auth;
 
 export const config = {
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!api/auth(?:/|$)|api/v1/manifest/(?:schema|template|validate)/?$|schemas/deployhub-v1[.]json/?$|_next/static|_next/image|favicon[.]ico$).*)',
+  ],
 };
