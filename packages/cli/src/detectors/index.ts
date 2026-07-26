@@ -1,5 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import type { Manifest } from '@deployhub/manifest';
 import { detectDatabaseComponent } from './database';
 import { detectComposeServices, hasDockerfile } from './docker';
@@ -46,6 +46,11 @@ export const DETECTION_RULES: readonly NodeDetectionRule[] = [
   },
 ];
 
+type ProjectNameDetection = {
+  name: string;
+  source: FieldSource;
+};
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path);
@@ -53,6 +58,102 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function packageProjectName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const declaredName = value.trim();
+  if (!declaredName) return undefined;
+  const scoped = declaredName.match(/^@[^/]+\/(.+)$/);
+  const name = (scoped?.[1] ?? declaredName).trim();
+  return name || undefined;
+}
+
+function pyprojectName(
+  contents: string,
+): { name: string; section: 'project' | 'tool.poetry' } | undefined {
+  let section = '';
+  let projectName: string | undefined;
+  let poetryName: string | undefined;
+
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const sectionMatch = line.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      section = sectionMatch[1] ?? '';
+      continue;
+    }
+    if (section !== 'project' && section !== 'tool.poetry') continue;
+    const nameMatch = line.match(/^name\s*=\s*(["'])(.*?)\1\s*(?:#.*)?$/);
+    const name = nameMatch?.[2]?.trim();
+    if (!name) continue;
+    if (section === 'project') projectName = name;
+    if (section === 'tool.poetry') poetryName = name;
+  }
+
+  if (projectName) return { name: projectName, section: 'project' };
+  if (poetryName) return { name: poetryName, section: 'tool.poetry' };
+  return undefined;
+}
+
+async function detectProjectName(
+  rootDir: string,
+): Promise<ProjectNameDetection | undefined> {
+  const packagePath = join(rootDir, 'package.json');
+  if (await exists(packagePath)) {
+    const packageJson = JSON.parse(
+      await readFile(packagePath, 'utf8'),
+    ) as { name?: unknown };
+    const declaredName =
+      typeof packageJson.name === 'string' ? packageJson.name.trim() : '';
+    const name = packageProjectName(packageJson.name);
+    if (name) {
+      return {
+        name,
+        source: {
+          origin: 'detected',
+          evidence: `package.json name=${declaredName}`,
+          source: 'package.json',
+        },
+      };
+    }
+  }
+
+  const pyprojectPath = join(rootDir, 'pyproject.toml');
+  if (await exists(pyprojectPath)) {
+    const detected = pyprojectName(await readFile(pyprojectPath, 'utf8'));
+    if (detected) {
+      return {
+        name: detected.name,
+        source: {
+          origin: 'detected',
+          evidence: `pyproject.toml [${detected.section}] name=${detected.name}`,
+          source: 'pyproject.toml',
+        },
+      };
+    }
+  }
+
+  const directoryName = basename(resolve(rootDir)).trim();
+  if (!directoryName) return undefined;
+  return {
+    name: directoryName,
+    source: {
+      origin: 'inferred',
+      evidence: `directory name=${directoryName}`,
+      source: '.',
+    },
+  };
+}
+
+function normalizeProjectSlug(name: string): string | undefined {
+  const slug = name
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? slug : undefined;
 }
 
 async function detectPythonComponent(
@@ -156,6 +257,16 @@ export async function detectProject(
   }
 
   const repository = await detectGitHubRepository(rootDir);
+  const projectName = await detectProjectName(rootDir);
+  const projectSlug = projectName
+    ? normalizeProjectSlug(projectName.name)
+    : undefined;
+  const metadata = projectName
+    ? ({
+        name: projectName.name,
+        ...(projectSlug ? { slug: projectSlug } : {}),
+      } as Manifest['metadata'])
+    : undefined;
   const components = detections.map(({ component }) => component);
   const spec = {
     components,
@@ -173,12 +284,20 @@ export async function detectProject(
     manifest: {
       apiVersion: 'deployhub.io/v1',
       kind: 'Project',
+      ...(metadata ? { metadata } : {}),
       spec,
     },
     fieldSources: {
       '$project': {
-        'metadata.name': { origin: 'unknown' },
-        'metadata.slug': { origin: 'unknown' },
+        'metadata.name': projectName?.source ?? { origin: 'unknown' },
+        'metadata.slug':
+          projectName && projectSlug
+            ? {
+                origin: projectName.source.origin,
+                evidence: `normalized from name=${projectName.name}`,
+                source: projectName.source.source,
+              }
+            : { origin: 'unknown' },
         'spec.lifecycle': { origin: 'unknown' },
         'repository.slug': repository
           ? {
