@@ -1,6 +1,6 @@
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { createDb, type Db } from '../../src/index.js';
+import { createDb, type Db } from '../../src/index';
 
 export type TestDb = { db: Db; connectionString: string };
 

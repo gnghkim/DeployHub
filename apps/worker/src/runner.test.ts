@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import { enqueue, schema, type Db } from '@deployhub/db';
-import { createRunner } from './runner.js';
+import { createRunner } from './runner';
 
 let db: Db;
 let stop: () => Promise<void>;

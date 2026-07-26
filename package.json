@@ -2,7 +2,9 @@
   "name": "deployhub",
   "private": true,
   "packageManager": "pnpm@9.15.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
@@ -11,7 +13,7 @@
   },
   "devDependencies": {
     "@types/node": "26.1.1",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vitest": "4.1.10"
   }
 }

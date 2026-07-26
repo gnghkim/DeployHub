@@ -1,8 +1,8 @@
 import {
   boolean, index, jsonb, pgTable, text, timestamp, unique, uuid,
 } from 'drizzle-orm/pg-core';
-import { linkedBy, providerType, relationType, resourceType } from './enums.js';
-import { components } from './projects.js';
+import { linkedBy, providerType, relationType, resourceType } from './enums';
+import { components } from './projects';
 
 export const providerAccounts = pgTable(
   'provider_accounts',

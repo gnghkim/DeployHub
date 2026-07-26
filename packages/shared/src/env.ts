@@ -5,6 +5,10 @@ export type NodeEnv = (typeof NODE_ENVS)[number];
 export type Env = {
   DATABASE_URL: string;
   NODE_ENV: NodeEnv;
+  AUTH_SECRET: string;
+  AUTH_GITHUB_ID: string;
+  AUTH_GITHUB_SECRET: string;
+  ALLOWED_GITHUB_LOGINS: string | undefined;
 };
 
 function requireString(
@@ -28,5 +32,9 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
   return {
     DATABASE_URL: requireString(source, 'DATABASE_URL'),
     NODE_ENV: rawNodeEnv as NodeEnv,
+    AUTH_SECRET: requireString(source, 'AUTH_SECRET'),
+    AUTH_GITHUB_ID: requireString(source, 'AUTH_GITHUB_ID'),
+    AUTH_GITHUB_SECRET: requireString(source, 'AUTH_GITHUB_SECRET'),
+    ALLOWED_GITHUB_LOGINS: source.ALLOWED_GITHUB_LOGINS,
   };
 }

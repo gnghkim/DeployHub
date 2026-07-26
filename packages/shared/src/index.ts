@@ -1,2 +1,2 @@
-export { loadEnv } from './env.js';
-export type { Env, NodeEnv } from './env.js';
+export { loadEnv } from './env';
+export type { Env, NodeEnv } from './env';
