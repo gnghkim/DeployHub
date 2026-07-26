@@ -3,7 +3,27 @@
 > Hostinger VPS + 가비아 DNS + Docker Compose 기준.
 > 모든 명령은 검증된 것만 실었다. 로컬 compose 스택에서 실제로 실행해 확인했다.
 
-이 문서의 `<...>` 자리표시자를 실제 값으로 바꿔 쓴다.
+이 문서의 `<...>` 자리표시자를 실제 값으로 바꿔 쓴다. **실제 도메인과 IP는 이 저장소에 적지 않는다** — 공개 저장소이므로 인프라 구성이 영구히 노출된다.
+
+## 전제: 공용 서버
+
+배포 대상 VPS는 **전용 서버가 아니다.** 여러 프로젝트가 함께 돌고, 하나의 공용 Caddy가 80/443을 점유한 채 `web` 네트워크에서 각 컨테이너로 프록시한다.
+
+```
+공용 Caddy (caddy:2, 포트 80/443, 네트워크 web)
+ ├─ <다른 서비스들>
+ └─ hub.<도메인>  →  deployhub-web:3000     ← 우리가 추가할 블록
+```
+
+따라서 이 저장소의 compose는 아래와 같이 동작한다.
+
+- **자체 Caddy를 띄우지 않는다.** `standalone` 프로파일 뒤에 있어 기본으로 뜨지 않는다. 함께 띄우면 포트 충돌로 **기존 서비스가 전부 죽는다.**
+- **호스트 포트를 하나도 열지 않는다.** 외부 노출은 공용 Caddy가 전담한다.
+- `deployhub-web`이 내부망(`deployhub`)과 공유망(`web`)에 모두 붙는다. 전자는 postgres 접근용, 후자는 공용 Caddy가 닿기 위함이다.
+
+전용 서버에 새로 설치한다면 `compose.yml`의 `web` 네트워크에서 `external: true`를 지우고 `--profile standalone`으로 자체 Caddy를 띄운다.
+
+**레이트리밋은 적용되지 않는다.** 공용 Caddy가 stock 이미지라 모듈이 없다. 구축방안 R12에 부채로 기록했고 되살리는 두 경로도 거기 있다.
 
 ---
 
@@ -77,17 +97,15 @@ docker --version && docker compose version
 curl -fsSL https://get.docker.com | sh
 ```
 
-방화벽 — **80/443 만 연다.** PostgreSQL 5432 를 열면 안 된다.
+방화벽 — 공용 서버에는 이미 다른 서비스가 80/443 을 쓰고 있으므로 보통 열려 있다. 상태만 확인한다.
 
 ```bash
-ufw allow 22/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw --force enable
-ufw status numbered
+sudo ufw status numbered
 ```
 
-출력에 `5432` 가 보이면 잘못된 것이다.
+**`5432` 나 다른 DB 포트가 열려 있으면 안 된다.** 우리 compose 는 호스트 포트를 하나도 열지 않으므로 추가 작업은 필요 없다.
+
+`sudo` 가 비밀번호를 요구하면 이 명령만 직접 실행한다.
 
 ---
 
@@ -160,9 +178,9 @@ chmod 600 .env
 docker compose --env-file .env -f docker/compose.yml build
 ```
 
-두 이미지가 만들어진다 — `deployhub:local`(web·worker 공용)과 `deployhub-caddy:local`(rate_limit 모듈 포함).
+`deployhub:local` 하나가 만들어진다. web 과 worker 가 이 이미지를 공유하고 `command` 로 갈린다. 자체 Caddy 이미지는 `standalone` 프로파일에 있어 여기서 빌드되지 않는다.
 
-수 분 걸린다. 마지막에 `Built` 두 줄이 보이면 성공이다.
+수 분 걸린다. 마지막에 `Built` 가 보이면 성공이다.
 
 ---
 
@@ -218,20 +236,60 @@ docker compose --env-file .env -f docker/compose.yml exec web \
 
 `status 307` 이 정상이다 — 미인증이라 로그인으로 보내는 것이다.
 
----
-
-## 10. Caddy 기동 — 여기서 인증서가 발급된다
-
-**1단계의 DNS 전파가 끝났는지 먼저 확인한다.**
+공용 Caddy 가 있는 `web` 네트워크에서도 닿는지 확인한다. 이것이 되어야 10단계가 동작한다.
 
 ```bash
-docker compose --env-file .env -f docker/compose.yml up -d caddy
-docker compose --env-file .env -f docker/compose.yml logs -f caddy
+docker run --rm --network web curlimages/curl:latest \
+  -s -o /dev/null -w '%{http_code}\n' http://deployhub-web:3000/
 ```
 
-`certificate obtained successfully` 가 보이면 성공이다. `Ctrl+C` 로 로그를 빠져나온다.
+`307` 이 나와야 한다.
 
-발급이 실패하면 대부분 DNS 문제다. 로그에 나오는 도메인이 `.env` 의 `HUB_DOMAIN` 과 같은지, 그 도메인이 VPS IP 를 가리키는지 확인한다.
+---
+
+## 10. 공용 Caddy 에 site 블록 추가 — 여기서 인증서가 발급된다
+
+**1단계의 DNS 전파가 끝났는지 먼저 확인한다.** 끝나기 전에 추가하면 인증서 발급이 실패한다.
+
+공용 Caddyfile 을 백업하고 블록을 덧붙인다.
+
+```bash
+cp /opt/caddy/Caddyfile /opt/caddy/Caddyfile.bak.$(date +%F-%H%M)
+
+cat >> /opt/caddy/Caddyfile <<'EOF'
+
+# BEGIN DEPLOYHUB
+hub.<도메인> {
+	encode zstd gzip
+	reverse_proxy deployhub-web:3000
+}
+# END DEPLOYHUB
+EOF
+```
+
+문법을 먼저 검증한다. **검증 없이 reload 하면 기존 서비스가 함께 멈출 수 있다.**
+
+```bash
+docker exec caddy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+```
+
+`Valid configuration` 이 나오면 무중단으로 적용한다.
+
+```bash
+docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+docker logs caddy-caddy-1 --tail 30
+```
+
+`certificate obtained successfully` 가 보이면 성공이다.
+
+발급이 실패하면 대부분 DNS 문제다. 블록의 도메인이 `.env` 의 `HUB_DOMAIN` 과 같은지, 그 도메인이 VPS IP 를 가리키는지 확인한다.
+
+되돌리려면 백업을 복원하고 reload 한다.
+
+```bash
+cp /opt/caddy/Caddyfile.bak.<타임스탬프> /opt/caddy/Caddyfile
+docker exec caddy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+```
 
 ---
 
@@ -260,7 +318,7 @@ curl -sk -o /dev/null -w "%{http_code}\n" https://<VPS-IP>/
 docker compose --env-file .env -f docker/compose.yml ps --format "{{.Service}}\t{{.Ports}}"
 ```
 
-`caddy` 에만 `0.0.0.0:80`·`0.0.0.0:443` 이 보이고 나머지는 비어 있어야 한다.
+**모든 줄이 비어 있어야 한다.** 우리 스택은 호스트 포트를 열지 않는다. 80/443 은 공용 Caddy 가 점유하며 그것은 이 compose 소관이 아니다.
 
 ---
 

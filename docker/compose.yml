@@ -32,7 +32,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [deployhub]
+    # deployhub: postgres 접근용 내부망
+    # web: 공용 Caddy 가 이 컨테이너에 닿기 위한 공유망
+    networks: [deployhub, web]
     labels:
       deployhub.project: "deployhub"
       deployhub.component: "web"
@@ -73,6 +75,13 @@ services:
         condition: service_healthy
     networks: [deployhub]
 
+  # 전용 서버에서만 쓴다. 기본으로 뜨지 않는다.
+  #   docker compose ... --profile standalone up -d caddy
+  #
+  # 실제 배포 대상 VPS 에는 이미 공용 Caddy 가 80/443 을 점유하고 web
+  # 네트워크에서 여러 프로젝트를 프록시하고 있다. 이 서비스를 함께 띄우면
+  # 포트 충돌로 기존 서비스가 죽는다. 공용 서버에서는 /opt/caddy/Caddyfile
+  # 에 site 블록을 추가해 deployhub-web:3000 으로 프록시한다.
   caddy:
     image: deployhub-caddy:${TAG:-local}
     build:
@@ -80,6 +89,7 @@ services:
       dockerfile: docker/Caddyfile.Dockerfile
     container_name: deployhub-caddy
     restart: unless-stopped
+    profiles: ["standalone"]
     ports:
       - "80:80"
       - "443:443"
@@ -99,4 +109,10 @@ volumes:
   caddy_config:
 
 networks:
+  # 내부 전용. postgres 와 앱만 붙는다. 외부에서 닿지 못한다.
   deployhub:
+  # 공용 Caddy 가 쓰는 기존 네트워크. 서버에 이미 존재한다.
+  # 전용 서버에 새로 설치한다면 external 을 지우고 standalone 프로파일로
+  # 자체 Caddy 를 띄운다.
+  web:
+    external: true
