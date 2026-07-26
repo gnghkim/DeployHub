@@ -191,6 +191,8 @@ html, body {
 
 **그림자를 쓰지 않는다.** 깊이는 Surface 단계와 1px hairline으로만 표현한다(구축방안 17.4).
 
+> **TDD 순서 주의:** 아래 Step 3의 테스트를 Step 2보다 **먼저** 작성해도 좋다. Step 2가 CSS를 이미 만들어 놓으면 Step 4의 RED 확인이 성립하지 않는다. 이 계획서의 M1b Task 1은 실제 실행에서 이 순서 문제가 드러났으므로, 뒤따르는 Task에서는 테스트를 먼저 쓰고 구현을 나중에 한다.
+
 - [ ] **Step 3: 실패하는 토큰 테스트 작성**
 
 토큰이 조용히 바뀌는 것을 막는다. 색상은 상태 표시의 근거이므로 회귀하면 화면 전체의 의미가 흔들린다.
@@ -247,11 +249,11 @@ Expected: FAIL — `globals.css` 가 없거나 토큰이 비어 있음
 import type { ReactNode } from 'react';
 
 const TONES = {
-  success: 'text-[--color-success]',
-  warning: 'text-[--color-warning]',
-  error: 'text-[--color-error]',
-  info: 'text-[--color-info]',
-  neutral: 'text-[--color-mute]',
+  success: 'text-[var(--color-success)]',
+  warning: 'text-[var(--color-warning)]',
+  error: 'text-[var(--color-error)]',
+  info: 'text-[var(--color-info)]',
+  neutral: 'text-[var(--color-mute)]',
 } as const;
 
 export type Tone = keyof typeof TONES;
@@ -259,7 +261,7 @@ export type Tone = keyof typeof TONES;
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex items-center rounded-[--radius-badge] border border-[--color-hairline] bg-[--color-surface-elevated] px-1.5 py-0.5 text-xs ${TONES[tone]}`}
+      className={`inline-flex items-center rounded-[var(--radius-badge)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-1.5 py-0.5 text-xs ${TONES[tone]}`}
     >
       {children}
     </span>
