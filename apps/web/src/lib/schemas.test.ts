@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectInputSchema } from './schemas';
+import { componentInputSchema, projectInputSchema } from './schemas';
 
 const valid = {
   name: 'LinkVault',
@@ -38,5 +38,24 @@ describe('projectInputSchema', () => {
 
   it('빈 문자열 repository 는 undefined 로 정규화한다', () => {
     expect(projectInputSchema.parse({ ...valid, repository: '' }).repository).toBeUndefined();
+  });
+});
+
+describe('componentInputSchema', () => {
+  const valid = { name: 'web', slug: 'web', componentType: 'frontend', criticality: 3 };
+
+  it('유효한 입력을 통과시킨다', () => {
+    expect(componentInputSchema.parse(valid)).toMatchObject(valid);
+  });
+
+  it('component_type 은 스키마 enum 11종만 허용한다', () => {
+    expect(() => componentInputSchema.parse({ ...valid, componentType: 'gateway' })).toThrow();
+    expect(componentInputSchema.parse({ ...valid, componentType: 'worker' }).componentType).toBe('worker');
+  });
+
+  it('framework·runtime·language 는 선택이며 빈 문자열은 undefined 가 된다', () => {
+    const parsed = componentInputSchema.parse({ ...valid, framework: '', runtime: 'nodejs' });
+    expect(parsed.framework).toBeUndefined();
+    expect(parsed.runtime).toBe('nodejs');
   });
 });

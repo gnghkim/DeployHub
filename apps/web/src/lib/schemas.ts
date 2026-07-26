@@ -20,3 +20,20 @@ export const projectInputSchema = z.object({
 });
 
 export type ProjectInput = z.infer<typeof projectInputSchema>;
+
+export const COMPONENT_TYPES = [
+  'frontend', 'backend', 'api', 'worker', 'scheduler', 'database',
+  'authentication', 'storage', 'cache', 'queue', 'monitoring',
+] as const;
+
+export const componentInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  slug: z.string().regex(SLUG, 'slug는 소문자·숫자·하이픈만 사용합니다.'),
+  componentType: z.enum(COMPONENT_TYPES),
+  framework: z.preprocess(emptyToUndefined, z.string().max(50).optional()),
+  runtime: z.preprocess(emptyToUndefined, z.string().max(50).optional()),
+  language: z.preprocess(emptyToUndefined, z.string().max(50).optional()),
+  criticality: z.coerce.number().int().min(1).max(5),
+});
+
+export type ComponentInput = z.infer<typeof componentInputSchema>;
