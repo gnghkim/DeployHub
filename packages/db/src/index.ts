@@ -3,3 +3,4 @@ export type { Db } from './client';
 export * as schema from './schema/index';
 export * from './jobs/index';
 export * from './queries/projects';
+export * from './queries/resources';

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getProjectBySlug } from '@deployhub/db';
+import { getProjectBySlug, listProjectResources } from '@deployhub/db';
 import { deleteComponent } from '../../../actions/components';
 import { archiveProject } from '../../../actions/projects';
 import { Topbar } from '../../../components/shell/topbar';
@@ -36,6 +36,7 @@ export default async function ProjectDetailPage({
   const { slug } = await params;
   const project = await getProjectBySlug(db, slug);
   if (!project) notFound();
+  const linkedResources = await listProjectResources(db, project.id);
 
   const archiveAction = archiveProject.bind(null, project.id);
 
@@ -133,6 +134,49 @@ export default async function ProjectDetailPage({
           ) : (
             <p className="mt-4 text-sm text-[var(--color-mute)]">
               아직 등록된 구성요소가 없습니다.
+            </p>
+          )}
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-3">
+            <h3 className="text-base font-medium text-[var(--color-ink)]">
+              연결된 자원
+            </h3>
+            <span className="text-xs text-[var(--color-mute)]">
+              {linkedResources.length}개
+            </span>
+          </div>
+          {linkedResources.length > 0 ? (
+            <Table className="mt-4">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>자원</TableHead>
+                  <TableHead>타입</TableHead>
+                  <TableHead>구성요소</TableHead>
+                  <TableHead>환경</TableHead>
+                  <TableHead>연결 근거</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {linkedResources.map((resource) => (
+                  <TableRow key={resource.linkId}>
+                    <TableCell className="font-medium text-[var(--color-ink)]">
+                      {resource.externalId}
+                    </TableCell>
+                    <TableCell>{resource.resourceType}</TableCell>
+                    <TableCell>{resource.componentName}</TableCell>
+                    <TableCell>{resource.environment}</TableCell>
+                    <TableCell>
+                      <Badge>{resource.linkedBy}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--color-mute)]">
+              아직 연결된 자원이 없습니다.
             </p>
           )}
         </Card>
