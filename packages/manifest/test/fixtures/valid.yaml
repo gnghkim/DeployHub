@@ -1,0 +1,10 @@
+apiVersion: deployhub.io/v1
+kind: Project
+metadata:
+  name: DeployHub
+  slug: deployhub
+spec:
+  lifecycle: production
+  components:
+    - name: web
+      type: frontend

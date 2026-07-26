@@ -26,6 +26,9 @@ importers:
       '@deployhub/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@deployhub/manifest':
+        specifier: workspace:*
+        version: link:../../packages/manifest
       '@deployhub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -107,6 +110,15 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+
+  packages/manifest:
+    dependencies:
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/shared: {}
 
