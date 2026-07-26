@@ -33,6 +33,7 @@ describe('runInit', () => {
     const result = await runInit({
       rootDir,
       detect: true,
+      schemaUrl: 'https://hub.example/schemas/deployhub-v1.json',
       output: (line) => output.push(line),
     });
 
@@ -42,7 +43,7 @@ describe('runInit', () => {
     );
     expect(result.path).toBe(join(rootDir, 'deployhub.yaml'));
     expect(manifestText.split(/\r?\n/, 1)[0]).toBe(
-      '# yaml-language-server: $schema=https://hub.nolzza.net/schemas/deployhub-v1.json',
+      '# yaml-language-server: $schema=https://hub.example/schemas/deployhub-v1.json',
     );
     expect(manifestText).toContain('name: web');
     expect(manifestText).toContain('name: database');
@@ -61,6 +62,7 @@ describe('runInit', () => {
       runInit({
         rootDir,
         detect: true,
+        schemaUrl: 'https://hub.example/schemas/deployhub-v1.json',
         output: () => undefined,
       }),
     ).rejects.toThrow('already exists; use --force to overwrite it');
@@ -76,6 +78,7 @@ describe('runInit', () => {
       rootDir,
       detect: true,
       force: true,
+      schemaUrl: 'https://hub.example/schemas/deployhub-v1.json',
       output: () => undefined,
     });
 
@@ -89,6 +92,7 @@ describe('runInit', () => {
       runInit({
         rootDir: await projectCopy(),
         detect: false,
+        schemaUrl: 'https://hub.example/schemas/deployhub-v1.json',
         output: () => undefined,
       }),
     ).rejects.toThrow('deployhub init currently requires --detect');

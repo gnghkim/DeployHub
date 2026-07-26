@@ -7,7 +7,7 @@
     "deployhub": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --out-dir dist --target node22",
+    "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
