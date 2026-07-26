@@ -53,6 +53,26 @@ services:
       deployhub.component: "worker"
       deployhub.environment: "production"
 
+  # 마이그레이션 전용. 평소에는 뜨지 않고 아래로만 실행한다.
+  #   docker compose --env-file .env -f docker/compose.yml --profile tools run --rm migrate
+  #
+  # build 스테이지를 쓰는 이유는 drizzle-kit 이 devDependency 라 runtime
+  # 스테이지에는 없기 때문이다. postgres 는 호스트 포트를 열지 않으므로
+  # 반드시 deployhub 네트워크 안에서 실행해야 한다.
+  migrate:
+    image: deployhub-migrate:${TAG:-local}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: build
+    profiles: ["tools"]
+    command: ["pnpm", "--filter", "@deployhub/db", "exec", "drizzle-kit", "migrate"]
+    env_file: [../.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [deployhub]
+
   caddy:
     image: deployhub-caddy:${TAG:-local}
     build:
