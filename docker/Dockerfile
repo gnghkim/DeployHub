@@ -24,6 +24,11 @@ RUN pnpm typecheck \
 
 FROM base AS runtime
 ENV NODE_ENV=production
+# Next.js standalone 은 HOSTNAME 환경변수에 바인딩한다. Docker 는 이 값을
+# 컨테이너 ID 로 설정하므로 그대로 두면 첫 번째 네트워크의 IP 하나에만
+# 리슨한다. web 컨테이너는 내부망(deployhub)과 공유망(web) 두 곳에 붙으므로
+# 공용 Caddy 가 있는 쪽에서 접근이 되지 않는다. 모든 인터페이스에 바인딩한다.
+ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/apps/web/.next/standalone ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/worker/dist ./apps/worker/dist
