@@ -4,19 +4,26 @@ import {
 } from 'drizzle-orm/pg-core';
 import { componentType, projectLifecycle, projectStatus } from './enums';
 
-export const projects = pgTable('projects', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  slug: text('slug').notNull().unique(),
-  description: text('description'),
-  status: projectStatus('status').notNull().default('active'),
-  lifecycle: projectLifecycle('lifecycle').notNull().default('development'),
-  importance: smallint('importance').notNull().default(3),
-  owner: text('owner'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  archivedAt: timestamp('archived_at', { withTimezone: true }),
-});
+export const projects = pgTable(
+  'projects',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull().unique(),
+    description: text('description'),
+    status: projectStatus('status').notNull().default('active'),
+    lifecycle: projectLifecycle('lifecycle').notNull().default('development'),
+    importance: smallint('importance').notNull().default(3),
+    owner: text('owner'),
+    repository: text('repository'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('projects_repository_idx').on(t.repository),
+  ],
+);
 
 export const components = pgTable(
   'components',
