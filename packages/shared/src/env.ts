@@ -9,6 +9,7 @@ export type Env = {
   AUTH_GITHUB_ID: string;
   AUTH_GITHUB_SECRET: string;
   ALLOWED_GITHUB_LOGINS: string | undefined;
+  ENCRYPTION_KEY: string;
 };
 
 function requireString(
@@ -36,5 +37,6 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
     AUTH_GITHUB_ID: requireString(source, 'AUTH_GITHUB_ID'),
     AUTH_GITHUB_SECRET: requireString(source, 'AUTH_GITHUB_SECRET'),
     ALLOWED_GITHUB_LOGINS: source.ALLOWED_GITHUB_LOGINS,
+    ENCRYPTION_KEY: requireString(source, 'ENCRYPTION_KEY'),
   };
 }

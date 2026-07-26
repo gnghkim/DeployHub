@@ -1,0 +1,13 @@
+{
+  "id": 123456789,
+  "name": "deployhub",
+  "full_name": "example/deployhub",
+  "private": true,
+  "html_url": "https://github.com/example/deployhub",
+  "description": "Self-hosted deployment inventory",
+  "default_branch": "main",
+  "topics": ["deployment", "inventory"],
+  "archived": false,
+  "pushed_at": "2026-07-20T10:00:00Z",
+  "language": "TypeScript"
+}
