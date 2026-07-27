@@ -35,6 +35,7 @@ type MatchContext = {
   resourceId: string;
   externalId: string;
   resourceName: string;
+  resourceType?: 'github_repository' | 'docker_container' | 'vercel_project';
 };
 
 function mockMatchContext(context: MatchContext) {
@@ -51,6 +52,7 @@ function mockMatchContext(context: MatchContext) {
       resourceId: context.resourceId,
       externalId: context.externalId,
       resourceName: context.resourceName,
+      resourceType: context.resourceType ?? 'github_repository',
     },
   ]);
 
@@ -157,6 +159,26 @@ describe('자원 연결 Server Action', () => {
       resourceId: 'resource-id',
       externalId: 'ktgo/workwiki',
       resourceName: 'workwiki',
+    });
+
+    await confirmResourceLink(emptyState, linkFormData());
+
+    expect(mocks.values).toHaveBeenCalledWith(
+      expect.objectContaining({ linkedBy: 'user' }),
+    );
+  });
+
+  it('Docker 자원을 사람이 고르면 저장소 문자열이 같아도 user 근거로 저장한다', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    mockMatchContext({
+      componentId: 'component-id',
+      projectId: 'project-id',
+      projectSlug: 'deployhub',
+      repository: 'container-deployhub-web',
+      resourceId: 'resource-id',
+      externalId: 'container-deployhub-web',
+      resourceName: 'deployhub-web',
+      resourceType: 'docker_container',
     });
 
     await confirmResourceLink(emptyState, linkFormData());

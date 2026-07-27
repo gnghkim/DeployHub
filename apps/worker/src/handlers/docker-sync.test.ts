@@ -77,6 +77,187 @@ function collector(
 }
 
 describe('Docker sync handler', () => {
+  it('links only exact manifest or label targets and preserves user decisions', async () => {
+    const [project] = await db.insert(schema.projects).values({
+      name: 'DeployHub',
+      slug: 'deployhub',
+    }).returning();
+    const insertedComponents = await db.insert(schema.components).values([
+      {
+        projectId: project!.id,
+        name: 'web',
+        slug: 'web',
+        componentType: 'frontend',
+        provider: 'hostinger',
+        containerName: 'deployhub-web',
+      },
+      {
+        projectId: project!.id,
+        name: 'user-target',
+        slug: 'user-target',
+        componentType: 'worker',
+        provider: 'hostinger',
+        containerName: 'deployhub-user',
+      },
+      {
+        projectId: project!.id,
+        name: 'chosen-by-user',
+        slug: 'chosen-by-user',
+        componentType: 'worker',
+      },
+      {
+        projectId: project!.id,
+        name: 'conflict-manifest',
+        slug: 'conflict-manifest',
+        componentType: 'worker',
+        containerName: 'deployhub-conflict',
+      },
+      {
+        projectId: project!.id,
+        name: 'conflict-label',
+        slug: 'conflict-label',
+        componentType: 'worker',
+      },
+      {
+        projectId: project!.id,
+        name: 'label-only',
+        slug: 'label-only',
+        componentType: 'worker',
+      },
+    ]).returning();
+    const componentBySlug = new Map(
+      insertedComponents.map((component) => [component.slug, component]),
+    );
+    const [userResource] = await db.insert(schema.resources).values({
+      provider: 'docker',
+      externalId: 'container-user',
+      resourceType: 'docker_container',
+      name: 'deployhub-user',
+      metadata: {},
+    }).returning();
+    await db.insert(schema.componentResources).values({
+      componentId: componentBySlug.get('chosen-by-user')!.id,
+      resourceId: userResource!.id,
+      environment: 'production',
+      relationType: 'deployed_to',
+      isPrimary: true,
+      linkedBy: 'user',
+    });
+    const [conflictResource] = await db.insert(schema.resources).values({
+      provider: 'docker',
+      externalId: 'container-conflict',
+      resourceType: 'docker_container',
+      name: 'deployhub-conflict',
+      metadata: {},
+    }).returning();
+    await db.insert(schema.componentResources).values({
+      componentId: componentBySlug.get('conflict-manifest')!.id,
+      resourceId: conflictResource!.id,
+      environment: 'production',
+      relationType: 'deployed_to',
+      isPrimary: true,
+      linkedBy: 'manifest',
+    });
+
+    const resources: ExternalResource[] = [
+      {
+        provider: 'docker',
+        externalId: 'container-exact',
+        resourceType: 'docker_container',
+        name: 'deployhub-web',
+        metadata: {},
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      {
+        provider: 'docker',
+        externalId: 'container-partial',
+        resourceType: 'docker_container',
+        name: 'deployhub-web-old',
+        metadata: {},
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      {
+        provider: 'docker',
+        externalId: 'container-user',
+        resourceType: 'docker_container',
+        name: 'deployhub-user',
+        metadata: {},
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      {
+        provider: 'docker',
+        externalId: 'container-conflict',
+        resourceType: 'docker_container',
+        name: 'deployhub-conflict',
+        metadata: {
+          labels: {
+            'deployhub.project': 'deployhub',
+            'deployhub.component': 'conflict-label',
+          },
+        },
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      {
+        provider: 'docker',
+        externalId: 'container-label',
+        resourceType: 'docker_container',
+        name: 'unrelated-name',
+        metadata: {
+          labels: {
+            'deployhub.component': 'label-only',
+            'deployhub.environment': 'staging',
+          },
+        },
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+    ];
+
+    await createDockerSyncHandler(
+      db,
+      'http://socket-proxy:2375',
+      { createCollector: () => collector(resources, [], []) },
+    )(job());
+
+    const links = await db
+      .select({
+        externalId: schema.resources.externalId,
+        componentSlug: schema.components.slug,
+        environment: schema.componentResources.environment,
+        linkedBy: schema.componentResources.linkedBy,
+      })
+      .from(schema.componentResources)
+      .innerJoin(
+        schema.resources,
+        eq(schema.resources.id, schema.componentResources.resourceId),
+      )
+      .innerJoin(
+        schema.components,
+        eq(schema.components.id, schema.componentResources.componentId),
+      )
+      .orderBy(asc(schema.resources.externalId));
+
+    expect(links).toEqual([
+      {
+        externalId: 'container-exact',
+        componentSlug: 'web',
+        environment: 'production',
+        linkedBy: 'manifest',
+      },
+      {
+        externalId: 'container-label',
+        componentSlug: 'label-only',
+        environment: 'staging',
+        linkedBy: 'label',
+      },
+      {
+        externalId: 'container-user',
+        componentSlug: 'chosen-by-user',
+        environment: 'production',
+        linkedBy: 'user',
+      },
+    ]);
+  });
+
   it('upserts observations, soft-deletes missing resources, and reuses a deployment row on restart', async () => {
     const [project] = await db.insert(schema.projects).values({
       name: 'DeployHub',

@@ -15,6 +15,7 @@ import {
 } from '@deployhub/collectors';
 import {
   enqueue,
+  linkDeclaredResources,
   schema,
   type Db,
 } from '@deployhub/db';
@@ -129,6 +130,11 @@ export function createDockerSyncHandler(
           .update(schema.resources)
           .set({ deletedAt: sql`now()` })
           .where(and(...missingConditions));
+
+        await linkDeclaredResources(tx, {
+          provider: 'docker',
+          externalIds,
+        });
 
         const links = externalIds.length === 0
           ? []

@@ -7,3 +7,5 @@ export * from './queries/resources';
 export * from './queries/tokens';
 export * from './queries/drafts';
 export * from './queries/observations';
+export * from './queries/drift';
+export * from './queries/declared-link';
