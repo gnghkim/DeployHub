@@ -171,7 +171,7 @@ describe('observation queries', () => {
   it('allows a deployment without a project id', async () => {
     await upsertDeployment(db, {
       provider: 'docker',
-      externalDeploymentId: 'container-1:image-1',
+      externalDeploymentId: 'container-1',
       environment: 'production',
       status: 'running',
     });

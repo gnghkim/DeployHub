@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { createDb } from '@deployhub/db';
 import { loadEncryptionKey, loadEnv } from '@deployhub/shared';
 import {
+  createDockerSyncHandler,
   createGithubSyncHandler,
   createVercelSyncHandler,
+  enqueueDockerSyncJob,
   enqueueGithubSyncJobs,
   enqueueVercelSyncJobs,
 } from './handlers';
@@ -11,6 +13,7 @@ import { createRunner } from './runner';
 
 const POLL_INTERVAL_MS = 5_000;
 const PROVIDER_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const DOCKER_SYNC_INTERVAL_MS = 5 * 60 * 1_000;
 
 async function main(): Promise<void> {
   const env = loadEnv(process.env);
@@ -20,6 +23,7 @@ async function main(): Promise<void> {
   const runner = createRunner(
     db,
     {
+      'docker.sync': createDockerSyncHandler(db, env.DOCKER_HOST_URL),
       'github.sync': createGithubSyncHandler(db, encryptionKey),
       'vercel.sync': createVercelSyncHandler(db, encryptionKey),
     },
@@ -37,17 +41,24 @@ async function main(): Promise<void> {
       console.error('[worker] Vercel 동기화 job 등록 실패');
     });
   }, PROVIDER_SYNC_INTERVAL_MS);
+  const dockerSchedule = setInterval(() => {
+    void enqueueDockerSyncJob(db, env.DOCKER_HOST_URL).catch(() => {
+      console.error('[worker] Docker 동기화 job 등록 실패');
+    });
+  }, DOCKER_SYNC_INTERVAL_MS);
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} 수신. 현재 배치를 마치고 종료합니다.`);
     running = false;
     clearInterval(githubSchedule);
     clearInterval(vercelSchedule);
+    clearInterval(dockerSchedule);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   await enqueueGithubSyncJobs(db);
   await enqueueVercelSyncJobs(db);
+  await enqueueDockerSyncJob(db, env.DOCKER_HOST_URL);
   console.log(`[worker] 시작 ${workerId}`);
   while (running) {
     try {
