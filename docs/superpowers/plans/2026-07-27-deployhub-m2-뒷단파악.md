@@ -2,29 +2,47 @@
 
 > **For agentic workers:** orca orchestration으로 codex 워커에게 카드 단위 위임된다. 각 Task는 격리 worktree에서 수행하고, 검증 명령이 모두 통과한 뒤 Claude의 설계 부합 검토를 거쳐 main에 병합한다.
 
-**Goal:** 구축방안 1.1의 질문 ①에 답한다 — **등록된 각 프로젝트가 어떤 서비스 위에서 구동되고 있는가.** VPS Docker인지, Vercel인지, DB가 Supabase인지 자체 PostgreSQL인지, 어떤 외부 API에 의존하는지를 **선언이 아니라 관측**으로 채운다.
+**Goal:** 구축방안 1.1의 질문 ①에 답한다 — **등록된 각 프로젝트가 어떤 서비스 위에서 구동되고 있는가.** 뒷단은 **AI가 선언**하고, 구동 실체는 **Collector가 관측**하며, 둘이 어긋나면 **Drift로 표시**한다.
 
-**Architecture:** 두 Collector(Docker·Vercel)가 실행 중인 실체를 수집하고, `packages/fingerprint`가 **환경변수 이름**과 **의존성 목록** 두 신호로 뒷단 서비스를 추론한다. 저장소를 축으로 GitHub·Vercel·Docker 자원을 서로 잇는다.
+**Architecture:** manifest의 `provider`·`externalRef`·`container`가 선언을 담고, Docker·Vercel Collector가 실행 중인 실체를 수집한다. 선언에 적힌 참조값으로 관측 자원을 자동 연결하고, 선언은 있는데 관측되지 않거나 그 반대인 경우를 Drift로 잡는다.
 
-**Tech Stack:** 기존 스택. **새 외부 의존성 없음** — Docker는 socket-proxy에 HTTP로, Vercel은 REST API에 `fetch`로 접근한다.
+**Tech Stack:** 기존 스택. **새 외부 의존성 없음** — Docker는 socket-proxy에 HTTP, Vercel은 REST에 `fetch`.
 
-**선행 문서:** `docs/superpowers/specs/2026-07-26-deployhub-구축방안.md` (§6 의존성 지문, §7.2 관측 영역), M1a·M1b·M1c 계획서
+**선행 문서:** `docs/superpowers/specs/2026-07-26-deployhub-구축방안.md`, 원본 계획서 §14.3, M1a·M1b·M1c 계획서
 
 ---
 
-## 지금 시스템이 답하지 못하는 것
+## 설계 수정 — 추론이 아니라 선언
 
-현재 운영 DB 상태다.
+**초안은 `packages/fingerprint` 규칙 엔진으로 뒷단을 추론하려 했다. 그것은 우선순위가 틀렸다.**
 
-| 아는 것 | 출처 |
-|---|---|
-| `deployhub`의 구성요소 3개와 framework/runtime | **사람이 선언** (manifest) |
-| GitHub 저장소 41개 | 관측 |
-| web·worker가 `gnghkim/DeployHub`를 씀 | 사람이 연결 |
+프로젝트를 코딩하는 AI는 뒷단이 무엇인지 **이미 안다.** 코드를 읽고 통합을 직접 짰으므로 `SUPABASE_URL`이 Supabase를 뜻한다는 것을 추론할 필요가 없다. 원본 계획서 §14.3의 manifest 예시도 처음부터 그렇게 설계돼 있었다.
 
-`resources`에는 `github_repository` 41개뿐이다. **`docker_container`·`vercel_project`·`supabase_project`가 0개**다. 그래서 "DeployHub가 VPS 단독으로 돈다"는 것도, "database가 Supabase가 아니라 자체 컨테이너다"라는 것도 시스템은 **모른다.** manifest에 적힌 `runtime: postgresql`은 사람이 쓴 선언일 뿐 확인된 사실이 아니다.
+```yaml
+components:
+  - name: web
+    type: frontend
+    provider: vercel
+    url: https://linkvault.it
+  - name: worker
+    provider: hostinger
+    container: linkvault-worker
+  - name: database
+    provider: supabase
+    externalRef: abcdefghijklmnop
+```
 
-M2가 이 간극을 메운다.
+**M1c의 manifest 스키마가 이 필드들을 빠뜨렸다.** 지금은 `framework`·`runtime`·`language`·`criticality`·`path`만 있어 AI가 "이건 Supabase다"라고 선언할 방법이 없다. M2 Task 1이 이를 복원한다.
+
+### 세 질문을 구분한다
+
+| 질문 | 답하는 방법 | 이유 |
+|---|---|---|
+| 뒷단에 **무엇을** 쓰는가 | **선언** (manifest `provider`) | AI가 직접 안다. 추론보다 정확하다 |
+| **어디서** 구동되는가 | **관측** (Docker·Vercel Collector) | 선언은 의도이고 관측은 사실이다. 컨테이너가 지금 떠 있는지, 어떤 이미지 태그로 도는지는 관측해야 안다 |
+| 둘이 **일치하는가** | **Drift** (선언 ↔ 관측 대조) | 선언은 낡는다. 양쪽이 다 있어야 잡힌다 |
+
+`packages/fingerprint`는 **M2에서 뺀다.** 등록되지 않은 저장소 40개의 뒷단을 `package.json`으로 추정하는 용도는 남아 있지만, 그것은 "등록된 것을 정확히 하기"보다 뒤에 온다. M3 이후로 미룬다.
 
 ---
 
@@ -33,13 +51,13 @@ M2가 이 간극을 메운다.
 **공용 VPS다.** 12개 컨테이너가 돌고 그중 9개는 다른 프로젝트다.
 
 ```
-linkvault-worker-1   bmsimul-bmsimul-1    yield-api-1
-yield-postgres-1     workwiki-backend     workwiki-postgres
-ktgo-postgres        reporthub-reporthub-1  caddy-caddy-1
-deployhub-web        deployhub-worker     deployhub-postgres
+linkvault-worker-1   bmsimul-bmsimul-1     yield-api-1
+yield-postgres-1     workwiki-backend      workwiki-postgres
+ktgo-postgres        reporthub-reporthub-1 caddy-caddy-1
+deployhub-web        deployhub-worker      deployhub-postgres
 ```
 
-Docker Collector는 이 전부를 보게 된다. 그것 자체는 의도된 것이다 — 구축방안 16.6이 Label 없는 컨테이너를 `Unlinked`로 표시하라고 했다.
+Docker Collector는 이 전부를 본다. 그것은 의도된 것이다 — 구축방안 16.6이 Label 없는 컨테이너를 `Unlinked`로 표시하라고 했다.
 
 **그런데 `docker inspect`는 환경변수 값을 그대로 반환한다.** 실측으로 확인했다.
 
@@ -50,9 +68,7 @@ POSTGRES_PASSWORD=<실제 값>
 POSTGRES_DB=deployhub
 ```
 
-순진하게 수집하면 **다른 프로젝트 DB 세 개의 비밀번호가 우리 DB에 평문으로 들어간다.** GitHub 때보다 훨씬 위험하다 — 값이 API 응답에 기본으로 들어 있고, 우리 것이 아닌 남의 자격증명이다.
-
-**이것이 M2의 첫 번째 규칙이다.** Task 3의 절대 규칙으로 못박는다.
+순진하게 수집하면 **다른 프로젝트 DB 세 개(`yield-postgres`, `workwiki-postgres`, `ktgo-postgres`)의 비밀번호가 우리 DB에 평문으로 들어간다.** 우리 것이 아닌 남의 자격증명이다. **이것이 M2의 첫 번째 규칙이며 Task 4의 절대 규칙으로 못박는다.**
 
 ---
 
@@ -60,76 +76,167 @@ POSTGRES_DB=deployhub
 
 M1a·M1b·M1c의 Global Constraints를 그대로 승계하고 아래를 더한다.
 
-- **관측 데이터는 허용목록(allowlist)으로 구성한다.** API 응답을 통째로 `metadata`에 넣지 마라. 필요한 필드만 명시적으로 골라 담는다. 차단목록(denylist)은 새 필드가 추가될 때 뚫린다.
-- **환경변수는 이름만 저장한다.** 값은 어떤 경로로도 저장·로그·응답에 남기지 않는다. Docker `Config.Env`, Vercel env API 둘 다 해당한다.
-- **관측 이력을 지우지 않는다.** 사라진 자원은 `deleted_at`을 채운다(구축방안 7.2).
-- **시간은 DB 시계만 쓴다.** worker가 앱 시계로 만든 시각을 DB 시각과 비교하는 경로를 만들지 마라(M1a Task 3).
+- **관측 데이터는 허용목록(allowlist)으로 구성한다.** API 응답을 통째로 `metadata`에 넣지 마라. 필요한 필드만 명시적으로 골라 담는다. **차단목록은 새 필드가 추가될 때 뚫린다.**
+- **환경변수는 이름만 저장한다.** 값은 어떤 경로로도 저장·로그·응답에 남기지 않는다.
+- **관측 이력을 지우지 않는다.** 사라진 자원은 `deleted_at`을 채운다.
+- **시간은 DB 시계만 쓴다.**
 - **모든 Zod 문자열에 `.trim()`.**
-- **새 외부 의존성을 추가하지 않는다.** Docker는 socket-proxy에 HTTP, Vercel은 REST에 `fetch`로 충분하다.
+- **새 외부 의존성을 추가하지 않는다.**
 - **`docs/`는 각 Task의 산출물이 아니다.**
 
 ---
 
-## 구축방안 대비 결정
+## Task 1: manifest 선언 확장
 
-| 항목 | 구축방안 | M2 결정 | 근거 |
-|---|---|---|---|
-| Docker 접근 | 12절이 별도 collector 컨테이너 제안 | **worker가 socket-proxy에 HTTP 호출** | 구축방안 4절에서 이미 확정한 구조. socket-proxy가 읽기 전용 경계이므로 컨테이너를 하나 더 두면 경계를 두 번 긋는 것 |
-| Docker 라이브러리 | 언급 없음 | **`fetch` 직접** | socket-proxy가 HTTP를 노출한다. `dockerode`를 넣을 이유가 없다 |
-| Vercel SDK | 언급 없음 | **`fetch` 직접** | 필요한 엔드포인트가 5개 미만이다 |
-| `container_snapshots` | 7.2에 있음 | **M2 포함** | CPU/메모리 시계열. 보존 14일 |
-| `deployments` | 7.2에 있음 | **M2 포함** | Vercel 배포 이력과 Docker 이미지 태그를 한 줄로 보는 데 필요 |
-| Hostinger VPS 자원 | M4 | **M2 제외** | CPU/디스크는 M3 모니터링의 관심사다. M2는 "무엇 위에서 도는가"에 집중 |
+AI가 뒷단을 직접 적을 수 있게 한다. 이 카드가 M2의 전제다.
+
+**Files:**
+- Modify: `packages/manifest/src/schema.ts`, `schema.test.ts`
+- Modify: `packages/db/src/schema/projects.ts` (components 컬럼 추가)
+- Create: `drizzle/0004_*.sql`
+- Modify: `packages/manifest/src/diff.ts`, `diff.test.ts`
+- Modify: `apps/web/src/actions/drafts.ts` (승인 시 새 필드 반영)
+- Modify: `apps/web/src/app/drafts/[id]/page.tsx`
+- Modify: `packages/cli/src/detectors/index.ts` (탐지 가능한 것 채우기)
+- Modify: `AGENTS.md`, `deployhub.yaml`
+
+**Interfaces:**
+
+```ts
+// manifest component 에 추가되는 필드 (모두 optional)
+provider?: 'vercel' | 'hostinger' | 'supabase' | 'docker' | 'github'
+         | 'aws' | 'cloudflare' | 'upstash' | 'railway' | 'neon'
+         | 'planetscale' | 'self-hosted';
+externalRef?: string;   // Supabase project ref, Vercel project id 등
+container?: string;     // Docker 컨테이너 이름
+url?: string;           // 운영 URL
+```
+
+- [ ] **Step 1: 실패하는 스키마 테스트 작성**
+
+검증할 것:
+1. `provider`가 허용 목록 밖이면 거부한다 (`provider: mycloud` → 오류)
+2. 네 필드 모두 optional이다 — 없어도 기존 manifest가 통과한다
+3. 문자열 앞뒤 공백이 제거된다
+4. `externalRef`가 빈 문자열이면 `undefined`가 된다
+5. `container`가 Docker 이름 규칙을 만족해야 한다 (`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+6. `url`이 `http://` 또는 `https://`로 시작해야 한다
+7. `.strict()`가 여전히 알 수 없는 키를 거부한다
+
+**`provider`를 열린 문자열로 두지 않는 이유:** 오타(`superbase`)가 조용히 통과하면 카탈로그가 흐려지고 자동 연결이 실패한다. 새 provider가 필요하면 목록에 한 줄 추가하는 것이 옳은 마찰이다.
+
+- [ ] **Step 2: 실패 확인 → 스키마 구현**
+
+`provider` 목록은 위 Interfaces의 12개로 시작한다. `other`를 넣지 마라 — 검증할 수 없는 값이 들어오면 목록의 의미가 사라진다.
+
+- [ ] **Step 3: DB 컬럼 추가와 마이그레이션**
+
+`components`에 네 컬럼을 더한다. **`provider`는 `text`로 둔다** — pgEnum으로 하면 provider를 하나 늘릴 때마다 마이그레이션이 필요하다. 값의 유효성은 manifest Zod가 지킨다.
+
+```ts
+provider: text('provider'),
+externalRef: text('external_ref'),
+containerName: text('container_name'),
+url: text('url'),
+```
+
+`(provider, external_ref)`와 `container_name`에 인덱스를 만든다. Task 5의 자동 연결이 이 값으로 조회한다.
+
+Run: `pnpm --filter @deployhub/db exec drizzle-kit generate`
+
+**생성된 SQL을 반드시 읽어라.** 운영 DB에 적용된다. `components`에 컬럼 4개와 인덱스를 **추가**할 뿐이어야 한다. 다른 테이블을 건드리거나 기존 컬럼을 바꾸는 문장이 있으면 멈추고 보고하라.
+
+- [ ] **Step 4: diff와 승인 반영**
+
+`diffManifest`가 새 필드의 변경을 잡아야 한다. 테스트로 고정하라 — `provider`가 `supabase`에서 `neon`으로 바뀌면 `componentsChanged`에 나타날 것.
+
+승인 Action이 네 필드를 `components`에 반영한다. **기존 트랜잭션 안에서 처리하라.**
+
+승인 화면에 `provider`·`externalRef`·`container`를 표시한다. `field_sources`가 `inferred`인 항목은 기존대로 강조한다.
+
+- [ ] **Step 5: CLI detector가 채울 수 있는 것 채우기**
+
+detector가 근거를 갖고 알 수 있는 것만 채운다. **추측 금지 원칙(M1c Task 4 절대 규칙 E)은 그대로다.**
+
+| 필드 | 탐지 근거 | origin |
+|---|---|---|
+| `container` | `compose.yaml`의 `container_name` 또는 `services.<name>` | `detected` |
+| `provider` | compose 파일이 있고 서비스가 매칭되면 `docker` | `inferred` |
+| `url` | 없음 — 파일에서 알 수 없다 | `unknown` |
+| `externalRef` | 없음 | `unknown` |
+
+`provider`를 `inferred`로 두는 이유: compose 파일이 있다고 그 컨테이너가 실제로 그 서버에서 도는지는 알 수 없다. 사람이 확인해야 한다.
+
+- [ ] **Step 6: DeployHub 자신의 manifest 갱신**
+
+`deployhub.yaml`의 세 구성요소에 선언을 채운다.
+
+```yaml
+  - name: web
+    provider: hostinger
+    container: deployhub-web
+    url: https://hub.nolzza.net
+  - name: worker
+    provider: hostinger
+    container: deployhub-worker
+  - name: database
+    provider: self-hosted
+    container: deployhub-postgres
+```
+
+`database`가 `self-hosted`인 것이 요점이다 — Supabase가 아니라 우리가 돌리는 `postgres:17-alpine` 컨테이너다. **이 선언이 Task 5에서 관측된 컨테이너와 자동으로 이어진다.**
+
+`AGENTS.md`에 새 필드 설명을 더한다. AI가 읽는 지침이므로 각 필드를 언제 적어야 하는지 분명히 쓴다.
+
+- [ ] **Step 7: 검증과 커밋**
+
+Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build`
+Run: `node packages/cli/dist/index.js validate` — 갱신한 `deployhub.yaml`이 통과해야 한다
+
+**게이트 통과 조건:** 스키마 테스트 7건 통과. 마이그레이션이 `components`에 컬럼 추가만 할 것. `deployhub.yaml`이 검증을 통과할 것.
 
 ---
 
-## Task 1: 스키마 확장과 socket-proxy
+## Task 2: 관측 스키마와 socket-proxy
 
 **Files:**
 - Create: `packages/db/src/schema/observations.ts` (`deployments`, `containerSnapshots`)
-- Create: `drizzle/0004_*.sql`
+- Create: `drizzle/0005_*.sql`
 - Create: `packages/db/src/queries/observations.ts`, `observations.test.ts`
 - Modify: `packages/db/src/schema/index.ts`, `packages/db/src/index.ts`
-- Modify: `docker/compose.yml` (socket-proxy 추가)
-- Modify: `.env.example`
+- Modify: `docker/compose.yml`, `.env.example`, `packages/shared/src/env.ts`
 
 **Interfaces:**
-- Produces:
 
 ```ts
 deployments:        id, project_id(null), component_id(null), provider, environment,
                     version, commit_sha, image_name, external_deployment_id, status,
                     deployment_url, started_at, completed_at, metadata, created_at
+                    UNIQUE(provider, external_deployment_id)
 containerSnapshots: id, resource_id, cpu_pct, mem_bytes, restart_count, observed_at
 
-export function recordSnapshot(db, rows: SnapshotInput[]): Promise<void>;
+export function recordSnapshots(db, rows: SnapshotInput[]): Promise<void>;
 export function pruneSnapshots(db, olderThanDays: number): Promise<number>;
 export function upsertDeployment(db, input: DeploymentInput): Promise<void>;
 ```
 
-- [ ] **Step 1: 실패하는 테스트 작성** (구현보다 먼저)
+- [ ] **Step 1: 실패하는 테스트 작성**
 
 검증할 것:
-- `containerSnapshots`가 같은 `resource_id`에 여러 행을 누적한다 (갱신이 아니라 시계열)
-- `pruneSnapshots(14)`가 14일보다 오래된 행만 지운다
-- `observed_at` 기본값이 DB `now()`다 — 앱에서 넣은 시각이 아님을 단언
-- `upsertDeployment`가 `(provider, external_deployment_id)` 충돌 시 갱신한다
-- `deployments.project_id`가 null이어도 저장된다 (아직 프로젝트에 안 묶인 배포)
-- 자원이 삭제되면 스냅샷도 함께 삭제된다 (`on delete cascade`)
+1. `containerSnapshots`가 같은 `resource_id`에 여러 행을 **누적**한다 (갱신이 아님)
+2. `observed_at` 기본값이 DB `now()`다 — 앱에서 넣은 시각이 아님을 단언
+3. `pruneSnapshots(14)`가 14일보다 오래된 행만 지운다
+4. 자원이 삭제되면 스냅샷도 함께 삭제된다 (`on delete cascade`)
+5. `upsertDeployment`가 `(provider, external_deployment_id)` 충돌 시 갱신한다
+6. `deployments.project_id`가 null이어도 저장된다
 
-- [ ] **Step 2: 실패 확인 → 스키마 구현**
+- [ ] **Step 2: 실패 확인 → 구현 → 마이그레이션**
 
-`deployments`의 unique는 `(provider, external_deployment_id)`. Docker는 외부 배포 ID가 없으므로 `container_id + image_id` 조합을 넣는다.
+`containerSnapshots`에 `(resource_id, observed_at)` 인덱스. 조회가 항상 자원별 시간 범위다.
 
-`containerSnapshots`에 `(resource_id, observed_at)` 인덱스를 만든다. 조회가 항상 자원별 시간 범위이기 때문이다.
+**생성된 SQL을 읽어라.** 테이블 2개 추가뿐이어야 한다.
 
-- [ ] **Step 3: 마이그레이션 생성**
-
-Run: `pnpm --filter @deployhub/db exec drizzle-kit generate`
-
-**생성된 SQL을 반드시 읽어라.** 운영 DB에 적용된다. 기존 10개 테이블을 `ALTER`/`DROP`하는 문장이 있으면 멈추고 보고하라. 이 Task는 테이블 2개를 **추가**할 뿐이다.
-
-- [ ] **Step 4: compose에 socket-proxy 추가**
+- [ ] **Step 3: compose에 socket-proxy 추가**
 
 ```yaml
   socket-proxy:
@@ -154,279 +261,17 @@ Run: `pnpm --filter @deployhub/db exec drizzle-kit generate`
 
 **`ports`를 넣지 마라.** worker만 내부망에서 접근한다. `POST: 0`이 생성·삭제·exec를 전면 차단한다(구축방안 12.2).
 
-`.env.example`에 `DOCKER_HOST_URL=`을 추가한다. 값은 `http://socket-proxy:2375`이며 worker가 쓴다.
+`.env.example`에 `DOCKER_HOST_URL=`을 추가하고 `packages/shared/src/env.ts`의 `Env`에 선택 필드로 넣는다. 없으면 Docker 수집을 건너뛴다 — 로컬 개발에서 socket-proxy 없이도 앱이 떠야 한다.
 
-- [ ] **Step 5: 검증과 커밋**
+- [ ] **Step 4: 검증과 커밋**
 
-Run: `pnpm typecheck && pnpm vitest run`
-Run: `docker compose -f docker/compose.yml config | grep -A2 published` — 여전히 80/443만 나오거나 비어 있어야 한다
+Run: `docker compose -f docker/compose.yml config | grep -A2 published` — 80/443 외에 나오면 실패
 
-**게이트 통과 조건:** 마이그레이션이 추가만 할 것. socket-proxy에 `ports` 없을 것. `POST: 0`일 것.
-
----
-
-## Task 2: packages/fingerprint
-
-이 카드가 "뒷단이 무엇인가"에 답하는 엔진이다. 순수 함수이므로 네트워크 없이 결정적으로 테스트된다.
-
-**Files:**
-- Create: `packages/fingerprint/{package.json,tsconfig.json}`
-- Create: `packages/fingerprint/src/{index,types,rules,match}.ts`
-- Create: `packages/fingerprint/src/{rules,match}.test.ts`
-
-**Interfaces:**
-
-```ts
-export type Signal = {
-  envKeys: string[];        // 값이 아니라 이름만
-  dependencies: string[];   // package.json / requirements.txt 등에서 온 패키지명
-};
-
-export type BackendKind =
-  | 'database' | 'cache' | 'queue' | 'storage'
-  | 'authentication' | 'monitoring' | 'external_api';
-
-export type Rule = {
-  id: string;
-  label: string;
-  kind: BackendKind;
-  provider?: string;
-  envPatterns: RegExp[];
-  dependencies: string[];
-};
-
-export type Finding = {
-  ruleId: string;
-  label: string;
-  kind: BackendKind;
-  provider?: string;
-  confidence: 'detected' | 'inferred';
-  evidence: string[];       // 어떤 신호가 맞았는지
-};
-
-export function fingerprint(signal: Signal, rules?: Rule[]): Finding[];
-export const DEFAULT_RULES: Rule[];
-```
-
-- [ ] **Step 1: 실패하는 매칭 테스트 작성**
-
-```ts
-import { describe, expect, it } from 'vitest';
-import { fingerprint } from './match';
-
-describe('fingerprint', () => {
-  it('두 신호가 모두 맞으면 detected 다', () => {
-    const [f] = fingerprint({
-      envKeys: ['SUPABASE_URL', 'SUPABASE_ANON_KEY'],
-      dependencies: ['@supabase/supabase-js'],
-    });
-    expect(f?.ruleId).toBe('supabase');
-    expect(f?.confidence).toBe('detected');
-    expect(f?.evidence).toEqual(expect.arrayContaining([
-      expect.stringContaining('SUPABASE_URL'),
-      expect.stringContaining('@supabase/supabase-js'),
-    ]));
-  });
-
-  it('환경변수만 맞으면 inferred 다', () => {
-    const [f] = fingerprint({ envKeys: ['SUPABASE_URL'], dependencies: [] });
-    expect(f?.confidence).toBe('inferred');
-  });
-
-  it('의존성만 맞아도 inferred 다', () => {
-    const [f] = fingerprint({ envKeys: [], dependencies: ['@supabase/supabase-js'] });
-    expect(f?.confidence).toBe('inferred');
-  });
-
-  it('아무것도 안 맞으면 빈 배열이다', () => {
-    expect(fingerprint({ envKeys: ['FOO'], dependencies: ['left-pad'] })).toEqual([]);
-  });
-
-  it('DATABASE_URL 과 drizzle-orm 으로 자체 PostgreSQL 을 detected 한다', () => {
-    const found = fingerprint({
-      envKeys: ['DATABASE_URL', 'POSTGRES_PASSWORD'],
-      dependencies: ['drizzle-orm', 'pg'],
-    });
-    const pg = found.find((f) => f.ruleId === 'postgresql');
-    expect(pg?.confidence).toBe('detected');
-    expect(pg?.kind).toBe('database');
-  });
-
-  it('Supabase 와 자체 PostgreSQL 을 동시에 보고할 수 있다', () => {
-    const found = fingerprint({
-      envKeys: ['SUPABASE_URL', 'DATABASE_URL'],
-      dependencies: ['@supabase/supabase-js', 'pg'],
-    });
-    expect(found.map((f) => f.ruleId).sort()).toEqual(['postgresql', 'supabase']);
-  });
-
-  it('환경변수 이름 매칭은 정확 일치 또는 접두사 규칙만 쓴다', () => {
-    // MY_SUPABASE_URL_BACKUP 같은 것을 잡으면 안 된다
-    expect(fingerprint({ envKeys: ['MY_SUPABASE_URL_BACKUP'], dependencies: [] })).toEqual([]);
-  });
-
-  it('의존성 매칭은 정확 일치만 한다', () => {
-    expect(fingerprint({ envKeys: [], dependencies: ['pg-boss'] }).some((f) => f.ruleId === 'postgresql')).toBe(false);
-  });
-
-  it('결과가 결정적이다 — 같은 입력에 같은 순서', () => {
-    const s = { envKeys: ['DATABASE_URL', 'SUPABASE_URL'], dependencies: [] };
-    expect(fingerprint(s)).toEqual(fingerprint(s));
-  });
-
-  it('입력에 값이 섞여 들어와도 값을 evidence 에 담지 않는다', () => {
-    // envKeys 에 실수로 'KEY=value' 형태가 들어온 경우
-    const found = fingerprint({ envKeys: ['SUPABASE_URL=https://secret.example'], dependencies: [] });
-    expect(JSON.stringify(found)).not.toContain('secret.example');
-  });
-});
-```
-
-마지막 두 테스트가 중요하다. 부분 일치를 허용하면 오탐이 쌓이고(구축방안 R3), evidence에 값이 섞이면 비밀값이 화면에 뜬다.
-
-- [ ] **Step 2: 실패 확인 → 규칙과 매처 구현**
-
-`rules.ts`의 초기 규칙 집합. 데이터로 분리해 두어 나중에 추가하기 쉽게 한다.
-
-| id | label | kind | envPatterns | dependencies |
-|---|---|---|---|---|
-| `supabase` | Supabase | database | `^SUPABASE_URL$`, `^SUPABASE_ANON_KEY$`, `^NEXT_PUBLIC_SUPABASE_` | `@supabase/supabase-js` |
-| `postgresql` | PostgreSQL | database | `^DATABASE_URL$`, `^POSTGRES_(USER\|PASSWORD\|DB)$` | `pg`, `drizzle-orm`, `prisma`, `postgres` |
-| `mysql` | MySQL | database | `^MYSQL_(USER\|PASSWORD\|DATABASE)$` | `mysql2` |
-| `mongodb` | MongoDB | database | `^MONGO(DB)?_URI$` | `mongodb`, `mongoose` |
-| `redis` | Redis | cache | `^REDIS_URL$`, `^UPSTASH_REDIS_` | `ioredis`, `redis`, `@upstash/redis` |
-| `s3` | S3 호환 스토리지 | storage | `^AWS_(ACCESS_KEY_ID\|S3_BUCKET)$`, `^R2_` | `@aws-sdk/client-s3` |
-| `vercel-blob` | Vercel Blob | storage | `^BLOB_READ_WRITE_TOKEN$` | `@vercel/blob` |
-| `nextauth` | Auth.js | authentication | `^AUTH_SECRET$`, `^NEXTAUTH_` | `next-auth` |
-| `stripe` | Stripe | external_api | `^STRIPE_SECRET_KEY$` | `stripe` |
-| `resend` | Resend | external_api | `^RESEND_API_KEY$` | `resend` |
-| `sentry` | Sentry | monitoring | `^SENTRY_DSN$` | `@sentry/node`, `@sentry/nextjs` |
-| `openai` | OpenAI | external_api | `^OPENAI_API_KEY$` | `openai` |
-| `anthropic` | Anthropic | external_api | `^ANTHROPIC_API_KEY$` | `@anthropic-ai/sdk` |
-
-**환경변수 이름 매칭은 정규식 전체 일치(`^...$`)이거나 명시적 접두사(`^PREFIX_`)만 쓴다.** 부분 문자열 검색을 하지 마라.
-
-`fingerprint()`는 입력 `envKeys`에서 `=`가 나타나면 **그 앞부분만** 취해 정규화한다. 방어적으로 값이 섞여 들어와도 evidence에 남지 않게 한다.
-
-결과는 `ruleId` 사전순으로 정렬해 결정적으로 만든다.
-
-- [ ] **Step 3: 통과 확인 → 커밋**
-
-**게이트 통과 조건:** 매칭 테스트 10건 통과. 부분 일치 미허용, evidence에 값 미포함이 반드시 통과할 것.
+**게이트 통과 조건:** 마이그레이션 추가만. socket-proxy에 `ports` 없고 `POST: 0`일 것.
 
 ---
 
-## Task 3: Docker Collector
-
-**이 카드의 핵심은 기능이 아니라 비밀값 차단이다.**
-
-**Files:**
-- Create: `packages/collectors/src/docker/{index,normalize}.ts`, `normalize.test.ts`
-- Create: `packages/collectors/test/fixtures/docker-inspect.json`
-- Create: `apps/worker/src/handlers/docker-sync.ts`, `docker-sync.test.ts`
-- Modify: `apps/worker/src/handlers/index.ts`, `apps/worker/src/index.ts`
-- Modify: `packages/shared/src/env.ts` (`DOCKER_HOST_URL`)
-
-**Interfaces:**
-
-```ts
-export function createDockerCollector(baseUrl: string): ProviderCollector;
-export function normalizeContainer(inspect: unknown): ExternalResource;
-```
-
-- [ ] **Step 1: 픽스처 준비**
-
-`docker-inspect.json`에 실제 `docker inspect` 응답 형태를 담되, **`Config.Env`에 값이 있는 상태로** 만든다. 예:
-
-```json
-{
-  "Id": "3b27fe7ebf9b0000000000000000000000000000000000000000000000000000",
-  "Name": "/deployhub-postgres",
-  "Config": {
-    "Image": "postgres:17-alpine",
-    "Env": [
-      "POSTGRES_USER=deployhub",
-      "POSTGRES_PASSWORD=SUPER_SECRET_SHOULD_NOT_APPEAR",
-      "PATH=/usr/local/sbin:/usr/local/bin"
-    ],
-    "Labels": {
-      "deployhub.project": "deployhub",
-      "deployhub.component": "database",
-      "com.docker.compose.project": "docker"
-    },
-    "Cmd": ["postgres", "-c", "password=ALSO_SECRET"]
-  },
-  "State": { "Status": "running", "StartedAt": "2026-07-26T10:00:00Z", "Health": { "Status": "healthy" } },
-  "RestartCount": 0,
-  "Image": "sha256:abc123",
-  "Created": "2026-07-26T09:59:00Z",
-  "Mounts": [{ "Type": "volume", "Name": "postgres_data", "Source": "/var/lib/docker/volumes/postgres_data/_data", "Destination": "/var/lib/postgresql/data" }],
-  "NetworkSettings": { "Networks": { "docker_deployhub": {} }, "Ports": {} }
-}
-```
-
-- [ ] **Step 2: 실패하는 정규화 테스트 작성**
-
-검증할 것:
-
-1. `externalId`가 컨테이너 ID(짧은 형태), `resourceType`이 `docker_container`, `name`이 앞 슬래시를 뗀 이름
-2. `status`가 `running`, `metadata.health`가 `healthy`
-3. `metadata.image`가 `postgres:17-alpine`, `metadata.labels`에 `deployhub.project`가 있음
-4. **`metadata.envKeys`가 이름만 담는다** — `['POSTGRES_USER','POSTGRES_PASSWORD','PATH']`
-5. **결과 전체를 `JSON.stringify`했을 때 `SUPER_SECRET_SHOULD_NOT_APPEAR`가 없다**
-6. **`ALSO_SECRET`도 없다** — `Cmd`를 아예 담지 않기 때문
-7. `metadata.mounts`에 볼륨 이름과 destination만 있고 **호스트 경로(`Source`)가 없다**
-8. `metadata.composeProject`가 `docker`
-9. 허용목록 밖 필드가 `metadata`에 없다 — 예상 키 집합과 정확히 일치하는지 단언
-10. `observedAt`이 ISO 8601
-
-**5·6·7·9번이 이 카드의 존재 이유다.** 9번은 특히 중요하다 — 차단목록이 아니라 허용목록임을 강제한다.
-
-- [ ] **Step 3: 실패 확인 → 정규화 구현**
-
-`metadata`는 **아래 필드만** 담는다. inspect 응답을 통째로 넣지 마라.
-
-```
-image, imageId, health, createdAt, startedAt, restartCount,
-labels, composeProject, composeService,
-networks (이름 배열), envKeys (이름 배열), mounts ({type,name,destination}[])
-```
-
-`Cmd`, `Entrypoint`, `Mounts[].Source`, `Config.Env`의 값 부분은 **담지 않는다.**
-
-`envKeys`는 `Config.Env`의 각 항목을 첫 `=`에서 잘라 앞부분만 취한다.
-
-- [ ] **Step 4: Collector 구현**
-
-`createDockerCollector(baseUrl)`는 socket-proxy에 HTTP로 접근한다.
-
-- `testConnection()` — `GET /_ping`
-- `listResources()` — `GET /containers/json?all=1`로 목록, 각각 `GET /containers/{id}/json`으로 상세를 받아 정규화
-
-**오류 메시지에 URL 전체나 응답 본문을 그대로 넣지 마라.** 상태 코드와 컨테이너 수만 남긴다.
-
-- [ ] **Step 5: worker 핸들러**
-
-`docker.sync` 핸들러를 등록한다. 5분 주기.
-
-- `resources`에 upsert (`provider='docker'`, `external_id`=컨테이너 ID)
-- 이번 수집에서 사라진 `docker` 자원은 `deleted_at`을 채운다. **DELETE 하지 마라**
-- `container_snapshots`에 CPU/메모리를 기록한다 — `GET /containers/{id}/stats?stream=false`
-- `observed_at`은 DB `now()`를 쓴다
-- 14일보다 오래된 스냅샷을 정리한다
-
-**공용 VPS이므로 다른 프로젝트 컨테이너 9개도 수집된다.** 이것은 의도된 것이다. Label이 없으면 `Unlinked`로 남는다(구축방안 16.6).
-
-- [ ] **Step 6: 검증과 커밋**
-
-Run: `pnpm typecheck && pnpm vitest run`
-Run: `git grep -nE 'SUPER_SECRET|ALSO_SECRET' -- apps packages ':!*fixtures*' ':!*.test.ts'` — 매치 없어야 한다
-
-**게이트 통과 조건:** 정규화 테스트 10건 전부 통과. 특히 값 미노출 3건과 허용목록 단언. 사라진 자원을 `DELETE`하지 않을 것.
-
----
-
-## Task 4: Vercel Collector
+## Task 3: Vercel Collector
 
 **Files:**
 - Create: `packages/collectors/src/vercel/{index,normalize}.ts`, `normalize.test.ts`
@@ -444,17 +289,16 @@ export function normalizeVercelDeployment(deployment: unknown): DeploymentInput;
 
 - [ ] **Step 1: 픽스처와 실패하는 테스트 작성**
 
-Vercel API 응답 형태를 픽스처로 둔다. **env 픽스처에는 `value` 필드가 값과 함께 들어 있는 상태로** 만든다 — 그것을 버리는지 테스트하기 위함이다.
+**env 픽스처에 `value` 필드를 값과 함께 넣어라** — 그것을 버리는지 테스트하기 위함이다. 값에 `VERCEL_ENV_SHOULD_NOT_APPEAR` 같은 식별 가능한 문자열을 쓴다.
 
 검증할 것:
 1. `externalId`가 Vercel 프로젝트 ID, `resourceType`이 `vercel_project`
-2. `metadata.framework`, `metadata.gitRepository`(`owner/name` 형태)
-3. `metadata.productionDomain`
-4. **`metadata.envKeys`가 이름만** — `value`가 결과에 없음
-5. **결과 전체에 픽스처의 env 값 문자열이 없음**
-6. 배포 정규화가 `commit_sha`, `status`, `deployment_url`, `started_at`을 채움
-7. 허용목록 밖 필드가 `metadata`에 없음
-8. 토큰이 결과나 오류 메시지에 없음
+2. `metadata.framework`, `metadata.gitRepository`(`owner/name` 형태), `metadata.productionDomain`
+3. **`metadata.envKeys`가 이름만 담는다**
+4. **결과 전체를 `JSON.stringify`했을 때 픽스처의 env 값이 없다**
+5. **허용목록 밖 필드가 `metadata`에 없다** — 예상 키 집합과 정확히 일치하는지 단언
+6. 배포 정규화가 `commitSha`·`status`·`deploymentUrl`·`startedAt`을 채운다
+7. 토큰이 결과나 오류 메시지에 없다
 
 - [ ] **Step 2: 실패 확인 → 구현**
 
@@ -462,11 +306,11 @@ Vercel API 응답 형태를 픽스처로 둔다. **env 픽스처에는 `value` �
 
 ```
 GET /v9/projects                      프로젝트 목록
-GET /v9/projects/{id}/env             환경변수 (이름·target·type만 취함)
-GET /v6/deployments?projectId={id}    배포 이력 (최근 것만)
+GET /v9/projects/{id}/env             환경변수 (이름·target·type만)
+GET /v6/deployments?projectId={id}    배포 이력
 ```
 
-**`GET /v9/projects/{id}/env`는 기본적으로 값을 복호화하지 않지만, 응답에 `value` 필드가 올 수 있다. 파싱 단계에서 즉시 버려라.** `decrypt=true` 파라미터를 절대 쓰지 마라.
+**`decrypt=true` 파라미터를 절대 쓰지 마라.** 응답에 `value` 필드가 오더라도 파싱 단계에서 즉시 버려라.
 
 `metadata` 허용목록: `framework`, `gitRepository`, `productionDomain`, `nodeVersion`, `envKeys`, `createdAt`, `updatedAt`.
 
@@ -474,134 +318,246 @@ GET /v6/deployments?projectId={id}    배포 이력 (최근 것만)
 
 `vercel.sync`를 등록한다. 6시간 주기. `provider_accounts`에서 토큰을 복호화해 쓴다.
 
-배포는 `deployments`에 upsert한다. Docker 쪽도 마찬가지로 컨테이너의 이미지 태그와 시작 시각을 `deployments`에 한 줄로 기록해 **"최종 배포"를 두 Provider에서 같은 방식으로 볼 수 있게** 한다.
+- `resources`에 upsert (`provider='vercel'`, `resource_type='vercel_project'`)
+- 사라진 자원은 `deleted_at`. **DELETE 금지**
+- 배포는 `deployments`에 upsert
+- `provider_accounts.last_sync_at`·`last_error` 갱신
 
 - [ ] **Step 4: 검증과 커밋**
 
-**게이트 통과 조건:** 정규화 테스트 8건 통과. 특히 env 값 미저장과 토큰 미노출. `decrypt=true`를 쓰지 않을 것.
+Run: `git grep -nE 'VERCEL_ENV_SHOULD_NOT_APPEAR' -- apps packages ':!*fixtures*'` — 매치 없어야 한다
+
+**게이트 통과 조건:** 정규화 테스트 7건 통과. 특히 env 값 미저장, 허용목록 단언, 토큰 미노출.
 
 ---
 
-## Task 5: 지문 적용과 자원 연결
+## Task 4: Docker Collector
+
+**이 카드의 핵심은 기능이 아니라 비밀값 차단이다.** 공용 VPS라 다른 프로젝트 DB 세 개의 자격증명이 노출 대상이다.
 
 **Files:**
-- Modify: `packages/collectors/src/github/{index,normalize}.ts` (package.json 수집)
-- Create: `apps/worker/src/handlers/fingerprint-sync.ts`, 테스트
-- Create: `packages/db/src/queries/fingerprint.ts`, 테스트
-- Modify: `apps/web/src/lib/matcher.ts` (Docker Label 매칭 추가)
+- Create: `packages/collectors/src/docker/{index,normalize}.ts`, `normalize.test.ts`
+- Create: `packages/collectors/test/fixtures/docker-inspect.json`
+- Create: `apps/worker/src/handlers/docker-sync.ts`, `docker-sync.test.ts`
+- Modify: `apps/worker/src/handlers/index.ts`, `apps/worker/src/index.ts`
+
+- [ ] **Step 1: 픽스처 준비**
+
+실제 `docker inspect` 응답 형태를 담되 **`Config.Env`에 값이 있는 상태로** 만든다.
+
+```json
+{
+  "Id": "3b27fe7ebf9b00000000000000000000000000000000000000000000000000000",
+  "Name": "/deployhub-postgres",
+  "Created": "2026-07-26T09:59:00Z",
+  "Image": "sha256:abc123",
+  "RestartCount": 0,
+  "Config": {
+    "Image": "postgres:17-alpine",
+    "Env": [
+      "POSTGRES_USER=deployhub",
+      "POSTGRES_PASSWORD=SUPER_SECRET_SHOULD_NOT_APPEAR",
+      "PATH=/usr/local/sbin:/usr/local/bin"
+    ],
+    "Labels": {
+      "deployhub.project": "deployhub",
+      "deployhub.component": "database",
+      "com.docker.compose.project": "docker",
+      "com.docker.compose.service": "postgres"
+    },
+    "Cmd": ["postgres", "-c", "password=ALSO_SECRET"],
+    "Entrypoint": ["docker-entrypoint.sh"]
+  },
+  "State": {
+    "Status": "running",
+    "StartedAt": "2026-07-26T10:00:00Z",
+    "Health": { "Status": "healthy" }
+  },
+  "Mounts": [{
+    "Type": "volume", "Name": "postgres_data",
+    "Source": "/var/lib/docker/volumes/postgres_data/_data",
+    "Destination": "/var/lib/postgresql/data"
+  }],
+  "NetworkSettings": { "Networks": { "docker_deployhub": {} }, "Ports": {} }
+}
+```
+
+- [ ] **Step 2: 실패하는 정규화 테스트 작성**
+
+검증할 것:
+
+1. `externalId`가 컨테이너 ID 짧은 형태, `resourceType`이 `docker_container`, `name`이 앞 슬래시를 뗀 `deployhub-postgres`
+2. `status`가 `running`, `metadata.health`가 `healthy`
+3. `metadata.image`가 `postgres:17-alpine`
+4. `metadata.labels`에 `deployhub.project`·`deployhub.component`가 있다
+5. **`metadata.envKeys`가 `['POSTGRES_USER','POSTGRES_PASSWORD','PATH']`** — 이름만
+6. **결과 전체에 `SUPER_SECRET_SHOULD_NOT_APPEAR`가 없다**
+7. **결과 전체에 `ALSO_SECRET`이 없다** — `Cmd`를 아예 담지 않기 때문
+8. **`metadata.mounts`에 호스트 경로(`Source`)가 없다** — `{type,name,destination}`만
+9. **허용목록 밖 필드가 `metadata`에 없다** — 예상 키 집합과 정확히 일치
+10. `metadata.composeProject`가 `docker`, `composeService`가 `postgres`
+11. `observedAt`이 ISO 8601
+
+**6·7·8·9번이 이 카드의 존재 이유다.** 9번이 특히 중요하다 — 차단목록이 아니라 허용목록임을 강제한다.
+
+- [ ] **Step 3: 실패 확인 → 정규화 구현**
+
+`metadata`는 **아래 필드만** 담는다. inspect 응답을 통째로 넣지 마라.
+
+```
+image, imageId, health, createdAt, startedAt, restartCount,
+labels, composeProject, composeService,
+networks (이름 배열), envKeys (이름 배열),
+mounts ({type,name,destination}[])
+```
+
+`Cmd`, `Entrypoint`, `Mounts[].Source`, `Config.Env`의 값 부분은 **담지 않는다.**
+
+`envKeys`는 각 항목을 첫 `=`에서 잘라 앞부분만 취한다.
+
+- [ ] **Step 4: Collector 구현**
+
+`createDockerCollector(baseUrl)`가 socket-proxy에 HTTP로 접근한다.
+
+- `testConnection()` — `GET /_ping`
+- `listResources()` — `GET /containers/json?all=1` 후 각각 `GET /containers/{id}/json`
+
+**오류 메시지에 URL 전체나 응답 본문을 넣지 마라.** 상태 코드와 컨테이너 수만 남긴다.
+
+- [ ] **Step 5: worker 핸들러**
+
+`docker.sync`를 등록한다. 5분 주기. `DOCKER_HOST_URL`이 없으면 조용히 건너뛴다.
+
+- `resources`에 upsert (`provider='docker'`, `external_id`=컨테이너 ID)
+- 사라진 자원은 `deleted_at`. **DELETE 금지**
+- `GET /containers/{id}/stats?stream=false`로 CPU/메모리를 `container_snapshots`에 기록
+- `observed_at`은 DB `now()`
+- 14일보다 오래된 스냅샷 정리
+- 실행 중인 컨테이너의 이미지 태그와 시작 시각을 `deployments`에 한 줄로 기록 — Vercel과 같은 방식으로 "최종 배포"를 보기 위함
+
+**공용 VPS이므로 다른 프로젝트 컨테이너 9개도 수집된다.** 의도된 것이다. Label이 없으면 `Unlinked`로 남는다.
+
+- [ ] **Step 6: 검증과 커밋**
+
+Run: `git grep -nE 'SUPER_SECRET|ALSO_SECRET' -- apps packages ':!*fixtures*' ':!*.test.ts'` — 매치 없어야 한다
+
+**게이트 통과 조건:** 정규화 테스트 11건 전부 통과. 특히 값 미노출 3건과 허용목록 단언. 사라진 자원을 `DELETE`하지 않을 것.
+
+---
+
+## Task 5: 선언↔관측 연결과 Drift
+
+**Files:**
+- Create: `packages/db/src/queries/drift.ts`, `drift.test.ts`
+- Create: `apps/web/src/lib/declared-link.ts`, `declared-link.test.ts`
+- Modify: `apps/worker/src/handlers/{docker-sync,vercel-sync}.ts` (선언 기반 자동 연결)
 - Modify: `apps/web/src/actions/links.ts`
 
 **Interfaces:**
 
 ```ts
-export type BackendFinding = Finding & { componentId: string | null; projectId: string };
-export function listProjectSignals(db, projectId): Promise<Signal>;
-export function applyFingerprint(db, projectId): Promise<BackendFinding[]>;
+export type DriftKind =
+  | 'declared_not_observed'    // manifest 에 있는데 관측 안 됨
+  | 'observed_not_declared'    // 관측됐는데 manifest 에 없음
+  | 'image_mismatch'           // 선언 이미지와 실행 이미지가 다름
+  | 'provider_mismatch';       // 선언 provider 와 관측 provider 가 다름
+
+export type Drift = {
+  kind: DriftKind;
+  projectId: string;
+  componentId: string | null;
+  declared: string | null;
+  observed: string | null;
+  detail: string;
+};
+
+export function computeDrift(db, projectId): Promise<Drift[]>;
 ```
 
-- [ ] **Step 1: GitHub Collector가 의존성을 수집하도록 확장**
+- [ ] **Step 1: 선언 기반 자동 연결 테스트**
 
-`GET /repos/{owner}/{repo}/contents/package.json`으로 루트 `package.json`을 읽는다. 없으면 `requirements.txt`, `pyproject.toml`을 순서대로 시도한다. 셋 다 없으면 빈 배열.
+선언에 참조값이 있으면 관측 자원과 **즉시 연결**한다. 사용자가 직접 적은 값이므로 구축방안 14.2에 어긋나지 않는다.
 
-**`dependencies`와 `devDependencies`의 키만 취한다.** 버전 문자열은 evidence에 쓰되 저장은 이름 위주로 한다.
-
-`metadata.dependencies`에 담는다. 여기에도 허용목록 원칙을 적용해 `package.json` 전체를 넣지 마라 — `scripts`에 비밀값이 들어 있는 경우가 있다.
-
-Rate limit 주의: 저장소 41개 × 파일 조회. ETag 조건부 요청을 쓰고, 실패해도 전체 동기화를 중단하지 마라.
-
-- [ ] **Step 2: 신호 수집 테스트**
-
-`listProjectSignals(db, projectId)`가 아래를 합쳐 하나의 `Signal`을 만든다.
-
-```
-envKeys       ← 연결된 docker_container 의 metadata.envKeys
-              + 연결된 vercel_project 의 metadata.envKeys
-dependencies  ← 연결된 github_repository 의 metadata.dependencies
-```
+| 선언 | 매칭 대상 | `linked_by` |
+|---|---|---|
+| `container: deployhub-web` | `docker_container`의 `name` | `manifest` |
+| `provider: vercel` + `externalRef` | `vercel_project`의 `external_id` | `manifest` |
+| Docker Label `deployhub.component` | 해당 구성요소 | `label` |
 
 검증할 것:
-- 연결된 자원이 없으면 빈 신호
-- 여러 자원의 신호가 합쳐지고 중복이 제거됨
-- **값이 섞여 들어오지 않음** — 자원 metadata에 값이 없으므로 당연하지만 회귀 방지로 단언
+- `container` 이름이 정확히 일치하면 연결된다
+- 부분 일치는 연결하지 않는다 (`deployhub-web`이 `deployhub-web-old`에 붙으면 안 됨)
+- 선언된 컨테이너가 관측되지 않으면 연결하지 않고 Drift를 남긴다
+- 이미 `user`로 연결된 것을 자동 연결이 덮어쓰지 않는다
+- Label과 manifest가 다른 구성요소를 가리키면 연결하지 않고 경고를 남긴다
 
-- [ ] **Step 3: 지문 적용**
+마지막이 중요하다. **충돌 시 추측으로 하나를 고르지 마라.**
 
-`applyFingerprint(db, projectId)`가 `Signal`을 `fingerprint()`에 넘겨 `Finding[]`을 얻고, 각 finding을 **구성요소 제안**으로 만든다.
-
-**자동으로 `components`를 만들지 마라.** 구축방안 6.3의 원칙이다. 화면에 제안으로 띄우고 사람이 확인한다. `detected`는 강조 없이, `inferred`는 강조해서 보여준다.
-
-이미 같은 `kind`+`provider`의 구성요소가 있으면 제안하지 않는다.
-
-- [ ] **Step 4: Docker Label 매칭**
-
-`deployhub.project`와 `deployhub.component` 라벨이 있는 컨테이너는 해당 프로젝트·구성요소에 **즉시 연결**한다(`linked_by='label'`). 사용자가 직접 적은 선언이므로 구축방안 14.2에 어긋나지 않는다.
-
-라벨이 없으면 연결하지 않는다. 이름 유사도로 추측하지 마라 — 공용 VPS라 남의 컨테이너가 우리 프로젝트에 잘못 붙을 수 있다.
+- [ ] **Step 2: Drift 계산 테스트**
 
 검증할 것:
-- 라벨이 있으면 `linked_by='label'`로 연결
-- 라벨의 project/component가 실제로 존재하지 않으면 연결하지 않고 경고를 남김
-- 라벨 없는 컨테이너는 Unlinked로 남음
-- 이미 `user`로 연결된 것을 `label`이 덮어쓰지 않음
+- manifest에 `container: foo`가 있는데 그런 컨테이너가 없으면 `declared_not_observed`
+- 프로젝트에 연결된 컨테이너인데 manifest에 그 이름이 없으면 `observed_not_declared`
+- `provider: supabase`인데 연결된 자원이 `docker_container`뿐이면 `provider_mismatch`
+- 선언과 관측이 일치하면 빈 배열
+- **Drift를 테이블에 저장하지 않는다** — 조회 시 계산한다(구축방안 7.5). 저장하면 낡는다
 
-- [ ] **Step 5: 검증과 커밋**
+- [ ] **Step 3: 실패 확인 → 구현 → 통과 확인**
 
-**게이트 통과 조건:** 사람 확인 없이 `components`가 생기지 않을 것. 라벨 없는 컨테이너가 자동 연결되지 않을 것.
+- [ ] **Step 4: 커밋**
+
+**게이트 통과 조건:** 부분 일치 연결 없을 것. 충돌 시 자동 선택 없을 것. Drift가 파생 계산일 것.
 
 ---
 
 ## Task 6: 화면 — 뒷단과 최종 배포
 
 **Files:**
+- Create: `apps/web/src/lib/backend-view.ts`, `backend-view.test.ts`
 - Modify: `apps/web/src/app/projects/[slug]/page.tsx`
 - Modify: `apps/web/src/app/resources/page.tsx`
 - Modify: `apps/web/src/app/page.tsx`
-- Create: `apps/web/src/lib/backend-view.ts`, 테스트
 
-- [ ] **Step 1: 프로젝트 상세에 "뒷단" 섹션**
+- [ ] **Step 1: 요약 로직 테스트** (순수 함수로 분리)
 
-이 화면이 사용자의 질문에 답한다.
+```
+연결된 자원의 provider 집합 → 요약 문구
+  {docker}           → 'VPS 단독'
+  {vercel}           → 'Vercel'
+  {docker, vercel}   → 'Vercel + VPS'
+  {}                 → '미확인'      ← 추측 금지
+```
+
+선언은 있는데 관측이 없으면 `미확인 (선언: hostinger)` 형태로 **둘을 구분해 보여준다.** 선언을 사실처럼 표시하지 마라.
+
+- [ ] **Step 2: 프로젝트 상세에 "뒷단" 섹션**
 
 ```
 deployhub                                          VPS 단독
-├─ web       docker_container deployhub-web        running
-├─ worker    docker_container deployhub-worker     running
-└─ database  docker_container deployhub-postgres   running · postgres:17-alpine
+├─ web       hostinger    deployhub-web       running   deployhub:local
+├─ worker    hostinger    deployhub-worker    running   deployhub:local
+└─ database  self-hosted  deployhub-postgres  running   postgres:17-alpine
 
-뒷단 서비스
-  PostgreSQL      database  detected   DATABASE_URL + drizzle-orm, pg
-  Auth.js         auth      detected   AUTH_SECRET + next-auth
+Drift  없음
 
 최종 배포
-  web      deployhub:local   a41d82c   2시간 전
-  worker   deployhub:local   a41d82c   2시간 전
+  web      deployhub:local  a41d82c  2시간 전
+  worker   deployhub:local  a41d82c  2시간 전
 ```
 
-**"VPS 단독" 같은 요약 문구는 관측에서 도출한다.** 연결된 자원의 provider 집합으로 정한다 — `docker`만 있으면 "VPS 단독", `vercel`만 있으면 "Vercel", 둘 다면 "Vercel + VPS". 자원이 없으면 "미확인"이며 추측하지 않는다.
-
-- [ ] **Step 2: 요약 로직 테스트**
-
-`backend-view.ts`의 순수 함수로 분리해 테스트한다.
-
-- `docker`만 → `VPS 단독`
-- `vercel`만 → `Vercel`
-- 둘 다 → `Vercel + VPS`
-- 없음 → `미확인` (추측 금지)
-- `supabase` 포함 → 목록에 포함
+각 구성요소에 **선언(provider)과 관측(컨테이너 상태·이미지)을 나란히** 보여준다. Drift가 있으면 그 줄을 강조한다.
 
 - [ ] **Step 3: Resources 화면에 provider 필터**
 
-`docker_container`가 들어오면 목록이 41개에서 53개로 늘어난다. provider와 resourceType으로 거를 수 있어야 한다. Unlinked 표시는 그대로 유지한다.
+`docker_container`가 들어오면 41개에서 53개로 는다. provider와 resourceType으로 거를 수 있어야 한다. Unlinked 표시는 유지한다.
 
 - [ ] **Step 4: Overview 요약 카드**
 
-`전체 프로젝트 · 수집 저장소 · 실행 중 컨테이너 · 미연결 자원 · 최근 24시간 배포`
+`전체 프로젝트 · 수집 저장소 · 실행 중 컨테이너 · 미연결 자원 · Drift 있는 프로젝트`
 
 - [ ] **Step 5: 검증과 커밋**
 
-Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build`
-
-**게이트 통과 조건:** 요약이 관측에서 도출될 것. 자원이 없을 때 "미확인"이고 추측하지 않을 것.
+**게이트 통과 조건:** 요약이 관측에서 도출될 것. 자원이 없으면 `미확인`이며 선언을 사실처럼 표시하지 않을 것.
 
 ---
 
@@ -609,44 +565,45 @@ Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build`
 
 **1. 구축방안 커버리지**
 
-| 구축방안 항목 | Task |
+| 항목 | Task |
 |---|---|
-| 6 의존성 지문 (환경변수 이름 + 의존성) | 2, 5 |
-| 6.3 신뢰도와 제안 (자동 생성 금지) | 2, 5 |
-| 7.2 관측 영역 — `deployments`, `container_snapshots` | 1 |
-| 12 Docker 수집, 12.2 socket-proxy | 1, 3 |
+| 원본 §14.3 manifest `provider`·`externalRef`·`container` | 1 |
+| 7.2 관측 영역 — `deployments`, `container_snapshots` | 2 |
+| 11.1 Vercel 수집 (환경변수 이름·Scope) | 3 |
+| 12 Docker 수집, 12.2 socket-proxy | 2, 4 |
 | 13 Docker Label 표준 매칭 | 5 |
-| 11.1 Vercel 수집 (환경변수 이름·Scope) | 4 |
-| 14.2 자동 연결 금지 | 5 |
-| 16.6 Unlinked 표시 | 5, 6 |
+| 7.5 Drift (파생 계산) | 5 |
+| 14.2 자동 연결 금지 (추측 매칭) | 5 |
+| 16.6 Unlinked 표시 | 6 |
+| 6 의존성 지문 | **M3 이후** — 등록되지 않은 저장소용 |
 | 11.2 Supabase · 11.3 Hostinger | **M4** |
 
 **2. 타입 일관성**
 
-- `Signal`/`Finding` — Task 2 정의, Task 5가 소비 ✓
-- `ExternalResource` — M1b Task 4 정의, Task 3·4가 생산 ✓
-- `DeploymentInput` — Task 1 정의, Task 3·4가 생산 ✓
-- `linked_by` — M1a 정의. Task 5가 `'label'` 사용 ✓
+- manifest `provider` 12종 — Task 1 정의, Task 5가 소비 ✓
+- `ExternalResource` — M1b 정의, Task 3·4가 생산 ✓
+- `DeploymentInput` — Task 2 정의, Task 3·4가 생산 ✓
+- `linked_by` — M1a 정의. Task 5가 `'manifest'`·`'label'` 사용 ✓
+- `Drift` — Task 5 정의, Task 6이 소비 ✓
 
 **3. 위험 지점**
 
-- **Docker `Config.Env`의 값.** 실측으로 확인했다. 공용 VPS라 다른 프로젝트 DB 세 개의 비밀번호가 노출 대상이다. 허용목록 + 값 미포함 단언 + `git grep`으로 삼중 방어한다.
-- **`Cmd`/`Entrypoint`.** 인자에 비밀값이 들어가는 경우가 있다. 아예 담지 않는다.
-- **`Mounts[].Source`.** 호스트 경로가 드러난다. 볼륨 이름과 destination만 담는다.
-- **Vercel `decrypt=true`.** 쓰면 값이 온다. 금지한다.
-- **`package.json` 통째 저장.** `scripts`에 비밀값이 있는 경우가 있다. 의존성 키만 취한다.
-- **GitHub rate limit.** 저장소 41개 × 파일 조회. ETag 조건부 요청, 실패해도 전체 중단 금지.
-- **공용 VPS의 남의 컨테이너.** 이름 유사도로 연결하면 남의 것이 우리 프로젝트에 붙는다. Label만 신뢰한다.
-- **운영 마이그레이션.** 테이블 2개 추가뿐이어야 한다.
+- **Docker `Config.Env`의 값.** 실측 확인. 공용 VPS라 다른 프로젝트 DB 세 개가 대상이다. 허용목록 + 값 미포함 단언 + `git grep` 삼중 방어.
+- **`Cmd`/`Entrypoint`.** 인자에 비밀값이 들어간다. 아예 담지 않는다.
+- **`Mounts[].Source`.** 호스트 경로가 드러난다. 볼륨 이름과 destination만.
+- **Vercel `decrypt=true`.** 쓰면 값이 온다. 금지.
+- **공용 VPS의 남의 컨테이너.** 이름 유사도로 연결하면 남의 것이 우리 프로젝트에 붙는다. **정확 일치와 Label만 신뢰한다.**
+- **운영 마이그레이션 2회** (Task 1, Task 2). 각각 추가만이어야 한다.
+- **`provider`를 열린 문자열로 두면** 오타가 조용히 통과해 자동 연결이 실패한다. 목록으로 제한한다.
 
 **4. M1에서 배운 것의 반영**
 
-- 허용목록 원칙을 Global Constraints로 승격 — M1b Task 4에서 차단목록으로 했다면 새 필드가 뚫렸을 것이다
+- 허용목록 원칙을 Global Constraints로 승격
 - 모든 Zod 문자열 `.trim()` (M1b `[ worker]` 사건)
-- 시간은 DB 시계만 (M1a Task 3 시계 결함)
-- 사라진 자원은 `deleted_at`, `DELETE` 금지 (M1b Task 4)
-- 새 라우트를 추가하면 미들웨어 matcher를 기동해서 확인 — M2에는 새 공개 라우트가 없으므로 해당 없음
+- 시간은 DB 시계만 (M1a Task 3)
+- 사라진 자원은 `deleted_at`, `DELETE` 금지
 - `filesModified`를 지시와 대조 — M1c에서 이걸 안 해 미완성을 병합했다
+- 실제로 실행해보고 검증 — 테스트 통과가 대역으로만 검증된 것일 수 있다
 
 ---
 
@@ -654,8 +611,14 @@ Run: `pnpm typecheck && pnpm vitest run && pnpm --filter web build`
 
 orca orchestration + codex 위임. Task 1 → 2 → 3 → 4 → 5 → 6 순서.
 
-Task 1이 3·4의 선행, Task 2가 5의 선행, Task 3·4가 5의 선행, Task 5가 6의 선행이므로 병렬화하지 않는다.
+Task 1이 5의 선행, Task 2가 3·4의 선행, Task 3·4가 5의 선행, Task 5가 6의 선행이므로 병렬화하지 않는다.
 
-**Task 1 병합 후 운영 서버에 마이그레이션과 socket-proxy를 적용한다.** socket-proxy는 새 컨테이너이므로 기동 후 다른 서비스에 영향이 없는지 확인한다.
+**Task 1·2 병합 후 각각 운영에 마이그레이션을 적용한다.** Task 2에서는 socket-proxy가 새로 뜨므로 다른 서비스에 영향이 없는지 확인한다.
 
-**Task 3 병합 후 운영에서 실제 수집을 한 번 돌린다.** 공용 VPS의 12개 컨테이너가 들어오는지, 그리고 **DB에 비밀값이 없는지**를 직접 확인한다. 이것이 M2에서 가장 중요한 검증이다.
+**Task 4 병합 후 운영에서 실제 수집을 한 번 돌린다.** 공용 VPS의 12개 컨테이너가 들어오는지, 그리고 **DB에 비밀값이 없는지**를 직접 확인한다. 이것이 M2에서 가장 중요한 검증이다.
+
+```sql
+-- 이 쿼리가 0을 반환해야 한다
+select count(*) from resources
+where metadata::text ~ '(PASSWORD|SECRET|TOKEN|KEY)=[^"]';
+```
