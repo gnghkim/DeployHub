@@ -1,5 +1,6 @@
 services:
   web:
     build: ./apps/web
+    container_name: deployhub-web
   worker:
     build: ./apps/worker

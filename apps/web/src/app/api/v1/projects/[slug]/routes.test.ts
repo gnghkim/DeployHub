@@ -111,6 +111,10 @@ async function seedProject() {
         runtime: 'node',
         language: 'typescript',
         criticality: 5,
+        provider: 'hostinger',
+        externalRef: 'deployhub-web-service',
+        containerName: 'deployhub-web',
+        url: 'https://hub.nolzza.net',
       },
       {
         projectId: project.id,
@@ -370,6 +374,10 @@ describe('GET project read APIs', () => {
             runtime: 'node',
             language: 'typescript',
             criticality: 5,
+            provider: 'hostinger',
+            externalRef: 'deployhub-web-service',
+            containerName: 'deployhub-web',
+            url: 'https://hub.nolzza.net',
           },
           {
             name: 'Worker',
@@ -378,6 +386,10 @@ describe('GET project read APIs', () => {
             runtime: 'node',
             language: 'typescript',
             criticality: 4,
+            provider: null,
+            externalRef: null,
+            containerName: null,
+            url: null,
           },
         ],
         domains: [
@@ -401,6 +413,12 @@ describe('GET project read APIs', () => {
       ),
     });
     expect(parsedByCli.slug).toBe('deployhub');
+    expect(parsedByCli.components[0]).toMatchObject({
+      provider: 'hostinger',
+      externalRef: 'deployhub-web-service',
+      containerName: 'deployhub-web',
+      url: 'https://hub.nolzza.net',
+    });
   });
 
   it('returns counts and the latest Draft using the exact CLI status contract', async () => {

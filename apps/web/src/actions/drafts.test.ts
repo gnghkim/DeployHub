@@ -59,6 +59,10 @@ spec:
       runtime: nodejs
       language: typescript
       criticality: 4
+      provider: hostinger
+      externalRef: deployhub-web-service
+      container: deployhub-web
+      url: https://hub.nolzza.net
     - name: worker
       type: worker
       runtime: nodejs
@@ -161,8 +165,35 @@ describe('approveDraft', () => {
       repository: 'ktgo/deployhub',
     });
     expect((await db.select().from(schema.components)).map(
-      ({ name }) => name,
-    )).toEqual(['web', 'worker']);
+      ({
+        name,
+        provider,
+        externalRef,
+        containerName,
+        url,
+      }) => ({
+        name,
+        provider,
+        externalRef,
+        containerName,
+        url,
+      }),
+    )).toEqual([
+      {
+        name: 'web',
+        provider: 'hostinger',
+        externalRef: 'deployhub-web-service',
+        containerName: 'deployhub-web',
+        url: 'https://hub.nolzza.net',
+      },
+      {
+        name: 'worker',
+        provider: null,
+        externalRef: null,
+        containerName: null,
+        url: null,
+      },
+    ]);
     expect(await db.select().from(schema.domains)).toMatchObject([
       {
         projectId: project?.id,
@@ -212,6 +243,10 @@ describe('approveDraft', () => {
       runtime: 'nodejs',
       language: 'typescript',
       criticality: 4,
+      provider: 'hostinger',
+      externalRef: 'deployhub-web-service',
+      containerName: 'deployhub-web',
+      url: 'https://hub.nolzza.net',
     });
   });
 

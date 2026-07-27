@@ -159,3 +159,88 @@ describe('manifestSchema', () => {
     expect(() => manifestSchema.parse({ ...base, extra: true })).toThrow();
   });
 });
+
+describe('manifest component deployment declarations', () => {
+  const parseComponent = (component: Record<string, unknown>) =>
+    manifestSchema.parse({
+      ...base,
+      spec: {
+        ...base.spec,
+        components: [{ name: 'web', type: 'frontend', ...component }],
+      },
+    }).spec.components[0]!;
+
+  it('rejects providers outside the supported 12-value catalog', () => {
+    expect(() => parseComponent({ provider: 'mycloud' })).toThrow();
+    expect(() => parseComponent({ provider: 'superbase' })).toThrow();
+
+    for (const provider of [
+      'vercel',
+      'hostinger',
+      'supabase',
+      'docker',
+      'github',
+      'aws',
+      'cloudflare',
+      'upstash',
+      'railway',
+      'neon',
+      'planetscale',
+      'self-hosted',
+    ]) {
+      expect(() => parseComponent({ provider })).not.toThrow();
+    }
+  });
+
+  it('keeps all four deployment declaration fields optional', () => {
+    const component = parseComponent({});
+
+    expect(component.provider).toBeUndefined();
+    expect(component.externalRef).toBeUndefined();
+    expect(component.container).toBeUndefined();
+    expect(component.url).toBeUndefined();
+  });
+
+  it('trims every deployment declaration string', () => {
+    expect(
+      parseComponent({
+        provider: '  docker  ',
+        externalRef: '  deployhub-project  ',
+        container: '  deployhub-web  ',
+        url: '  https://hub.nolzza.net  ',
+      }),
+    ).toMatchObject({
+      provider: 'docker',
+      externalRef: 'deployhub-project',
+      container: 'deployhub-web',
+      url: 'https://hub.nolzza.net',
+    });
+  });
+
+  it('normalizes an empty externalRef to undefined', () => {
+    expect(parseComponent({ externalRef: '   ' }).externalRef).toBeUndefined();
+  });
+
+  it('requires a Docker-compatible container name', () => {
+    expect(parseComponent({ container: 'deployhub-web.1' }).container).toBe(
+      'deployhub-web.1',
+    );
+    expect(() => parseComponent({ container: '-deployhub-web' })).toThrow();
+    expect(() => parseComponent({ container: 'deployhub/web' })).toThrow();
+  });
+
+  it('requires an http or https URL', () => {
+    expect(parseComponent({ url: 'http://localhost:3000' }).url).toBe(
+      'http://localhost:3000',
+    );
+    expect(parseComponent({ url: 'https://hub.nolzza.net' }).url).toBe(
+      'https://hub.nolzza.net',
+    );
+    expect(() => parseComponent({ url: 'ftp://hub.nolzza.net' })).toThrow();
+    expect(() => parseComponent({ url: 'hub.nolzza.net' })).toThrow();
+  });
+
+  it('continues to reject unknown component keys', () => {
+    expect(() => parseComponent({ deploymentTarget: 'vps-1' })).toThrow();
+  });
+});

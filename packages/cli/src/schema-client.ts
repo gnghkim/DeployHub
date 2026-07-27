@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { MANIFEST_VERSION } from '@deployhub/manifest';
 
 const CACHE_TTL_MS = 60 * 60 * 1_000;
 
@@ -68,38 +69,68 @@ function responseVersion(response: Response): string {
   return version;
 }
 
+class UnsupportedManifestVersionError extends Error {}
+
+function compatibleResponseVersion(response: Response): string {
+  const version = responseVersion(response);
+  if (version !== MANIFEST_VERSION) {
+    throw new UnsupportedManifestVersionError(
+      `Unsupported DeployHub manifest version ${version}; expected ${MANIFEST_VERSION}`,
+    );
+  }
+  return version;
+}
+
 async function fetchSchema(
   url: string,
   fetchImpl: typeof fetch,
   cachePath: string,
   now: () => number,
+  cache?: ManifestSchemaCache,
 ): Promise<ManifestSchemaResult> {
   const response = await fetchImpl(url, {
     method: 'GET',
-    headers: { Accept: 'application/schema+json, application/json' },
+    headers: {
+      Accept: 'application/schema+json, application/json',
+      ...(cache?.etag ? { 'If-None-Match': cache.etag } : {}),
+    },
   });
+  const version = compatibleResponseVersion(response);
+  if (response.status === 304) {
+    if (!cache) {
+      throw new Error(
+        'DeployHub schema server returned 304 without a cached schema',
+      );
+    }
+    return {
+      schema: cache.schema,
+      version,
+      source: 'cache',
+    };
+  }
   if (!response.ok) {
     throw new Error(
       `DeployHub schema server returned HTTP ${response.status}`,
     );
   }
 
-  const version = responseVersion(response);
   const schema = (await response.json()) as Record<string, unknown>;
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
     throw new Error('DeployHub schema server returned an invalid JSON schema');
   }
+  const etag = response.headers.get('ETag');
+  if (!etag) {
+    throw new Error('DeployHub schema response is missing ETag');
+  }
 
-  const cache: ManifestSchemaCache = {
+  const nextCache: ManifestSchemaCache = {
     version,
     schema,
     fetchedAt: new Date(now()).toISOString(),
-    ...(response.headers.get('ETag')
-      ? { etag: response.headers.get('ETag') ?? undefined }
-      : {}),
+    etag,
   };
   await mkdir(dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, JSON.stringify(cache, null, 2));
+  await writeFile(cachePath, JSON.stringify(nextCache, null, 2));
   return { schema, version, source: 'server' };
 }
 
@@ -120,34 +151,33 @@ export async function getManifestSchema(
   const warn = options.warn ?? console.warn;
   const url = schemaUrl(options.baseUrl);
   const cache = await readCache(cachePath);
-  const cacheAge = cache
-    ? now() - Date.parse(cache.fetchedAt)
+  const compatibleCache = cache?.version === MANIFEST_VERSION
+    ? cache
+    : undefined;
+  if (cache && !compatibleCache) {
+    await rm(cachePath, { force: true });
+  }
+  const cacheAge = compatibleCache
+    ? now() - Date.parse(compatibleCache.fetchedAt)
     : Number.POSITIVE_INFINITY;
-  let fallbackCache = cache;
+  const fallbackCache =
+    compatibleCache && cacheAge <= CACHE_TTL_MS
+      ? compatibleCache
+      : undefined;
 
   try {
-    if (cache && cacheAge <= CACHE_TTL_MS) {
-      const versionResponse = await fetchImpl(url, { method: 'HEAD' });
-      if (!versionResponse.ok) {
-        throw new Error(
-          `DeployHub schema server returned HTTP ${versionResponse.status}`,
-        );
-      }
-      const serverVersion = responseVersion(versionResponse);
-      if (serverVersion === cache.version) {
-        return {
-          schema: cache.schema,
-          version: cache.version,
-          source: 'cache',
-        };
-      }
-
-      fallbackCache = undefined;
-      await rm(cachePath, { force: true });
-    }
-
-    return await fetchSchema(url, fetchImpl, cachePath, now);
+    return await fetchSchema(
+      url,
+      fetchImpl,
+      cachePath,
+      now,
+      compatibleCache,
+    );
   } catch (error) {
+    if (error instanceof UnsupportedManifestVersionError) {
+      await rm(cachePath, { force: true });
+      throw error;
+    }
     if (fallbackCache) {
       warn(
         `DeployHub is offline; using cached schema ${fallbackCache.version} from ${fallbackCache.fetchedAt}.`,

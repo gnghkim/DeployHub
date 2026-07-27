@@ -43,6 +43,10 @@ export function createProjectManifestHandler(database: Db) {
             runtime: component.runtime,
             language: component.language,
             criticality: component.criticality,
+            provider: component.provider,
+            externalRef: component.externalRef,
+            containerName: component.containerName,
+            url: component.url,
           })),
           domains: project.domains.map((domain) => ({
             domain: domain.domain,

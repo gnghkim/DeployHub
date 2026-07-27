@@ -29,7 +29,7 @@ function componentSummary(
   const component = result.manifest.spec?.components.find(
     (candidate) => candidate.name === name,
   );
-  expect(component).toBeDefined();
+  if (!component) throw new Error(`Missing detected component: ${name}`);
   return component;
 }
 
@@ -85,6 +85,28 @@ describe('detectProject', () => {
       source: 'apps/web/package.json',
     });
     expect(result.fieldSources.web?.type?.evidence).toContain('compose.yaml');
+    expect(componentSummary(result, 'web')).toMatchObject({
+      provider: 'docker',
+      container: 'deployhub-web',
+    });
+    expect(componentSummary(result, 'worker')).toMatchObject({
+      provider: 'docker',
+      container: 'worker',
+    });
+    expect(componentSummary(result, 'web').url).toBeUndefined();
+    expect(componentSummary(result, 'web').externalRef).toBeUndefined();
+    expect(result.fieldSources.web?.container).toMatchObject({
+      origin: 'detected',
+      source: 'compose.yaml',
+    });
+    expect(result.fieldSources.web?.provider).toMatchObject({
+      origin: 'inferred',
+      source: 'compose.yaml',
+    });
+    expect(result.fieldSources.web?.url).toEqual({ origin: 'unknown' });
+    expect(result.fieldSources.web?.externalRef).toEqual({
+      origin: 'unknown',
+    });
     expect(result.fieldSources.web?.criticality).toEqual({
       origin: 'unknown',
     });

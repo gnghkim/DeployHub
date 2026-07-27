@@ -16,6 +16,21 @@ export const COMPONENT_TYPES = [
   'monitoring',
 ] as const;
 
+export const COMPONENT_PROVIDERS = [
+  'vercel',
+  'hostinger',
+  'supabase',
+  'docker',
+  'github',
+  'aws',
+  'cloudflare',
+  'upstash',
+  'railway',
+  'neon',
+  'planetscale',
+  'self-hosted',
+] as const;
+
 const projectLifecycles = [
   'experimental',
   'development',
@@ -32,6 +47,11 @@ const slugSchema = z
   .trim()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 const nonEmptyString = z.string().trim().min(1);
+const optionalTrimmedString = z
+  .string()
+  .trim()
+  .transform((value) => value || undefined)
+  .optional();
 const oneToFive = z.number().int().min(1).max(5);
 
 const metadataSchema = z
@@ -61,6 +81,14 @@ const componentSchema = z
     language: nonEmptyString.optional(),
     criticality: oneToFive.optional(),
     path: nonEmptyString.optional(),
+    provider: trimmedEnum(COMPONENT_PROVIDERS).optional(),
+    externalRef: optionalTrimmedString,
+    container: z
+      .string()
+      .trim()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/)
+      .optional(),
+    url: z.string().trim().regex(/^https?:\/\//).optional(),
   })
   .strict();
 

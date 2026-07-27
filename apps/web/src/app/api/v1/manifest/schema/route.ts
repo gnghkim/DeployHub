@@ -1,12 +1,9 @@
-import {
-  MANIFEST_VERSION,
-  manifestJsonSchema,
-} from '@deployhub/manifest';
+import { manifestSchemaResponse } from '../../../../../lib/manifest-schema-response';
 
-export function GET(): Response {
-  return Response.json(manifestJsonSchema(), {
-    headers: {
-      'X-Manifest-Version': MANIFEST_VERSION,
-    },
-  });
+export function GET(request?: Request): Response {
+  return manifestSchemaResponse(request);
+}
+
+export function HEAD(request?: Request): Response {
+  return manifestSchemaResponse(request, false);
 }

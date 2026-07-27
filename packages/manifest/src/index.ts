@@ -1,4 +1,5 @@
 export {
+  COMPONENT_PROVIDERS,
   COMPONENT_TYPES,
   MANIFEST_VERSION,
   manifestSchema,

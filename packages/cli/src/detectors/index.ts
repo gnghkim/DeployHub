@@ -2,7 +2,11 @@ import { access, readFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import type { Manifest } from '@deployhub/manifest';
 import { detectDatabaseComponent } from './database';
-import { detectComposeServices, hasDockerfile } from './docker';
+import {
+  detectComposeServices,
+  hasDockerfile,
+  type ComposeService,
+} from './docker';
 import {
   detectGitHubRepository,
   detectGitHubWorkflows,
@@ -212,10 +216,36 @@ async function declaredEnvironmentKeys(rootDir: string): Promise<string[]> {
 function appendComposeEvidence(
   detection: DetectedComponent,
   composeFilename: string,
+  service: ComposeService,
 ): void {
   const typeSource = detection.sources.type;
-  if (!typeSource || typeSource.origin !== 'detected') return;
-  typeSource.evidence = `${typeSource.evidence}; ${composeFilename} service ${detection.component.name}`;
+  if (typeSource?.origin === 'detected') {
+    typeSource.evidence = `${typeSource.evidence}; ${composeFilename} service ${service.name}`;
+  }
+
+  const container = service.containerName ?? service.name;
+  const serviceEvidence = `${composeFilename} service ${service.name}`;
+  detection.component.container = container;
+  detection.component.provider = 'docker';
+  detection.sources.container = {
+    origin: 'detected',
+    evidence: service.containerName
+      ? `${composeFilename} services.${service.name}.container_name=${container}`
+      : serviceEvidence,
+    source: composeFilename,
+  };
+  detection.sources.provider = {
+    origin: 'inferred',
+    evidence: serviceEvidence,
+    source: composeFilename,
+  };
+}
+
+function addDeploymentSourceDefaults(detection: DetectedComponent): void {
+  detection.sources.provider = { origin: 'unknown' };
+  detection.sources.externalRef = { origin: 'unknown' };
+  detection.sources.container = { origin: 'unknown' };
+  detection.sources.url = { origin: 'unknown' };
 }
 
 export async function detectProject(
@@ -227,17 +257,20 @@ export async function detectProject(
   if (python) detections.push(python);
   const database = await detectDatabaseComponent(rootDir);
   if (database) detections.push(database);
+  detections.forEach(addDeploymentSourceDefaults);
 
   const compose = await detectComposeServices(rootDir);
   if (compose.filename) {
     for (const service of compose.services) {
       const detection = detections.find(
-        ({ component }) => component.name === service,
+        ({ component }) => component.name === service.name,
       );
       if (detection) {
-        appendComposeEvidence(detection, compose.filename);
+        appendComposeEvidence(detection, compose.filename, service);
       } else {
-        notes.push(`Compose service candidate: ${service} (${compose.filename})`);
+        notes.push(
+          `Compose service candidate: ${service.name} (${compose.filename})`,
+        );
       }
     }
   }

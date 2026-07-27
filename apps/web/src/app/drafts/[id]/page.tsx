@@ -81,6 +81,7 @@ export default async function DraftDetailPage({
 
   const parsed = parseManifest(draft.manifestYaml);
   const title = parsed.ok ? parsed.manifest.metadata.name : 'Validation failed';
+  const components = parsed.ok ? parsed.manifest.spec.components : [];
   const diff = storedDiff(draft.diff);
   const issues = validationIssues(draft.validationResult);
   const sources = fieldSources(draft.fieldSources);
@@ -164,6 +165,53 @@ export default async function DraftDetailPage({
                 ))}
               </ul>
             </section>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-base font-medium text-[var(--color-ink)]">
+            배포 선언
+          </h3>
+          <div className="mt-3 space-y-4 text-sm">
+            {components.map((component) => {
+              const declarations = [
+                ['provider', component.provider],
+                ['externalRef', component.externalRef],
+                ['container', component.container],
+                ['url', component.url],
+              ] as const;
+              return (
+                <section key={component.name}>
+                  <h4 className="font-medium text-[var(--color-body)]">
+                    {component.name}
+                  </h4>
+                  <ul className="mt-1 space-y-1">
+                    {declarations.map(([field, value]) => {
+                      const source = sources.find(
+                        (entry) => entry.component === component.name
+                          && entry.field === field,
+                      );
+                      return (
+                        <li
+                          key={field}
+                          className={
+                            source?.value.origin === 'inferred'
+                              ? 'text-[var(--color-warning)]'
+                              : 'text-[var(--color-body)]'
+                          }
+                        >
+                          {field}: {value ?? '—'}
+                          {source?.value.origin
+                            ? ` · ${source.value.origin}`
+                            : ''}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+            {components.length === 0 ? <p>표시할 선언이 없습니다.</p> : null}
           </div>
         </Card>
 
