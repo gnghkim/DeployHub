@@ -13,6 +13,7 @@ const API_URL = 'https://api.vercel.com';
 const CONNECTION_ERROR = 'Vercel 연결을 확인하지 못했습니다.';
 const RESPONSE_ERROR = 'Vercel API 응답 형식이 올바르지 않습니다.';
 const DETAIL_CONCURRENCY = 4;
+const DEPLOYMENT_PAGE_SIZE = 20;
 
 type FetchResponse = {
   ok: boolean;
@@ -152,25 +153,24 @@ export function createVercelCollector(
     return projects;
   }
 
+  // 프로젝트 목록과 달리 배포는 페이지를 넘기지 않는다. Vercel 은 최신순
+  // 으로 주므로 최근 한 페이지면 "최종 배포" 를 아는 데 충분하다.
+  //
+  // 끝까지 훑으면 6시간마다 모든 프로젝트의 전체 배포 이력을 다시 받아
+  // 한 트랜잭션에서 upsert 하게 된다. 활발한 프로젝트는 배포가 수천 건
+  // 이라 요청 수와 트랜잭션 크기가 시간이 갈수록 늘기만 한다.
+  //
+  // 이력이 잘리지도 않는다. deployments 는 (provider, external_deployment_id)
+  // 로 upsert 하므로 이전 동기화에서 본 배포는 DB 에 그대로 남는다.
+  // 매번 최근 것만 받아도 DB 안에서는 이력이 쌓인다.
   async function listProjectDeployments(
     projectId: string,
   ): Promise<unknown[]> {
-    const deployments: unknown[] = [];
-    const cursors = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const response = await request('/v6/deployments', {
-        projectId,
-        ...(cursor === undefined ? {} : { until: cursor }),
-      });
-      deployments.push(...responseArray(response, 'deployments'));
-      cursor = paginationNext(response);
-      if (cursor !== undefined && cursors.has(cursor)) {
-        throw new Error(RESPONSE_ERROR);
-      }
-      if (cursor !== undefined) cursors.add(cursor);
-    } while (cursor !== undefined);
-    return deployments;
+    const response = await request('/v6/deployments', {
+      projectId,
+      limit: String(DEPLOYMENT_PAGE_SIZE),
+    });
+    return responseArray(response, 'deployments');
   }
 
   return {

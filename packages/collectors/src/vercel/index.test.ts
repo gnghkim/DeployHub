@@ -85,11 +85,10 @@ describe('createVercelCollector', () => {
     ]);
   });
 
-  it('lists deployments for every Vercel project', async () => {
-    const secondDeployment = {
-      ...deployment,
-      uid: 'dpl_deployhub_002',
-    };
+  // 배포는 최신 한 페이지만 받는다. 끝까지 훑으면 동기화마다 전체 이력을
+  // 다시 받게 되고, 그 비용이 배포 횟수만큼 무한히 늘어난다. 이전 배포는
+  // (provider, external_deployment_id) upsert 로 DB 에 이미 남아 있다.
+  it('fetches only the latest page of deployments per project', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({
         projects: [project],
@@ -98,34 +97,26 @@ describe('createVercelCollector', () => {
       .mockResolvedValueOnce(jsonResponse({
         deployments: [deployment],
         pagination: { next: 1784930500000 },
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        deployments: [secondDeployment],
-        pagination: { next: null },
       }));
 
     const deployments = await createVercelCollector(
       'vercel_api_secret',
     ).listDeployments();
 
-    expect(deployments).toHaveLength(2);
+    expect(deployments).toHaveLength(1);
     expect(deployments[0]).toMatchObject({
       resourceExternalId: project.id,
       externalDeploymentId: deployment.uid,
     });
+
+    // pagination.next 가 있어도 두 번째 요청을 보내지 않아야 한다.
     const deploymentUrls = fetchMock.mock.calls
       .slice(1)
       .map(([input]) => input);
-    expect(deploymentUrls.map(requestPath)).toEqual([
-      '/v6/deployments',
-      '/v6/deployments',
-    ]);
+    expect(deploymentUrls.map(requestPath)).toEqual(['/v6/deployments']);
     expect(requestQuery(deploymentUrls[0] ?? '')).toEqual([
       ['projectId', project.id],
-    ]);
-    expect(requestQuery(deploymentUrls[1] ?? '')).toEqual([
-      ['projectId', project.id],
-      ['until', '1784930500000'],
+      ['limit', '20'],
     ]);
   });
 
