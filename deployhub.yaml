@@ -37,6 +37,11 @@ spec:
       criticality: 5
       provider: self-hosted
       container: deployhub-postgres
+    - name: socket-proxy
+      type: monitoring
+      provider: self-hosted
+      container: deployhub-socket-proxy
+      criticality: 2
   domains:
     - domain: hub.nolzza.net
       environment: production

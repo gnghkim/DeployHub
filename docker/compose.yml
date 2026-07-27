@@ -46,13 +46,34 @@ services:
     restart: unless-stopped
     command: ["node", "apps/worker/dist/index.js"]
     env_file: [../.env]
+    environment:
+      DOCKER_HOST_URL: ${DOCKER_HOST_URL:-http://socket-proxy:2375}
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [deployhub]
+    networks: [deployhub, docker-api]
     labels:
       deployhub.project: "deployhub"
       deployhub.component: "worker"
+      deployhub.environment: "production"
+
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: deployhub-socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [docker-api]
+    labels:
+      deployhub.project: "deployhub"
+      deployhub.component: "socket-proxy"
       deployhub.environment: "production"
 
   # 마이그레이션 전용. 평소에는 뜨지 않고 아래로만 실행한다.
@@ -111,6 +132,8 @@ volumes:
 networks:
   # 내부 전용. postgres 와 앱만 붙는다. 외부에서 닿지 못한다.
   deployhub:
+  docker-api:
+    internal: true
   # 공용 Caddy 가 쓰는 기존 네트워크. 서버에 이미 존재한다.
   # 전용 서버에 새로 설치한다면 external 을 지우고 standalone 프로파일로
   # 자체 Caddy 를 띄운다.
