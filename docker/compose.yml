@@ -58,7 +58,10 @@ services:
       deployhub.environment: "production"
 
   socket-proxy:
-    image: tecnativa/docker-socket-proxy
+    # 스택에서 유일하게 docker.sock 을 쥐는 컨테이너다. 태그를 비워 두면
+    # latest 로 해석되어 pull 한 번에 이 코드가 조용히 바뀐다. 다이제스트로
+    # 고정한다. 올릴 때는 릴리스 노트를 읽고 다이제스트를 함께 갱신한다.
+    image: tecnativa/docker-socket-proxy:0.5.0@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
     container_name: deployhub-socket-proxy
     restart: unless-stopped
     environment:
