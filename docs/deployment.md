@@ -176,9 +176,20 @@ chmod 600 .env
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml build
+docker compose --env-file .env -f docker/compose.yml --profile tools build migrate
 ```
 
-`deployhub:local` 하나가 만들어진다. web 과 worker 가 이 이미지를 공유하고 `command` 로 갈린다. 자체 Caddy 이미지는 `standalone` 프로파일에 있어 여기서 빌드되지 않는다.
+**두 줄 다 실행해야 한다.** `docker compose build` 는 프로파일에 속한 서비스를 조용히 건너뛴다. `migrate` 는 `profiles: ["tools"]` 라 첫 줄로는 다시 빌드되지 않는다.
+
+이걸 빠뜨리면 다음 단계가 **거짓 성공**을 낸다. 낡은 migrate 이미지에는 새 `.sql` 파일이 없으니 drizzle 은 적용할 게 없다고 판단하고 `migrations applied successfully!` 를 출력한다. 테이블은 생기지 않는다. 2026-07-27 에 0005 에서 실제로 겪었다.
+
+빌드 후 이미지 안에 최신 마이그레이션이 들어갔는지 확인한다:
+
+```bash
+docker run --rm --entrypoint sh deployhub-migrate:local -c 'ls /app/drizzle/*.sql' | tail -3
+```
+
+`deployhub:local` 은 web 과 worker 가 공유하고 `command` 로 갈린다. 자체 Caddy 이미지는 `standalone` 프로파일에 있어 여기서 빌드되지 않는다(공용 Caddy 를 쓰는 서버에서는 필요 없다).
 
 수 분 걸린다. 마지막에 `Built` 가 보이면 성공이다.
 
@@ -201,7 +212,7 @@ docker inspect deployhub-postgres --format '{{.State.Health.Status}}'
 docker compose --env-file .env -f docker/compose.yml --profile tools run --rm migrate
 ```
 
-`migrations applied successfully!` 가 나오면 된다.
+`migrations applied successfully!` 가 나오면 된다. **다만 이 메시지만 믿지 말고 아래 테이블 확인까지 해라.** 낡은 이미지로 돌면 같은 메시지가 나온다(6장 참고).
 
 이 명령은 **여러 번 실행해도 안전하다.** drizzle 이 `drizzle.__drizzle_migrations` 에 적용 이력을 기록하므로 이미 적용된 것은 건너뛴다.
 
@@ -217,10 +228,10 @@ docker compose --env-file .env -f docker/compose.yml exec postgres \
 
 ---
 
-## 9. web·worker 기동
+## 9. web·worker·socket-proxy 기동
 
 ```bash
-docker compose --env-file .env -f docker/compose.yml up -d web worker
+docker compose --env-file .env -f docker/compose.yml up -d
 docker compose --env-file .env -f docker/compose.yml ps
 docker compose --env-file .env -f docker/compose.yml logs worker | tail -5
 ```
@@ -244,6 +255,33 @@ docker run --rm --network web curlimages/curl:latest \
 ```
 
 `307` 이 나와야 한다.
+
+### socket-proxy 격리 확인
+
+`socket-proxy` 는 `/var/run/docker.sock` 을 읽기 전용으로 쥔다. 이 소켓은 사실상 호스트 root 권한이므로, 닿을 수 있는 범위를 좁게 유지하는 것이 이 컨테이너를 두는 조건이다. 구조는 두 겹이다.
+
+- `docker-api` 네트워크가 `internal: true` 다. worker 와 socket-proxy 만 여기 붙는다. **web 은 붙지 않는다** — 외부 요청을 직접 받는 쪽이라, 거기서 Docker API 에 닿으면 격리가 무의미해진다.
+- socket-proxy 자체가 `POST: 0` 이라 읽기만 통과시킨다.
+
+배포할 때마다 두 겹이 다 살아 있는지 실측한다. 읽고 넘기지 말고 실제로 실행해라.
+
+```bash
+# web 에서는 닿지 않아야 한다 → "차단됨"
+docker exec deployhub-web node -e \
+  "fetch('http://socket-proxy:2375/_ping',{signal:AbortSignal.timeout(4000)}).then(r=>console.log('도달함',r.status)).catch(e=>console.log('차단됨'))"
+
+# worker 에서는 닿아야 한다 → "도달함 200"
+docker exec deployhub-worker node -e \
+  "fetch('http://socket-proxy:2375/_ping',{signal:AbortSignal.timeout(4000)}).then(r=>console.log('도달함',r.status)).catch(e=>console.log('차단됨'))"
+
+# 쓰기는 막혀야 한다 → 403
+docker exec deployhub-worker node -e \
+  "fetch('http://socket-proxy:2375/containers/create',{method:'POST',headers:{'content-type':'application/json'},body:'{}',signal:AbortSignal.timeout(4000)}).then(r=>console.log('POST',r.status))"
+```
+
+`web` 에서 `도달함` 이 나오면 격리가 깨진 것이다. 배포를 멈추고 `docker/compose.yml` 의 `networks:` 를 확인해라.
+
+이미지는 다이제스트로 고정되어 있다. 올릴 때는 릴리스 노트를 읽고 `compose.yml` 의 다이제스트를 함께 갱신한다 — 태그만 바꾸면 고정한 의미가 없다.
 
 ---
 
@@ -343,11 +381,19 @@ DeployHub 화면 → **Providers** → GitHub 계정 추가 → 토큰 입력 �
 ### 재배포
 
 ```bash
-cd /opt/DeployHub
-git pull
+cd ~/DeployHub
+git pull --ff-only
 docker compose --env-file .env -f docker/compose.yml build
+docker compose --env-file .env -f docker/compose.yml --profile tools build migrate   # 빠뜨리면 마이그레이션이 거짓 성공한다
 docker compose --env-file .env -f docker/compose.yml --profile tools run --rm migrate
 docker compose --env-file .env -f docker/compose.yml up -d
+```
+
+마이그레이션이 있는 갱신이라면 테이블이 실제로 생겼는지 확인한다:
+
+```bash
+docker exec deployhub-postgres psql -U deployhub -d deployhub -tAc \
+  "select table_name from information_schema.tables where table_schema='public' order by 1"
 ```
 
 ### 로그
