@@ -15,7 +15,11 @@
       "deployhub.project": "deployhub",
       "deployhub.component": "database",
       "com.docker.compose.project": "docker",
-      "com.docker.compose.service": "postgres"
+      "com.docker.compose.service": "postgres",
+      "com.docker.compose.project.working_dir": "/home/dev/LABEL_HOST_PATH_SHOULD_NOT_APPEAR",
+      "com.docker.compose.project.config_files": "/home/dev/LABEL_HOST_PATH_SHOULD_NOT_APPEAR/compose.yml",
+      "com.docker.compose.project.environment_file": "/home/dev/LABEL_HOST_PATH_SHOULD_NOT_APPEAR/.env",
+      "org.opencontainers.image.version": "17.10"
     },
     "Cmd": ["postgres", "-c", "password=ALSO_SECRET"],
     "Entrypoint": ["docker-entrypoint.sh"]

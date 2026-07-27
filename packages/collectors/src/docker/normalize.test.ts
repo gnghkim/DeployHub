@@ -50,6 +50,23 @@ describe('Docker normalization', () => {
     });
   });
 
+  // 라벨도 허용목록이다. compose 가 붙이는 라벨 셋이 호스트 경로이고,
+  // environment_file 은 남의 프로젝트 .env 위치다. Mounts[].Source 를
+  // 막아 놓고 이쪽을 열어 두면 같은 것이 다른 문으로 들어온다.
+  it('drops labels outside the allowlist, including host paths', () => {
+    const result = normalizeDockerContainer(inspect);
+
+    expect(JSON.stringify(result)).not.toContain(
+      'LABEL_HOST_PATH_SHOULD_NOT_APPEAR',
+    );
+    const labels = result.metadata.labels as Record<string, string>;
+    expect(Object.keys(labels).sort()).toEqual([
+      'deployhub.component',
+      'deployhub.project',
+      'org.opencontainers.image.version',
+    ]);
+  });
+
   it('keeps only environment variable names split at the first equals sign', () => {
     expect(normalizeDockerContainer(inspect).metadata.envKeys).toEqual([
       'POSTGRES_USER',

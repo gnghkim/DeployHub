@@ -44,6 +44,31 @@ function stringRecord(value: unknown): Record<string, string> {
   );
 }
 
+// 라벨은 값이 무엇이든 들어올 수 있는 자유 문자열이라 통째로 담으면
+// 안 된다. compose 가 붙이는 것만 봐도 호스트 경로가 셋 있다. 운영에서
+// 실측한 값이다.
+//
+//   com.docker.compose.project.config_files    /home/dev/workwiki/docker-compose.yml
+//   com.docker.compose.project.working_dir     /home/dev/workwiki
+//   com.docker.compose.project.environment_file
+//
+// 마지막 것은 남의 프로젝트 .env 파일 위치다. Mounts[].Source 를 막아
+// 놓고 이쪽을 열어 두면 같은 것이 다른 문으로 들어온다.
+//
+// 차단목록으로 저 셋만 지우면 compose 가 경로 라벨을 하나 더 만드는
+// 날 다시 샌다. 허용목록으로 간다.
+const LABEL_PREFIXES = ['deployhub.', 'org.opencontainers.image.'];
+
+function allowedLabels(
+  labels: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels).filter(([key]) =>
+      LABEL_PREFIXES.some((prefix) => key.startsWith(prefix))
+    ),
+  );
+}
+
 function environmentKeys(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
@@ -108,7 +133,9 @@ export function normalizeDockerContainer(
     createdAt: isoTimestamp(inspect.Created),
     startedAt: isoTimestamp(state.StartedAt),
     restartCount,
-    labels,
+    // compose 식별자는 아래 전용 필드로 따로 뽑으므로, labels 에는
+    // 우리가 붙인 것과 이미지 표준 메타데이터만 남긴다.
+    labels: allowedLabels(labels),
     composeProject: labels['com.docker.compose.project'] ?? null,
     composeService: labels['com.docker.compose.service'] ?? null,
     networks: Object.keys(networks),
