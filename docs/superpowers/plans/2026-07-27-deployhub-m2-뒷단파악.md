@@ -334,7 +334,8 @@ Run: `docker compose -f docker/compose.yml config | grep -A2 published` — 80/4
 
 ```ts
 export function createVercelCollector(token: string, teamId?: string): VercelCollector;
-export function normalizeVercelProject(project: unknown, envKeys: string[]): ExternalResource;
+export type VercelEnvVar = { key: string; target: string[]; type: string };
+export function normalizeVercelProject(project: unknown, envVars: VercelEnvVar[]): ExternalResource;
 export function normalizeVercelDeployment(deployment: unknown): ExternalDeployment;
 ```
 
@@ -377,7 +378,7 @@ export type VercelCollector = DeploymentCollector;
 검증할 것:
 1. `externalId`가 Vercel 프로젝트 ID, `resourceType`이 `vercel_project`
 2. `metadata.framework`, `metadata.gitRepository`(`owner/name` 형태), `metadata.productionDomain`
-3. **`metadata.envKeys`가 이름만 담는다**
+3. **`metadata.envVars`의 각 원소가 `{key, target, type}` 뿐이다** — 키 집합을 정확히 비교한다. `target`은 정렬되어 있어야 한다(정렬하지 않으면 응답 순서가 바뀔 때마다 없던 Drift가 생긴다). `value`는 물론이고 `id`·`createdAt`·`gitBranch`·`comment`도 담지 않는다
 4. **결과 전체를 `JSON.stringify`했을 때 픽스처의 env 값이 없다**
 5. **허용목록 밖 필드가 `metadata`에 없다** — 예상 키 집합과 정확히 일치하는지 단언
 6. 배포 정규화가 `commitSha`·`status`·`deploymentUrl`·`startedAt`을 채운다
@@ -395,7 +396,11 @@ GET /v6/deployments?projectId={id}    배포 이력
 
 **`decrypt=true` 파라미터를 절대 쓰지 마라.** 응답에 `value` 필드가 오더라도 파싱 단계에서 즉시 버려라.
 
-`metadata` 허용목록: `framework`, `gitRepository`, `productionDomain`, `nodeVersion`, `envKeys`, `createdAt`, `updatedAt`.
+`metadata` 허용목록: `framework`, `gitRepository`, `productionDomain`, `nodeVersion`, `envVars`, `createdAt`, `updatedAt`.
+
+`envVars`가 이름만이 아니라 `{key, target, type}`인 이유는 이 시스템이 답하려는 질문 때문이다. 이름만 있으면 `SUPABASE_URL`이 존재한다는 것까지만 안다. `target`이 있어야 production과 preview가 서로 다른 뒷단을 보는지 구분된다 — Task 5의 Drift를 환경별로 가르려면 이 값이 필요하다. `type`은 값을 읽지 않고도 암호화 여부를 표시하게 해준다. 셋 다 열거형이라 비밀값이 아니다.
+
+**객체 단위에도 허용목록을 적용한다.** 응답을 복사한 뒤 `value`만 지우는 방식은 금지다. Vercel이 필드를 추가하면 그대로 샌다.
 
 - [ ] **Step 3: worker 핸들러**
 
