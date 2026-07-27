@@ -14,10 +14,27 @@ describe('자원 화면 구성', () => {
     const page = source('./page.tsx');
 
     expect(page).not.toContain("'use client'");
-    expect(page).toContain('수집된 저장소');
+    expect(page).toContain('수집된 자원');
     expect(page).toContain('연결 제안');
     expect(page).toContain('미연결 자원');
     expect(page).toContain('Unlinked');
+  });
+
+  it('provider와 resourceType을 서버에서 필터링한다', () => {
+    const page = source('./page.tsx');
+
+    expect(page).toContain('searchParams');
+    expect(page).toContain('name="provider"');
+    expect(page).toContain('name="resourceType"');
+    expect(page).toContain('resource.provider === provider');
+    expect(page).toContain('resource.resourceType === resourceType');
+  });
+
+  it('컨테이너 ID는 렌더링할 때만 12자로 줄인다', () => {
+    const page = source('./page.tsx');
+
+    expect(page).toContain('shortContainerId');
+    expect(page).toContain("resource.resourceType === 'docker_container'");
   });
 
   it('이미 연결된 자원도 자원 행에서 다른 구성요소에 추가 연결할 수 있다', () => {
@@ -41,11 +58,29 @@ describe('자원 화면 구성', () => {
     expect(page).toContain('연결된 자원');
   });
 
-  it('Overview에 네 가지 요약 지표가 있다', () => {
+  it('프로젝트 상세가 선언, 관측, 다섯 drift, 최종 배포를 구분한다', () => {
+    const page = source('../projects/[slug]/page.tsx');
+
+    expect(page).toContain('뒷단');
+    expect(page).toContain('선언');
+    expect(page).toContain('관측');
+    expect(page).toContain('declared_not_observed');
+    expect(page).toContain('observed_not_declared');
+    expect(page).toContain('image_mismatch');
+    expect(page).toContain('provider_mismatch');
+    expect(page).toContain('link_conflict');
+    expect(page).toContain('최종 배포');
+    expect(page).toContain('<time');
+    expect(page).toContain('dateTime=');
+    expect(page).toContain('title=');
+  });
+
+  it('Overview에 다섯 가지 요약 지표가 있다', () => {
     const page = source('../page.tsx');
     expect(page).toContain('전체 프로젝트');
     expect(page).toContain('수집 저장소');
-    expect(page).toContain('미연결');
-    expect(page).toContain('최근 커밋 24시간');
+    expect(page).toContain('실행 중 컨테이너');
+    expect(page).toContain('미연결 자원');
+    expect(page).toContain('Drift 있는 프로젝트');
   });
 });
