@@ -276,7 +276,35 @@ export function upsertDeployment(db, input: DeploymentInput): Promise<void>;
       deployhub.environment: "production"
 ```
 
-**`ports`를 넣지 마라.** worker만 내부망에서 접근한다. `POST: 0`이 생성·삭제·exec를 전면 차단한다(구축방안 12.2).
+**`ports`를 넣지 마라.** `POST: 0`이 생성·삭제·exec를 전면 차단한다(구축방안 12.2).
+
+**전용 internal 네트워크로 격리한다.** `deployhub` 망에 두면 web도 이미 그 망에 있어 접근할 수 있다 — "web을 붙이지 마라"는 문장으로는 아무것도 강제되지 않는다. 네트워크 구조로 막는다.
+
+```yaml
+networks:
+  deployhub:                # postgres, web, worker
+  docker-api:
+    internal: true          # worker 와 socket-proxy 만
+  web:
+    external: true          # 공용 Caddy 용
+
+services:
+  postgres:      networks: [deployhub]
+  web:           networks: [deployhub, web]
+  worker:        networks: [deployhub, docker-api]
+  socket-proxy:  networks: [docker-api]
+```
+
+`internal: true`는 socket-proxy의 외부 연결을 끊는다 — 그 컨테이너가 뚫려도 밖으로 나가지 못한다. worker는 두 망에 붙어 `deployhub`로 postgres와 인터넷에, `docker-api`로 socket-proxy에 닿는다. **web은 Docker API에 닿을 경로가 아예 없다** — 인터넷에 노출된 표면이기 때문이다.
+
+격리를 실제로 확인한다. 파일을 읽어 "없더라"가 아니라 기동해서 확인한다.
+
+```bash
+# web 에서는 차단되어야 한다
+docker compose exec web node -e "fetch('http://socket-proxy:2375/_ping').then(r=>console.log('!!! 도달함',r.status)).catch(e=>console.log('차단됨',e.message))"
+# worker 에서는 200 이어야 한다
+docker compose exec worker node -e "fetch('http://socket-proxy:2375/_ping').then(r=>console.log('도달',r.status))"
+```
 
 `.env.example`에 `DOCKER_HOST_URL=`을 추가하고 `packages/shared/src/env.ts`의 `Env`에 선택 필드로 넣는다. 없으면 Docker 수집을 건너뛴다 — 로컬 개발에서 socket-proxy 없이도 앱이 떠야 한다.
 
