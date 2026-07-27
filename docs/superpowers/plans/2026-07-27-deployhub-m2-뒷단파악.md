@@ -490,7 +490,11 @@ Run: `git grep -n 'decrypt' -- packages/collectors` — 매치 없어야 한다
 
 검증할 것:
 
-1. `externalId`가 컨테이너 ID 짧은 형태, `resourceType`이 `docker_container`, `name`이 앞 슬래시를 뗀 `deployhub-postgres`
+1. `externalId`가 **전체 컨테이너 ID**, `resourceType`이 `docker_container`, `name`이 앞 슬래시를 뗀 `deployhub-postgres`
+
+   **짧은 ID를 쓰지 않는다.** 12자 형태는 사람이 읽기 위한 표시 규약이지 식별자가 아니다. `resources.external_id`를 짧게 두면 `deployments.external_deployment_id`(전체 ID)와 같은 컨테이너를 두 이름으로 부르게 된다. 지금은 안 깨지지만 Task 5가 선언과 관측을 잇는 카드라, 나중에 두 컬럼을 조인하면 오류 없이 빈 결과가 나온다. 저장은 전체로 하고 자르는 것은 Task 6 화면에서 한다.
+
+   `ExternalResource.externalId`·`ExternalDeployment.resourceExternalId`·`deployments.externalDeploymentId` 셋을 같은 값으로 맞추고, **두 곳이 같은지 단언하는 테스트를 둔다** — 다시 갈라지면 그때 잡힌다.
 2. `status`가 `running`, `metadata.health`가 `healthy`
 3. `metadata.image`가 `postgres:17-alpine`
 4. `metadata.labels`에 `deployhub.project`·`deployhub.component`가 있다
@@ -546,6 +550,8 @@ mounts ({type,name,destination}[])
   `environment`는 `deployhub.environment` 레이블을 쓰고, 없으면 `unknown`으로 둔다. 레이블이 없는 다른 프로젝트 컨테이너 9개가 여기 해당한다.
 
 **공용 VPS이므로 다른 프로젝트 컨테이너 9개도 수집된다.** 의도된 것이다. Label이 없으면 `Unlinked`로 남는다.
+
+**반복 조회에 상한(256개)을 둔다.** 초과하면 일부만 처리하지 말고 동기화 전체를 실패시킨다. 목록에 없는 자원에 `deleted_at`을 채우는 로직이 있으므로, 잘린 목록으로 그것을 돌리면 살아 있는 컨테이너가 삭제된 것으로 표시된다. 잘린 목록으로는 "사라졌다"를 판단할 수 없다. `last_error`에는 개수와 상한만 적고 컨테이너 이름이나 ID를 넣지 않는다.
 
 - [ ] **Step 6: 검증과 커밋**
 
