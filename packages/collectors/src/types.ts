@@ -18,8 +18,29 @@ export type ConnectionResult =
   | { ok: true; account: string }
   | { ok: false; error: string };
 
+export type ExternalDeployment = {
+  /** Provider resource that owns this deployment. */
+  resourceExternalId: string;
+  externalDeploymentId: string;
+  environment: string;
+  status: string;
+  version?: string;
+  commitSha?: string;
+  imageName?: string;
+  deploymentUrl?: string;
+  startedAt?: string;
+  completedAt?: string;
+  metadata: Record<string, unknown>;
+};
+
 export interface ProviderCollector {
   readonly provider: ExternalResource['provider'];
   testConnection(): Promise<ConnectionResult>;
   listResources(): Promise<ExternalResource[]>;
 }
+
+export interface DeploymentCollector extends ProviderCollector {
+  listDeployments(): Promise<ExternalDeployment[]>;
+}
+
+export type VercelCollector = DeploymentCollector;

@@ -1,0 +1,19 @@
+{
+  "uid": "dpl_deployhub_001",
+  "name": "deployhub-web",
+  "projectId": "prj_deployhub_web",
+  "target": "production",
+  "state": "READY",
+  "url": "deployhub-web-abc123.vercel.app",
+  "created": 1784930500000,
+  "buildingAt": 1784930520000,
+  "ready": 1784930580000,
+  "source": "git",
+  "meta": {
+    "githubCommitSha": "a41d82c77a1e",
+    "githubCommitRef": "main",
+    "githubCommitMessage": "feat: deploy collector",
+    "tokenLikeField": "vercel_fixture_secret"
+  },
+  "futureApiField": "must not be copied"
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "id": "env_database_url",
+    "key": "DATABASE_URL",
+    "target": [
+      "preview",
+      "production",
+      "development"
+    ],
+    "type": "encrypted",
+    "value": "VERCEL_ENV_SHOULD_NOT_APPEAR",
+    "createdAt": 1784844000000,
+    "updatedAt": 1784930400000,
+    "gitBranch": "main",
+    "comment": "production database"
+  },
+  {
+    "id": "env_public_url",
+    "key": "NEXT_PUBLIC_APP_URL",
+    "target": [
+      "production"
+    ],
+    "type": "plain",
+    "value": "https://deployhub.example.com",
+    "futureApiField": "must not be copied"
+  }
+]
