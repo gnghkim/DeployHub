@@ -77,6 +77,8 @@ POSTGRES_DB=deployhub
 M1a·M1b·M1c의 Global Constraints를 그대로 승계하고 아래를 더한다.
 
 - **관측 데이터는 허용목록(allowlist)으로 구성한다.** API 응답을 통째로 `metadata`에 넣지 마라. 필요한 필드만 명시적으로 골라 담는다. **차단목록은 새 필드가 추가될 때 뚫린다.**
+  - **허용목록은 최상위 키에서 멈추지 않는다. 중첩된 객체 안에도 적용한다.** Task 4에서 실제로 뚫렸다 — `metadata.labels`가 허용목록에 들어 있다는 이유로 `Config.Labels` 전체가 통과했고, compose가 붙이는 라벨 셋(`config_files`·`working_dir`·`environment_file`)이 호스트 경로였다. 마지막은 남의 프로젝트 `.env` 위치다. `Mounts[].Source`를 호스트 경로라고 막아 놓고 같은 것이 라벨로 들어온 것이다.
+  - 값이 자유 문자열인 필드(라벨, 태그, 주석, 사용자 지정 메타데이터)는 **키 자체를 허용목록으로 거른다.** Docker 라벨은 `deployhub.`·`org.opencontainers.image.` 접두사만 남긴다.
 - **환경변수는 이름만 저장한다.** 값은 어떤 경로로도 저장·로그·응답에 남기지 않는다.
 - **관측 이력을 지우지 않는다.** 사라진 자원은 `deleted_at`을 채운다.
 - **시간은 DB 시계만 쓴다.**
