@@ -415,6 +415,14 @@ GET /v6/deployments?projectId={id}    배포 이력
 
 Run: `git grep -nE 'VERCEL_ENV_SHOULD_NOT_APPEAR' -- apps packages ':!*fixtures*'` — 매치 없어야 한다
 
+Run: `git grep -nE 'decrypt=true|[?&]decrypt' -- apps packages` — 매치 없어야 한다
+
+Run: `git grep -n 'decrypt' -- packages/collectors` — 매치 없어야 한다
+
+두 번째가 본질이다. `decrypt`는 저장소의 AES-GCM 복호화 헬퍼 이름이라 `shared/crypto`·`github-sync`·`provider-view`에 이미 12곳 쓰인다. 저장소 전체에서 0건을 요구하면 달성할 수 없다. 막아야 할 것은 Vercel API의 `decrypt=true` 질의 파라미터다.
+
+`packages/collectors`에서 0건이어야 하는 이유는 따로 있다. 수집기는 암호화된 값을 다루지 않는다 — 토큰은 이미 복호화된 문자열로 worker 핸들러에서 주입받는다. 수집기 안에 `decrypt`가 나오면 경계가 잘못 그어진 것이다.
+
 **게이트 통과 조건:** 정규화 테스트 7건 통과. 특히 env 값 미저장, 허용목록 단언, 토큰 미노출.
 
 ---
