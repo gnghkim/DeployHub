@@ -518,6 +518,12 @@ mounts ({type,name,destination}[])
 - 14일보다 오래된 스냅샷 정리
 - 실행 중인 컨테이너의 이미지 태그와 시작 시각을 `deployments`에 한 줄로 기록 — Vercel과 같은 방식으로 "최종 배포"를 보기 위함
 
+  `deployments`의 유일 제약은 `(provider, external_deployment_id)`다. docker에서 이 값은 **컨테이너 ID 하나만** 쓴다. 시작 시각을 붙이지 마라.
+
+  재시작과 재배포는 다른 사건이다. 재시작은 컨테이너 ID가 그대로이므로 같은 행이 갱신되어야 한다 — 재시작 횟수는 `container_snapshots.restart_count`가 이미 담는다. 재배포는 새 컨테이너가 뜨면서 ID가 바뀌므로 자연히 새 행이 생긴다. 시작 시각을 키에 넣으면 재시작마다 배포 이력이 한 줄씩 늘어 "최종 배포"가 무의미해진다.
+
+  `environment`는 `deployhub.environment` 레이블을 쓰고, 없으면 `unknown`으로 둔다. 레이블이 없는 다른 프로젝트 컨테이너 9개가 여기 해당한다.
+
 **공용 VPS이므로 다른 프로젝트 컨테이너 9개도 수집된다.** 의도된 것이다. Label이 없으면 `Unlinked`로 남는다.
 
 - [ ] **Step 6: 검증과 커밋**
