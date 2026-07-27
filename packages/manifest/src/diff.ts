@@ -29,6 +29,10 @@ export type CurrentProject = {
     runtime: string | null;
     language: string | null;
     criticality: number;
+    provider?: string | null;
+    externalRef?: string | null;
+    containerName?: string | null;
+    url?: string | null;
   }[];
   domains?: { domain: string; environment: string }[];
 };
@@ -96,6 +100,10 @@ export function diffManifest(
       ['runtime', existing.runtime, component.runtime],
       ['language', existing.language, component.language],
       ['criticality', existing.criticality, component.criticality ?? 3],
+      ['provider', existing.provider, component.provider],
+      ['externalRef', existing.externalRef, component.externalRef],
+      ['container', existing.containerName, component.container],
+      ['url', existing.url, component.url],
     ] as const;
 
     for (const [field, from, to] of componentFields) {

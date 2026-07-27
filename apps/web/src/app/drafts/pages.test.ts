@@ -21,6 +21,14 @@ describe('Draft review screens', () => {
     expect(detail).toContain('unknown');
   });
 
+  it('shows component deployment declarations during review', () => {
+    const detail = source('./[id]/page.tsx');
+
+    expect(detail).toContain('component.provider');
+    expect(detail).toContain('component.externalRef');
+    expect(detail).toContain('component.container');
+  });
+
   it('provides approve and reject forms', () => {
     const detail = source('./[id]/page.tsx');
 

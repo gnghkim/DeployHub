@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { manifestJsonSchema } from '@deployhub/manifest';
+import { validateAgainstJsonSchema } from './commands/validate';
 import {
   getManifestSchema,
   type ManifestSchemaCache,
@@ -88,13 +90,16 @@ describe('getManifestSchema', () => {
     });
   });
 
-  it('uses a fresh cache after confirming the server version', async () => {
+  it('sends If-None-Match and uses the cache after a 304 response', async () => {
     const cachePath = await temporaryCachePath();
     await seedCache(cachePath);
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(null, {
-        status: 200,
-        headers: { 'X-Manifest-Version': 'deployhub.io/v1' },
+        status: 304,
+        headers: {
+          ETag: '"schema-v1"',
+          'X-Manifest-Version': 'deployhub.io/v1',
+        },
       }),
     );
 
@@ -113,8 +118,103 @@ describe('getManifestSchema', () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://hub.example/api/v1/manifest/schema',
-      expect.objectContaining({ method: 'HEAD' }),
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          'If-None-Match': '"schema-v1"',
+        }),
+      }),
     );
+  });
+
+  it('replaces a same-version cache after a 200 response with a new ETag', async () => {
+    const cachePath = await temporaryCachePath();
+    await seedCache(cachePath);
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(schemaV2), {
+        status: 200,
+        headers: {
+          ETag: '"schema-v2"',
+          'X-Manifest-Version': 'deployhub.io/v1',
+        },
+      }),
+    );
+
+    const result = await getManifestSchema({
+      baseUrl: 'https://hub.example',
+      cachePath,
+      fetchImpl,
+      now: () => NOW,
+    });
+
+    expect(result).toEqual({
+      schema: schemaV2,
+      version: 'deployhub.io/v1',
+      source: 'server',
+    });
+    expect(JSON.parse(await readFile(cachePath, 'utf8'))).toMatchObject({
+      schema: schemaV2,
+      etag: '"schema-v2"',
+    });
+  });
+
+  it('validates new manifest fields after the schema ETag changes', async () => {
+    const cachePath = await temporaryCachePath();
+    const currentSchema = manifestJsonSchema();
+    const staleSchema = structuredClone(currentSchema);
+    const componentProperties = (
+      (staleSchema as {
+        properties: {
+          spec: {
+            properties: {
+              components: {
+                items: { properties: Record<string, unknown> };
+              };
+            };
+          };
+        };
+      }).properties.spec.properties.components.items.properties
+    );
+    delete componentProperties.provider;
+    await seedCache(cachePath, {
+      schema: staleSchema,
+      etag: '"old-schema"',
+    });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(currentSchema), {
+        status: 200,
+        headers: {
+          ETag: '"new-schema"',
+          'X-Manifest-Version': 'deployhub.io/v1',
+        },
+      }),
+    );
+
+    const result = await getManifestSchema({
+      baseUrl: 'https://hub.example',
+      cachePath,
+      fetchImpl,
+      now: () => NOW,
+    });
+    const manifest = {
+      apiVersion: 'deployhub.io/v1',
+      kind: 'Project',
+      metadata: { name: 'DeployHub', slug: 'deployhub' },
+      spec: {
+        lifecycle: 'production',
+        components: [{
+          name: 'web',
+          type: 'frontend',
+          provider: 'hostinger',
+        }],
+      },
+    };
+
+    expect(validateAgainstJsonSchema(manifest, staleSchema)).toContainEqual({
+      path: 'spec.components[0].provider',
+      message: 'Unknown field is not allowed',
+    });
+    expect(validateAgainstJsonSchema(manifest, result.schema)).toEqual([]);
   });
 
   it('warns before using a cache while offline', async () => {
@@ -156,45 +256,26 @@ describe('getManifestSchema', () => {
     );
   });
 
-  it('discards a cache and refetches when the manifest version differs', async () => {
+  it('fails when the server manifest version is incompatible', async () => {
     const cachePath = await temporaryCachePath();
     await seedCache(cachePath);
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(null, {
-          status: 200,
-          headers: { 'X-Manifest-Version': 'deployhub.io/v2' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(schemaV2), {
-          status: 200,
-          headers: {
-            ETag: '"schema-v2"',
-            'X-Manifest-Version': 'deployhub.io/v2',
-          },
-        }),
-      );
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(schemaV2), {
+        status: 200,
+        headers: {
+          ETag: '"schema-v2"',
+          'X-Manifest-Version': 'deployhub.io/v2',
+        },
+      }),
+    );
 
-    const result = await getManifestSchema({
+    await expect(getManifestSchema({
       baseUrl: 'https://hub.example',
       cachePath,
       fetchImpl,
       now: () => NOW,
-    });
-
-    expect(result).toEqual({
-      schema: schemaV2,
-      version: 'deployhub.io/v2',
-      source: 'server',
-    });
-    expect(fetchImpl.mock.calls.map(([, init]) => init?.method)).toEqual([
-      'HEAD',
-      'GET',
-    ]);
-    expect(JSON.parse(await readFile(cachePath, 'utf8')).version).toBe(
-      'deployhub.io/v2',
+    })).rejects.toThrow(
+      'Unsupported DeployHub manifest version deployhub.io/v2',
     );
   });
 });

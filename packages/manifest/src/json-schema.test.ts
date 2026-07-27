@@ -7,6 +7,7 @@ type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   items?: JsonSchema;
   enum?: unknown[];
+  type?: string;
 };
 
 const property = (schema: JsonSchema, name: string): JsonSchema => {
@@ -37,6 +38,22 @@ describe('manifestJsonSchema', () => {
     );
 
     expect(componentType.enum).toEqual(COMPONENT_TYPES);
+  });
+
+  it('exposes deployment provider and externalRef input validation', () => {
+    const schema = manifestJsonSchema() as JsonSchema;
+    const component = property(
+      property(property(schema, 'spec'), 'components').items!,
+      'provider',
+    );
+    const externalRef = property(
+      property(property(schema, 'spec'), 'components').items!,
+      'externalRef',
+    );
+
+    expect(component.enum).toContain('self-hosted');
+    expect(component.enum).not.toContain('other');
+    expect(externalRef.type).toBe('string');
   });
 
   it('returns the same schema on repeated calls', () => {

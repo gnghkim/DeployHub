@@ -202,6 +202,22 @@ function isCurrentProject(value: unknown): value is CurrentProject {
         && isNullableString(item.runtime)
         && isNullableString(item.language)
         && typeof item.criticality === 'number'
+        && (
+          item.provider === undefined
+          || isNullableString(item.provider)
+        )
+        && (
+          item.externalRef === undefined
+          || isNullableString(item.externalRef)
+        )
+        && (
+          item.containerName === undefined
+          || isNullableString(item.containerName)
+        )
+        && (
+          item.url === undefined
+          || isNullableString(item.url)
+        )
       );
     })
     && (

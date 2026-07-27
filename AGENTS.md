@@ -39,3 +39,14 @@
 YAML 구조를 임의로 추측하지 않는다. 반드시 CLI가 생성한 manifest와
 `deployhub.yaml` 첫 줄의 최신 Schema를 사용하며, 검증에 실패한 manifest는
 제출하지 않는다.
+
+구성요소의 배포 선언:
+
+- `provider`에는 실제로 사용하는 배포·인프라 제공자를 적는다. Schema가 허용하는
+  provider만 사용하고, 알 수 없으면 임의로 추측하지 말고 생략한다.
+- `externalRef`에는 Supabase project ref, Vercel project id처럼 제공자 안에서
+  구성요소를 식별하는 확인된 외부 참조값만 적는다.
+- `container`에는 운영 배포 설정에서 확인한 Docker 컨테이너 이름을 적는다.
+  값은 영문자·숫자로 시작하고 이후에는 영문자·숫자·`_`·`.`·`-`만 허용한다.
+- `url`에는 확인된 운영 HTTP(S) URL만 적는다. 파일에서 확인할 근거가 없으면
+  그럴듯한 기본 URL을 만들지 않는다.

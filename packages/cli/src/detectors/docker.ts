@@ -6,6 +6,11 @@ type ComposeDocument = {
   services?: Record<string, unknown>;
 };
 
+export type ComposeService = {
+  name: string;
+  containerName?: string;
+};
+
 async function firstExisting(
   rootDir: string,
   names: readonly string[],
@@ -23,7 +28,7 @@ async function firstExisting(
 
 export async function detectComposeServices(
   rootDir: string,
-): Promise<{ filename?: string; services: string[] }> {
+): Promise<{ filename?: string; services: ComposeService[] }> {
   const filename = await firstExisting(rootDir, [
     'compose.yaml',
     'compose.yml',
@@ -37,7 +42,22 @@ export async function detectComposeServices(
   ) as ComposeDocument;
   return {
     filename,
-    services: Object.keys(document.services ?? {}).sort(),
+    services: Object.entries(document.services ?? {})
+      .map(([name, value]) => {
+        const declaredContainerName =
+          typeof value === 'object' && value !== null
+            ? (value as Record<string, unknown>).container_name
+            : undefined;
+        const containerName =
+          typeof declaredContainerName === 'string'
+            ? declaredContainerName.trim()
+            : '';
+        return {
+          name,
+          ...(containerName ? { containerName } : {}),
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name)),
   };
 }
 

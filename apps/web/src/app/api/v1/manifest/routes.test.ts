@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { MANIFEST_VERSION } from '@deployhub/manifest';
 import { describe, expect, it } from 'vitest';
 import { GET as getPublicSchema } from '../../../schemas/deployhub-v1.json/route';
@@ -17,16 +18,35 @@ spec:
       type: frontend
 `;
 
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (
+        left < right ? -1 : left > right ? 1 : 0
+      ));
+    return `{${entries.map(([key, child]) =>
+      `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 describe('manifest Schema API routes', () => {
   it('serves the public JSON Schema with caching metadata', async () => {
     const response = getPublicSchema();
     const schema = await response.json();
+    const expectedEtag = `"${createHash('sha256')
+      .update(stableJson(schema))
+      .digest('hex')
+      .slice(0, 16)}"`;
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe(
       'public, max-age=3600',
     );
-    expect(response.headers.get('etag')).toBeTruthy();
+    expect(response.headers.get('etag')).toBe(expectedEtag);
     expect(response.headers.get('x-manifest-version')).toBe(MANIFEST_VERSION);
     expect(schema.properties.apiVersion.enum).toContain(MANIFEST_VERSION);
   });
@@ -39,7 +59,26 @@ describe('manifest Schema API routes', () => {
     expect(apiResponse.headers.get('x-manifest-version')).toBe(
       MANIFEST_VERSION,
     );
+    expect(apiResponse.headers.get('etag')).toBe(
+      publicResponse.headers.get('etag'),
+    );
     expect(await apiResponse.json()).toEqual(await publicResponse.json());
+  });
+
+  it('returns 304 when If-None-Match identifies the current schema', () => {
+    const first = getApiSchema();
+    const etag = first.headers.get('etag');
+    const conditional = getApiSchema(
+      new Request('http://localhost/api/v1/manifest/schema', {
+        headers: { 'If-None-Match': etag ?? '' },
+      }),
+    );
+
+    expect(conditional.status).toBe(304);
+    expect(conditional.headers.get('etag')).toBe(etag);
+    expect(conditional.headers.get('x-manifest-version')).toBe(
+      MANIFEST_VERSION,
+    );
   });
 
   it('serves a commented YAML template', async () => {

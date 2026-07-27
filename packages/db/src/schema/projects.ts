@@ -39,6 +39,10 @@ export const components = pgTable(
     runtime: text('runtime'),
     language: text('language'),
     criticality: smallint('criticality').notNull().default(3),
+    provider: text('provider'),
+    externalRef: text('external_ref'),
+    containerName: text('container_name'),
+    url: text('url'),
     fieldSources: jsonb('field_sources').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -46,6 +50,8 @@ export const components = pgTable(
   (t) => [
     unique('components_project_slug_unique').on(t.projectId, t.slug),
     index('components_project_idx').on(t.projectId),
+    index('components_provider_external_ref_idx').on(t.provider, t.externalRef),
+    index('components_container_name_idx').on(t.containerName),
   ],
 );
 

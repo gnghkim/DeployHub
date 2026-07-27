@@ -39,7 +39,17 @@ spec:
 `;
 
 export function manifestJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(manifestSchema);
+  return z.toJSONSchema(manifestSchema, {
+    unrepresentable: 'any',
+    override: ({ jsonSchema, path }) => {
+      if (
+        path.join('.') ===
+        'properties.spec.properties.components.items.properties.externalRef'
+      ) {
+        jsonSchema.type = 'string';
+      }
+    },
+  });
 }
 
 export function manifestTemplate(): string {

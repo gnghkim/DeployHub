@@ -20,16 +20,23 @@ spec:
       language: typescript
       criticality: 4
       path: apps/web
+      provider: hostinger
+      container: deployhub-web
+      url: https://hub.nolzza.net
     - name: worker
       type: worker
       runtime: nodejs
       language: typescript
       criticality: 3
       path: apps/worker
+      provider: hostinger
+      container: deployhub-worker
     - name: database
       type: database
       runtime: postgresql
       criticality: 5
+      provider: self-hosted
+      container: deployhub-postgres
   domains:
     - domain: hub.nolzza.net
       environment: production

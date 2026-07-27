@@ -27,6 +27,8 @@ const manifest = (overrides: Partial<Manifest> = {}): Manifest => ({
         language: 'typescript',
         criticality: 4,
         path: 'apps/web',
+        provider: 'supabase',
+        externalRef: 'abcdefghijklmnop',
       },
       {
         name: 'worker',
@@ -62,6 +64,10 @@ const currentProject = (
       runtime: 'nodejs',
       language: 'typescript',
       criticality: 4,
+      provider: 'supabase',
+      externalRef: 'abcdefghijklmnop',
+      containerName: null,
+      url: null,
     },
     {
       name: 'worker',
@@ -116,6 +122,22 @@ describe('diffManifest', () => {
           field: 'framework',
           from: 'react',
           to: 'nextjs',
+        },
+      ],
+    });
+  });
+
+  it('reports provider changes in componentsChanged', () => {
+    const changedProvider = manifest();
+    changedProvider.spec.components[0]!.provider = 'neon';
+
+    expect(diffManifest(changedProvider, currentProject())).toMatchObject({
+      componentsChanged: [
+        {
+          name: 'web',
+          field: 'provider',
+          from: 'supabase',
+          to: 'neon',
         },
       ],
     });
