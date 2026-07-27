@@ -6,6 +6,15 @@ export {
   normalizeVercelProject,
 } from './vercel';
 export type { VercelEnvironmentVariable } from './vercel';
+export {
+  createDockerCollector,
+  normalizeDockerContainer,
+  normalizeDockerDeployment,
+} from './docker';
+export type {
+  DockerCollector,
+  DockerContainerSnapshot,
+} from './docker';
 export type {
   ConnectionResult,
   DeploymentCollector,

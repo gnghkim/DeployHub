@@ -1,0 +1,44 @@
+{
+  "Id": "3b27fe7ebf9b00000000000000000000000000000000000000000000000000000",
+  "Name": "/deployhub-postgres",
+  "Created": "2026-07-26T09:59:00Z",
+  "Image": "sha256:abc123",
+  "RestartCount": 0,
+  "Config": {
+    "Image": "postgres:17-alpine",
+    "Env": [
+      "POSTGRES_USER=deployhub",
+      "POSTGRES_PASSWORD=SUPER_SECRET_SHOULD_NOT_APPEAR",
+      "PATH=/usr/local/sbin:/usr/local/bin"
+    ],
+    "Labels": {
+      "deployhub.project": "deployhub",
+      "deployhub.component": "database",
+      "com.docker.compose.project": "docker",
+      "com.docker.compose.service": "postgres"
+    },
+    "Cmd": ["postgres", "-c", "password=ALSO_SECRET"],
+    "Entrypoint": ["docker-entrypoint.sh"]
+  },
+  "State": {
+    "Status": "running",
+    "StartedAt": "2026-07-26T10:00:00Z",
+    "Health": {
+      "Status": "healthy"
+    }
+  },
+  "Mounts": [
+    {
+      "Type": "volume",
+      "Name": "postgres_data",
+      "Source": "/var/lib/docker/volumes/postgres_data/_data",
+      "Destination": "/var/lib/postgresql/data"
+    }
+  ],
+  "NetworkSettings": {
+    "Networks": {
+      "docker_deployhub": {}
+    },
+    "Ports": {}
+  }
+}
