@@ -52,19 +52,20 @@ export async function confirmResourceLink(
     .select({
       resourceId: schema.resources.id,
       externalId: schema.resources.externalId,
+      resourceType: schema.resources.resourceType,
     })
     .from(schema.resources)
     .where(
       and(
         eq(schema.resources.id, resourceId),
-        eq(schema.resources.resourceType, 'github_repository'),
         isNull(schema.resources.deletedAt),
       ),
     );
-  if (!resource) throw new Error('연결할 저장소를 찾을 수 없습니다.');
+  if (!resource) throw new Error('연결할 자원을 찾을 수 없습니다.');
 
   const linkedBy = (
-    selection.repository?.toLowerCase() === resource.externalId.toLowerCase()
+    resource.resourceType === 'github_repository'
+    && selection.repository?.toLowerCase() === resource.externalId.toLowerCase()
   ) ? 'repository' : 'user';
 
   let inserted: { id: string }[];
@@ -75,7 +76,9 @@ export async function confirmResourceLink(
         componentId: selection.componentId,
         resourceId: resource.resourceId,
         environment: 'production',
-        relationType: 'uses',
+        relationType: resource.resourceType === 'github_repository'
+          ? 'uses'
+          : 'deployed_to',
         isPrimary: false,
         linkedBy,
       })

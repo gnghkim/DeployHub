@@ -87,6 +87,61 @@ function collector(
 }
 
 describe('Vercel sync handler', () => {
+  it('links a Vercel project only on an exact declared externalRef', async () => {
+    const accountId = await insertAccount();
+    const [project] = await db.insert(schema.projects).values({
+      name: 'DeployHub',
+      slug: 'deployhub',
+    }).returning();
+    await db.insert(schema.components).values({
+      projectId: project!.id,
+      name: 'web',
+      slug: 'web',
+      componentType: 'frontend',
+      provider: 'vercel',
+      externalRef: 'prj_current',
+    });
+    const resources: ExternalResource[] = [
+      {
+        provider: 'vercel',
+        externalId: 'prj_current',
+        resourceType: 'vercel_project',
+        name: 'deployhub',
+        metadata: {},
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      {
+        provider: 'vercel',
+        externalId: 'prj_current_old',
+        resourceType: 'vercel_project',
+        name: 'deployhub-old',
+        metadata: {},
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+    ];
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector: () => collector(resources, []),
+    })(job(accountId));
+
+    const links = await db
+      .select({
+        externalId: schema.resources.externalId,
+        linkedBy: schema.componentResources.linkedBy,
+      })
+      .from(schema.componentResources)
+      .innerJoin(
+        schema.resources,
+        eq(schema.resources.id, schema.componentResources.resourceId),
+      );
+    expect(links).toEqual([
+      {
+        externalId: 'prj_current',
+        linkedBy: 'manifest',
+      },
+    ]);
+  });
+
   it('upserts resources and deployments while soft-deleting missing resources', async () => {
     const accountId = await insertAccount('이전 동기화 오류');
     const [project] = await db.insert(schema.projects).values({

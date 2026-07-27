@@ -14,6 +14,7 @@ import {
 } from '@deployhub/collectors';
 import {
   enqueue,
+  linkDeclaredResources,
   schema,
   type Db,
 } from '@deployhub/db';
@@ -131,6 +132,11 @@ export function createVercelSyncHandler(
           .update(schema.resources)
           .set({ deletedAt: sql`now()` })
           .where(and(...missingConditions));
+
+        await linkDeclaredResources(tx, {
+          provider: 'vercel',
+          externalIds,
+        });
 
         const deploymentResourceIds = [
           ...new Set(
