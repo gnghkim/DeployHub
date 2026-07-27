@@ -6,3 +6,4 @@ export * from './queries/projects';
 export * from './queries/resources';
 export * from './queries/tokens';
 export * from './queries/drafts';
+export * from './queries/observations';

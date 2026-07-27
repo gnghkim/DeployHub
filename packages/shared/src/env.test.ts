@@ -10,9 +10,11 @@ describe('loadEnv', () => {
       AUTH_GITHUB_ID: 'id',
       AUTH_GITHUB_SECRET: 'secret',
       ENCRYPTION_KEY: 'key',
+      DOCKER_HOST_URL: 'http://socket-proxy:2375',
     });
     expect(env.DATABASE_URL).toBe('postgres://u:p@localhost:5432/deployhub');
     expect(env.NODE_ENV).toBe('test');
+    expect(env.DOCKER_HOST_URL).toBe('http://socket-proxy:2375');
   });
 
   it('DATABASE_URL이 없으면 변수명을 포함해 실패한다', () => {
