@@ -17,7 +17,10 @@ services:
     networks: [deployhub]
     labels:
       deployhub.project: "deployhub"
-      deployhub.component: "postgres"
+      # deployhub.yaml 의 구성요소 이름과 정확히 같아야 한다. 자동 연결은
+      # 정확 일치만 하므로 여기가 postgres 면 database 구성요소에 붙지
+      # 않는다. 운영 배포에서 실제로 안 붙었다.
+      deployhub.component: "database"
       deployhub.environment: "production"
 
   web:
