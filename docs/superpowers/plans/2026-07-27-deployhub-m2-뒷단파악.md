@@ -679,6 +679,22 @@ Drift  없음
 
 ---
 
+## M2 완료 기록 (2026-07-28)
+
+여섯 카드 전부 병합·배포했다. 운영 확인은 아래와 같다.
+
+**비밀값 차단 — 운영 데이터로 검증.** 비밀 성격 환경변수 39개(`POSTGRES_PASSWORD` 5개 중 3개는 다른 프로젝트 것, `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `R2_SECRET_ACCESS_KEY`, `GEMINI_API_KEY`, `JWT_SECRET` 등)를 실제 값으로 DB 전체와 대조해 **0건**. 호스트 경로 0건, `Cmd`·`Entrypoint`·`Mounts[].Source` 0건, `envKeys`에 `=` 포함 0건. 저장된 라벨 키는 `deployhub.*`와 `org.opencontainers.image.*`뿐이다.
+
+라벨 허용목록(Task 4)이 실제로 막은 것을 확인했다. 운영 컨테이너의 진짜 라벨에는 `com.docker.compose.project.environment_file=/home/dev/DeployHub/.env`가 있지만 DB에는 들어가지 않았다.
+
+**검증 방법의 함정.** 첫 대조에서 "유출 16건"이 나왔지만 전부 오탐이었다. `POSTGRES_USER=deployhub`의 값이 프로젝트 이름과 겹치고, `PGDATA=/var/lib/postgresql/data`는 의도적으로 남기는 컨테이너 내부 경로였다. **값만 비교하면 흔한 문자열이 걸린다 — 변수 이름까지 같이 봐야 한다.**
+
+**시스템이 자기 프로젝트의 불일치를 잡았다.** compose 라벨이 `deployhub.component: postgres`인데 manifest 구성요소 이름은 `database`라 자동 연결이 거부됐다. 정확 일치만 하도록 만든 설계가 의도대로 동작한 것이다. 라벨을 고쳤다(c09de30).
+
+**남은 것.** `components`의 `provider`·`container_name`이 전부 `null`이다. Task 1이 컬럼과 `deployhub.yaml`을 갖췄지만 hub에 동기화한 적이 없다. 등록 토큰은 사람이 화면에서 발급하는 것이라 자동화에 넣지 않았다. 동기화 전까지 연결은 Docker 라벨로만 이뤄진다.
+
+---
+
 ## Self-Review
 
 **1. 구축방안 커버리지**
