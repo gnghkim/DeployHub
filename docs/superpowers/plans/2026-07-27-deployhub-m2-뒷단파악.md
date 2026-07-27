@@ -314,6 +314,12 @@ Run: `docker compose -f docker/compose.yml config | grep -A2 published` — 80/4
 
 **게이트 통과 조건:** 마이그레이션 추가만. socket-proxy에 `ports` 없고 `POST: 0`일 것.
 
+**완료 (2026-07-27, 41fc9c8 → 병합·배포).** 격리를 로컬과 운영 양쪽에서 실측했다: `deployhub` 망 차단, `docker-api` 망 200, POST/DELETE/exec 403. `compose config` published 포트 0건. 운영 기존 9개 서비스 배포 전후 동일.
+
+검토에서 결함 하나를 고쳤다. socket-proxy 이미지에 태그가 없어 `latest` 로 해석됐다 — 스택에서 유일하게 `docker.sock` 을 쥐는 컨테이너라 `pull` 한 번에 코드가 바뀔 수 있다. v0.5.0 다이제스트로 고정했다.
+
+배포 중 런북 결함도 발견해 `docs/deployment.md` 에 기록했다(b20ffea). `docker compose build` 가 `profiles` 에 속한 서비스를 건너뛰어, 낡은 migrate 이미지로 돌면서 `migrations applied successfully!` 를 출력하고 테이블은 생기지 않았다. **성공 메시지가 나오는 실패**다. 이후 마이그레이션에서는 `--profile tools build migrate` 를 따로 하고 테이블 수를 직접 세라.
+
 ---
 
 ## Task 3: Vercel Collector
@@ -327,10 +333,42 @@ Run: `docker compose -f docker/compose.yml config | grep -A2 published` — 80/4
 **Interfaces:**
 
 ```ts
-export function createVercelCollector(token: string, teamId?: string): ProviderCollector;
+export function createVercelCollector(token: string, teamId?: string): VercelCollector;
 export function normalizeVercelProject(project: unknown, envKeys: string[]): ExternalResource;
-export function normalizeVercelDeployment(deployment: unknown): DeploymentInput;
+export function normalizeVercelDeployment(deployment: unknown): ExternalDeployment;
 ```
+
+`packages/collectors` 는 `@deployhub/db` 에 의존하지 않는다(package.json 의존성은 `@deployhub/shared` 와 `@octokit/rest` 뿐이다). 그러니 수집기가 `DeploymentInput` 을 반환하면 안 된다. 그 타입은 `projectId`·`componentId` 를 품는데, 그건 DB 를 조회해야 알 수 있는 값이라 수집기가 채울 수 없다. **관측과 매핑을 섞지 마라.** 수집기는 공급자가 준 것만 담고, 프로젝트 연결은 worker 핸들러가 한다.
+
+`packages/collectors/src/types.ts` 에 다음을 추가한다:
+
+```ts
+export type ExternalDeployment = {
+  /** 어느 자원의 배포인가. ExternalResource.externalId 와 맞춘다. */
+  resourceExternalId: string;
+  externalDeploymentId: string;
+  environment: string;
+  status: string;
+  version?: string;
+  commitSha?: string;
+  imageName?: string;
+  deploymentUrl?: string;
+  startedAt?: string;
+  completedAt?: string;
+  metadata: Record<string, unknown>;
+};
+
+/** 배포 이력까지 주는 수집기. GitHub 수집기는 구현하지 않는다. */
+export interface DeploymentCollector extends ProviderCollector {
+  listDeployments(): Promise<ExternalDeployment[]>;
+}
+
+export type VercelCollector = DeploymentCollector;
+```
+
+`ProviderCollector` 는 **건드리지 마라.** 거기에 `listDeployments` 를 넣으면 GitHub 수집기가 쓰지도 않을 메서드를 갖게 된다. 확장 인터페이스로 나눈다.
+
+시각은 문자열(ISO 8601)로 넘기고 `Date` 변환은 worker 핸들러에서 한다. 수집기가 `Date` 를 만들면 시간대 처리가 두 곳으로 흩어진다.
 
 - [ ] **Step 1: 픽스처와 실패하는 테스트 작성**
 
