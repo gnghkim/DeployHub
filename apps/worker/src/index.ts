@@ -3,12 +3,14 @@ import { createDb } from '@deployhub/db';
 import { loadEncryptionKey, loadEnv } from '@deployhub/shared';
 import {
   createGithubSyncHandler,
+  createVercelSyncHandler,
   enqueueGithubSyncJobs,
+  enqueueVercelSyncJobs,
 } from './handlers';
 import { createRunner } from './runner';
 
 const POLL_INTERVAL_MS = 5_000;
-const GITHUB_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+const PROVIDER_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 async function main(): Promise<void> {
   const env = loadEnv(process.env);
@@ -19,6 +21,7 @@ async function main(): Promise<void> {
     db,
     {
       'github.sync': createGithubSyncHandler(db, encryptionKey),
+      'vercel.sync': createVercelSyncHandler(db, encryptionKey),
     },
     workerId,
   );
@@ -28,16 +31,23 @@ async function main(): Promise<void> {
     void enqueueGithubSyncJobs(db).catch(() => {
       console.error('[worker] GitHub 동기화 job 등록 실패');
     });
-  }, GITHUB_SYNC_INTERVAL_MS);
+  }, PROVIDER_SYNC_INTERVAL_MS);
+  const vercelSchedule = setInterval(() => {
+    void enqueueVercelSyncJobs(db).catch(() => {
+      console.error('[worker] Vercel 동기화 job 등록 실패');
+    });
+  }, PROVIDER_SYNC_INTERVAL_MS);
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} 수신. 현재 배치를 마치고 종료합니다.`);
     running = false;
     clearInterval(githubSchedule);
+    clearInterval(vercelSchedule);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   await enqueueGithubSyncJobs(db);
+  await enqueueVercelSyncJobs(db);
   console.log(`[worker] 시작 ${workerId}`);
   while (running) {
     try {
