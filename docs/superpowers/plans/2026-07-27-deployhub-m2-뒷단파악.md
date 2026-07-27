@@ -406,6 +406,14 @@ GET /v6/deployments?projectId={id}    배포 이력
 
 `vercel.sync`를 등록한다. 6시간 주기. `provider_accounts`에서 토큰을 복호화해 쓴다.
 
+**`teamId`는 이 카드에서 전달하지 않는다.** `provider_accounts`에 넣을 자리가 없고, `name` 접두사로 추론하는 것은 추측이며(`name`은 사람이 자유롭게 적는 표시용 문자열이다), `scopes`에 얹는 것은 OAuth 권한 범위를 뜻하는 컬럼을 오염시킨다. 전용 컬럼은 M4의 Vercel 계정 등록 화면과 함께 만든다 — 지금 컬럼만 추가하면 값을 넣을 방법이 없어 영원히 `null`이다.
+
+**다만 이것은 조용한 오답을 만든다.** 팀 토큰으로 `teamId` 없이 `/v9/projects`를 부르면 Vercel은 오류가 아니라 개인 범위 결과(대개 빈 배열)를 `200`으로 준다. 토큰도 유효하고 요청도 성공했는데 결과만 틀린 상태다.
+
+그래서 수집 결과가 0건이면 `last_sync_at`은 정상 갱신하되 `last_error`에 짧은 진단을 남긴다 — "프로젝트 0건. 팀 계정 토큰이면 teamId 지정이 필요한데 아직 지원하지 않는다." 0건이 아니면 `null`로 되돌린다. 테스트 2건으로 고정한다.
+
+`last_error`가 의미상 완벽한 자리는 아니다(0건은 오류가 아니라 사실일 수도 있다). 지금 사람 눈에 보이는 표면이 그것뿐이라 택한 것이고, Task 6 화면에서 제대로 표시한다.
+
 - `resources`에 upsert (`provider='vercel'`, `resource_type='vercel_project'`)
 - 사라진 자원은 `deleted_at`. **DELETE 금지**
 - 배포는 `deployments`에 upsert
