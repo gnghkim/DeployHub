@@ -7,7 +7,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
   schema,
@@ -52,10 +52,14 @@ function job(): JobRecord {
   };
 }
 
-async function insertProject(slug: string): Promise<string> {
+async function insertProject(
+  slug: string,
+  archivedAt: Date | null = null,
+): Promise<string> {
   const [project] = await db.insert(schema.projects).values({
     name: slug,
     slug,
+    archivedAt,
   }).returning({ id: schema.projects.id });
   return project!.id;
 }
@@ -63,7 +67,7 @@ async function insertProject(slug: string): Promise<string> {
 async function insertComponent(
   projectId: string,
   slug: string,
-  url: string,
+  url: string | null,
 ): Promise<string> {
   const [component] = await db.insert(schema.components).values({
     projectId,
@@ -89,16 +93,144 @@ describe('HTTP health check handler', () => {
     expect(await db.select().from(schema.changeEvents)).toEqual([]);
   });
 
-  it('checks a duplicate URL once and records every owning target', async () => {
-    const domainProjectId = await insertProject('domain-project');
-    const componentProjectId = await insertProject('component-project');
+  it('does not check domains owned by archived projects', async () => {
+    const archivedProjectId = await insertProject(
+      'archived-domain-project',
+      new Date(),
+    );
+    const activeProjectId = await insertProject('active-domain-project');
+    await db.insert(schema.domains).values([
+      {
+        projectId: archivedProjectId,
+        componentId: null,
+        domain: 'archived-domain.example.com',
+        environment: 'production',
+      },
+      {
+        projectId: activeProjectId,
+        componentId: null,
+        domain: 'active-domain.example.com',
+        environment: 'production',
+      },
+    ]);
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 1,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://active-domain.example.com',
+      1_234,
+    );
+  });
+
+  it('does not check component URLs owned by archived projects', async () => {
+    const archivedProjectId = await insertProject(
+      'archived-component-project',
+      new Date(),
+    );
+    const activeProjectId = await insertProject('active-component-project');
     await insertComponent(
-      componentProjectId,
+      archivedProjectId,
+      'archived-component',
+      'https://archived-component.example.com',
+    );
+    await insertComponent(
+      activeProjectId,
+      'active-component',
+      'https://active-component.example.com',
+    );
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 1,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://active-component.example.com',
+      1_234,
+    );
+  });
+
+  it('checks a project again after it is unarchived', async () => {
+    const projectId = await insertProject(
+      'restored-project',
+      new Date(),
+    );
+    await insertComponent(
+      projectId,
+      'restored-component',
+      'https://restored.example.com',
+    );
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 1,
+    } satisfies HealthResult);
+    const handler = createHealthCheckHandler(db, 1_234, { checkHttp });
+
+    await handler(job());
+    expect(checkHttp).not.toHaveBeenCalled();
+
+    await db
+      .update(schema.projects)
+      .set({ archivedAt: null })
+      .where(eq(schema.projects.id, projectId));
+    await handler(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://restored.example.com',
+      1_234,
+    );
+  });
+
+  it('succeeds with zero requests when only archived projects have targets', async () => {
+    const projectId = await insertProject(
+      'archived-only-project',
+      new Date(),
+    );
+    await insertComponent(
+      projectId,
+      'archived-only-component',
+      'https://archived-only-component.example.com',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: null,
+      domain: 'archived-only-domain.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 1,
+    } satisfies HealthResult);
+
+    await expect(
+      createHealthCheckHandler(db, 1_234, { checkHttp })(job()),
+    ).resolves.toBeUndefined();
+
+    expect(checkHttp).not.toHaveBeenCalled();
+    expect(await db.select().from(schema.changeEvents)).toEqual([]);
+  });
+
+  it('records one component-scoped event when a project domain and component share a URL', async () => {
+    const projectId = await insertProject('duplicate-project');
+    const componentId = await insertComponent(
+      projectId,
       'duplicate-component',
       'https://example.com',
     );
     await db.insert(schema.domains).values({
-      projectId: domainProjectId,
+      projectId,
       componentId: null,
       domain: 'example.com',
       environment: 'production',
@@ -126,28 +258,116 @@ describe('HTTP health check handler', () => {
           severity: schema.changeEvents.severity,
           currentValue: schema.changeEvents.currentValue,
         })
-        .from(schema.changeEvents)
-        .orderBy(asc(schema.changeEvents.projectId)),
+        .from(schema.changeEvents),
     ).toEqual([
       {
-        projectId: componentProjectId,
-        componentId: expect.any(String),
+        projectId,
+        componentId,
         resourceId: null,
         kind: 'health_status',
         severity: 'info',
         currentValue: 'up',
       },
+    ]);
+  });
+
+  it('records one event when a component domain and its URL are identical', async () => {
+    const projectId = await insertProject('linked-domain-project');
+    const componentId = await insertComponent(
+      projectId,
+      'linked-domain-component',
+      'https://linked.example.com',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId,
+      domain: 'linked.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
       {
-        projectId: domainProjectId,
-        componentId: null,
+        projectId,
+        componentId,
         resourceId: null,
-        kind: 'health_status',
-        severity: 'info',
-        currentValue: 'up',
       },
-    ].sort((left, right) => (
-      left.projectId.localeCompare(right.projectId)
-    )));
+    ]);
+  });
+
+  it('prefers a domain-linked component over another component with the same URL', async () => {
+    const projectId = await insertProject('domain-priority-project');
+    const domainComponentId = await insertComponent(
+      projectId,
+      'domain-component',
+      null,
+    );
+    await insertComponent(
+      projectId,
+      'url-component',
+      'https://priority.example.com',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: domainComponentId,
+      domain: 'priority.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      {
+        projectId,
+        componentId: domainComponentId,
+        resourceId: null,
+      },
+    ]);
+  });
+
+  it('checks different URLs separately', async () => {
+    const projectId = await insertProject('different-url-project');
+    await insertComponent(
+      projectId,
+      'first-component',
+      'https://first.example.com',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: null,
+      domain: 'second.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://first.example.com',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://second.example.com',
+      1_234,
+    );
   });
 
   it('uses the ten-second default timeout', async () => {

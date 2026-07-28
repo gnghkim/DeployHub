@@ -8,6 +8,7 @@ import {
   schema,
   type Db,
 } from '@deployhub/db';
+import { eq, isNull } from 'drizzle-orm';
 import type { JobHandler } from '../runner';
 
 // Ten seconds avoids false alerts from Caddy-fronted Next.js cold starts that
@@ -25,7 +26,12 @@ type HealthTarget = {
 
 type HealthCheck = {
   url: string;
-  targets: HealthTarget[];
+  target: HealthTarget;
+};
+
+type HealthTargetCandidate = {
+  source: 'domain' | 'component';
+  target: HealthTarget;
 };
 
 type HealthCheckDependencies = {
@@ -59,29 +65,53 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
         componentId: schema.domains.componentId,
         domain: schema.domains.domain,
       })
-      .from(schema.domains),
+      .from(schema.domains)
+      .innerJoin(
+        schema.projects,
+        eq(schema.domains.projectId, schema.projects.id),
+      )
+      .where(isNull(schema.projects.archivedAt)),
     db
       .select({
         projectId: schema.components.projectId,
         componentId: schema.components.id,
         url: schema.components.url,
       })
-      .from(schema.components),
+      .from(schema.components)
+      .innerJoin(
+        schema.projects,
+        eq(schema.components.projectId, schema.projects.id),
+      )
+      .where(isNull(schema.projects.archivedAt)),
   ]);
-  const targetsByUrl = new Map<string, HealthTarget[]>();
+  const targetsByUrl = new Map<string, HealthTargetCandidate>();
 
-  function addTarget(url: string, target: HealthTarget): void {
-    const targets = targetsByUrl.get(url);
-    if (targets === undefined) {
-      targetsByUrl.set(url, [target]);
-      return;
+  function addTarget(
+    url: string,
+    source: HealthTargetCandidate['source'],
+    target: HealthTarget,
+  ): void {
+    const current = targetsByUrl.get(url);
+    const candidateIsMoreSpecific = target.componentId !== null
+      && current?.target.componentId === null;
+    const candidateIsDomainTieBreaker = target.componentId !== null
+      && current !== undefined
+      && current.target.componentId !== null
+      && source === 'domain'
+      && current.source === 'component';
+
+    if (
+      current === undefined
+      || candidateIsMoreSpecific
+      || candidateIsDomainTieBreaker
+    ) {
+      targetsByUrl.set(url, { source, target });
     }
-    targets.push(target);
   }
 
   for (const domain of domains) {
     const url = `https://${domain.domain}`;
-    addTarget(url, {
+    addTarget(url, 'domain', {
       projectId: domain.projectId,
       componentId: domain.componentId,
       resourceId: null,
@@ -89,7 +119,7 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
   }
   for (const component of components) {
     if (component.url !== null) {
-      addTarget(component.url, {
+      addTarget(component.url, 'component', {
         projectId: component.projectId,
         componentId: component.componentId,
         resourceId: null,
@@ -97,7 +127,10 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     }
   }
 
-  return [...targetsByUrl].map(([url, targets]) => ({ url, targets }));
+  return [...targetsByUrl].map(([url, candidate]) => ({
+    url,
+    target: candidate.target,
+  }));
 }
 
 export function createHealthCheckHandler(
@@ -119,17 +152,15 @@ export function createHealthCheckHandler(
       await Promise.all(batch.map(async (healthCheck) => {
         const result = await check(healthCheck.url, timeoutMs);
         const value = eventValue(result);
-        await Promise.all(healthCheck.targets.map(async (target) => {
-          await recordChangeIfChanged(db, {
-            projectId: target.projectId,
-            componentId: target.componentId,
-            resourceId: target.resourceId,
-            kind: 'health_status',
-            severity: value.severity,
-            currentValue: value.currentValue,
-            detail: `Health check for ${healthCheck.url}`,
-          });
-        }));
+        await recordChangeIfChanged(db, {
+          projectId: healthCheck.target.projectId,
+          componentId: healthCheck.target.componentId,
+          resourceId: healthCheck.target.resourceId,
+          kind: 'health_status',
+          severity: value.severity,
+          currentValue: value.currentValue,
+          detail: `Health check for ${healthCheck.url}`,
+        });
       }));
     }
   };
