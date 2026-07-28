@@ -5,8 +5,8 @@
 
 사전 준비:
 
-- Node.js 22 이상과 `@deployhub/cli`를 설치하고 `deployhub` 명령을 사용할 수
-  있어야 한다.
+- Node.js 22 이상이 필요하다. **설치할 것은 없다.** 아래 명령이 `npx`로
+  CLI를 가져와 실행한다.
 - `DEPLOYHUB_URL`은 관리자가 제공한 DeployHub 서버 URL로 설정한다.
 - `DEPLOYHUB_TOKEN`은 명령 인자가 아닌 환경변수로만 전달한다.
 - 토큰, 사용자 비밀번호, Provider Secret 등 비밀값을 파일, 명령 인자,
@@ -21,20 +21,20 @@
 
 신규 프로젝트:
 
-1. `deployhub init --detect`
+1. `npx @deployhub/cli init --detect`
 2. 출력된 `INFERRED FIELDS`와 `UNKNOWN FIELDS`를 검토하고 확인된 값만
    `deployhub.yaml`에 보완한다.
-3. `deployhub validate`
-4. `deployhub register --draft`
+3. `npx @deployhub/cli validate`
+4. `npx @deployhub/cli register --draft`
 5. 출력된 Draft URL에서 사람이 검토하고 승인한다.
 
 기존 프로젝트:
 
-1. `deployhub status`
-2. `deployhub diff`
+1. `npx @deployhub/cli status`
+2. `npx @deployhub/cli diff`
 3. 필요한 경우 `deployhub.yaml`을 수정한다.
-4. `deployhub validate`
-5. `deployhub sync --draft`
+4. `npx @deployhub/cli validate`
+5. `npx @deployhub/cli sync --draft`
 6. 출력된 Draft URL에서 사람이 변경 내용을 검토하고 승인한다.
 
 YAML 구조를 임의로 추측하지 않는다. 반드시 CLI가 생성한 manifest와

@@ -27,10 +27,12 @@
 Node.js 22 이상에서 npm 공개 패키지를 설치해 사용할 수 있다.
 
 ```bash
-npm install --global @deployhub/cli
 export DEPLOYHUB_URL="https://deployhub.example.invalid"
-deployhub init --detect
+npx @deployhub/cli init --detect
 ```
+
+설치 없이 `npx`로 바로 실행한다. 자주 쓴다면
+`npm install --global @deployhub/cli` 후 `deployhub` 명령을 써도 된다.
 
 예시 URL은 관리자가 제공한 DeployHub 서버 URL로 바꾼다.
 CLI는 서버 URL이나 등록 토큰에 기본값을 사용하지 않는다. 서버 URL은
