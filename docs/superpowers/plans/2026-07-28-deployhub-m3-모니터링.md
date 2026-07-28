@@ -396,6 +396,16 @@ const verificationError = socket.authorized
 
 이 연결로는 요청도 응답도 주고받지 않는다. 인증서를 읽고 즉시 끊는 것이 전부다.
 
+**`timeout` 옵션만으로는 타임아웃이 걸리지 않는다.**
+
+Node 소켓의 `timeout` 은 `'timeout'` 이벤트를 쏘기만 하고 **연결을 끊지 않는다.** 핸들러에서 직접 `socket.destroy()` 를 불러야 한다.
+
+이것을 빠뜨리면 상대가 443 을 열어 두고 응답하지 않을 때 Promise 가 영원히 안 풀린다. worker 의 job 이 매달리고, `LEASE_SECONDS` 가 300 이라 리스가 만료되면 **같은 job 이 다시 잡혀 소켓이 하나씩 늘어난다.** `enqueueUnique` 는 큐 등록을 막는 것이라 이 경로를 막지 못한다.
+
+`'error'` 이벤트도 반드시 붙여라. 붙이지 않으면 Node 가 잡히지 않은 예외로 올려 worker 프로세스가 죽는다.
+
+Task 2 에서 확인된 것도 같이 적어 둔다: **`AbortSignal.timeout()` 이 던지는 것은 `AbortError` 가 아니라 `TimeoutError` 다.** 아래 Step 2 의 4번, 그리고 Task 2 Step 1 의 3번이 `AbortError` 라고만 적혀 있었다. 둘 다 처리해야 한다.
+
 - [ ] **Step 2: 실패하는 테스트 작성**
 
 `tls.connect`를 주입 가능하게 만들어 테스트한다. 실제 네트워크에 나가지 마라.
@@ -411,7 +421,12 @@ const verificationError = socket.authorized
 8. `socket.authorized === true`면 `verified: true`, `verificationError: null`
 9. `socket.authorized === false`면 `verified: false`이고 `verificationError`에 오류 코드가 담긴다 — **그래도 `validTo`는 읽힌다**
 
+10. `'timeout'` 이벤트가 오면 **`socket.destroy()` 가 불린다.** 이벤트만 받고 끝내면 Promise 가 안 풀린다
+11. 모든 경로에서 Promise 가 유한 시간에 결말이 난다 — 가짜 타이머로 타임아웃을 흘려 확인해라
+
 7번이 중요하다. **닫지 않으면 소켓이 샌다.** 하루 한 번이라 티가 안 나다가 몇 달 뒤 worker가 죽는다.
+
+10·11번은 그보다 빨리 드러난다. 상대가 443 을 열어 두고 조용한 순간 바로 매달린다.
 
 9번이 이 카드의 보안 요점이다. 검증 실패를 조용히 삼키면 가짜 만료일을 정상으로 기록하게 된다.
 
@@ -602,5 +617,8 @@ Run: `pnpm typecheck && pnpm test && pnpm --filter web build`
 - **SNI 누락.** 공용 VPS라 엉뚱한 인증서를 읽게 된다. Task 4에서 명시한다.
 - **검증 결과를 버리는 것.** `rejectUnauthorized: false`는 만료된 인증서의 만료일을 읽기 위해 필요하지만, 검증 결과까지 버리면 가짜 인증서의 넉넉한 만료일을 정상으로 기록하게 된다. `socket.authorized`를 읽어 `verified`에 담고, `false`면 `critical`로 올린다.
 - **TLS 소켓 누수.** 하루 한 번이라 늦게 드러난다. 모든 경로에서 닫는 것을 테스트로 고정한다.
+- **끝나지 않는 검사.** Node 소켓의 `timeout` 은 이벤트만 쏘고 끊지 않는다. 직접 `destroy()` 해야 한다. 매달린 job 은 리스(300초)가 만료되면 다시 잡혀 무한히 반복된다 — `enqueueUnique` 가 막지 못하는 경로다.
+- **런타임 오류 이름을 계획서가 잘못 적었다.** `AbortSignal.timeout()` 은 `TimeoutError` 를 던진다. `AbortError` 만 잡으면 모든 타임아웃이 network 오류로 기록된다. Task 2 구현 중 발견했다.
+- **보관된 프로젝트를 검사하는 것.** 일부러 내린 서비스가 장애로 기록된다. `isNull(projects.archivedAt)` 로 거른다 — `listProjects` 와 같은 규칙이다.
 - **`docker.health`와 `docker.sync`의 쓰기 충돌.** 전자는 읽기만 한다.
 - **거짓 장애.** `unreachable`을 `down`과 분리하고, 사라진 컨테이너를 1분 검사가 판단하지 않는다.
