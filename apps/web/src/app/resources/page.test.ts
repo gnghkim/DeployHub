@@ -53,17 +53,26 @@ describe('자원 화면 구성', () => {
     expect(page).toContain('연결 해제');
   });
 
-  it('프로젝트 상세에 연결된 자원 섹션이 있다', () => {
+  it('프로젝트 상세는 연결된 자원을 구성도의 관측 열로 합친다', () => {
     const page = source('../projects/[slug]/page.tsx');
-    expect(page).toContain('연결된 자원');
+
+    expect(page).toContain('listProjectResources');
+    expect(page).toContain('buildComposition');
+    expect(page).toContain('<ArchitectureComposition');
+    expect(page).not.toContain('연결된 자원');
   });
 
-  it('프로젝트 상세가 선언, 관측, 다섯 drift, 최종 배포를 구분한다', () => {
+  it('프로젝트 상세가 구성도, 다섯 drift, 최종 배포를 구분한다', () => {
     const page = source('../projects/[slug]/page.tsx');
+    const composition = source('../projects/[slug]/composition.tsx');
+    const compositionModel = source(
+      '../projects/[slug]/composition-model.ts',
+    );
 
-    expect(page).toContain('뒷단');
-    expect(page).toContain('선언');
-    expect(page).toContain('관측');
+    expect(page).toContain('구성도');
+    expect(composition).toContain('선언');
+    expect(composition).toContain('관측');
+    expect(compositionModel).toContain('관측되지 않음');
     expect(page).toContain('declared_not_observed');
     expect(page).toContain('observed_not_declared');
     expect(page).toContain('image_mismatch');
