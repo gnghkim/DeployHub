@@ -9,3 +9,4 @@ export * from './queries/drafts';
 export * from './queries/observations';
 export * from './queries/drift';
 export * from './queries/declared-link';
+export * from './queries/discovered';
