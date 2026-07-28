@@ -35,6 +35,11 @@ type SslCheckDependencies = {
   fetchCertificate?: typeof fetchCertificate;
 };
 
+function canonicalHostname(host: string): string {
+  const lowercase = host.toLowerCase();
+  return lowercase.endsWith('.') ? lowercase.slice(0, -1) : lowercase;
+}
+
 function eventValue(result: CertificateResult): {
   currentValue: string;
   severity: 'info' | 'warning' | 'critical';
@@ -78,13 +83,14 @@ async function sslTargets(db: Db): Promise<SslCheck[]> {
   const targetsByHost = new Map<string, SslTarget[]>();
 
   for (const row of rows) {
-    const targets = targetsByHost.get(row.host) ?? [];
+    const host = canonicalHostname(row.host);
+    const targets = targetsByHost.get(host) ?? [];
     targets.push({
       id: row.id,
       projectId: row.projectId,
       componentId: row.componentId,
     });
-    targetsByHost.set(row.host, targets);
+    targetsByHost.set(host, targets);
   }
 
   return [...targetsByHost].map(([host, targets]) => ({

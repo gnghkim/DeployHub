@@ -170,6 +170,53 @@ describe('SSL certificate check handler', () => {
     ]);
   });
 
+  it('groups case and trailing-dot variants as one DNS hostname', async () => {
+    const projectId = await insertProject('canonical-host-project');
+    await db.insert(schema.domains).values([
+      {
+        projectId,
+        domain: 'Example.COM.',
+        environment: 'preview',
+      },
+      {
+        projectId,
+        domain: 'example.com',
+        environment: 'production',
+      },
+    ]);
+    const fetchCertificate = vi.fn().mockResolvedValue(
+      certificate(45),
+    );
+
+    await createSslCheckHandler(
+      db,
+      1_234,
+      { fetchCertificate },
+    )(job());
+
+    expect(fetchCertificate).toHaveBeenCalledOnce();
+    expect(fetchCertificate).toHaveBeenCalledWith('example.com', 1_234);
+    const domains = await db
+      .select({
+        domain: schema.domains.domain,
+        sslExpiresAt: schema.domains.sslExpiresAt,
+        lastCheckedAt: schema.domains.lastCheckedAt,
+      })
+      .from(schema.domains)
+      .orderBy(asc(schema.domains.domain));
+    expect(domains.map(({ domain }) => domain)).toEqual([
+      'Example.COM.',
+      'example.com',
+    ]);
+    expect(domains.every(
+      ({ sslExpiresAt }) => sslExpiresAt?.toISOString()
+        === '2030-02-15T00:00:00.000Z',
+    )).toBe(true);
+    expect(domains.every(({ lastCheckedAt }) => lastCheckedAt !== null))
+      .toBe(true);
+    expect(await db.select().from(schema.changeEvents)).toHaveLength(1);
+  });
+
   it('skips domains owned by archived projects', async () => {
     const archivedProjectId = await insertProject(
       'archived-ssl-project',
