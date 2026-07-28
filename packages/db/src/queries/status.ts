@@ -65,12 +65,18 @@ export async function listProjectStatusData(
 ): Promise<Map<string, ProjectStatusData>> {
   if (projectIds.length === 0) return new Map();
 
+  const eventScopeKey = sql<string>`
+    coalesce(
+      ${changeEvents.resourceId}::text,
+      ${changeEvents.componentId}::text,
+      ${changeEvents.projectId}::text,
+      'global'
+    )
+  `;
   const latestEvents = db
     .selectDistinctOn(
       [
-        changeEvents.projectId,
-        changeEvents.componentId,
-        changeEvents.resourceId,
+        eventScopeKey,
         changeEvents.kind,
       ],
       {
@@ -97,9 +103,7 @@ export async function listProjectStatusData(
       ),
     ))
     .orderBy(
-      changeEvents.projectId,
-      changeEvents.componentId,
-      changeEvents.resourceId,
+      eventScopeKey,
       changeEvents.kind,
       desc(changeEvents.seq),
     )

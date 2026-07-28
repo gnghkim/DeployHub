@@ -165,6 +165,146 @@ describe('listProjectStatusData', () => {
     });
   });
 
+  it('자원을 다른 구성요소로 재연결한 뒤 running이면 그 자원의 최신 상태만 남아 정상이다', async () => {
+    const project = await seedProject('relinked-running');
+    const first = await seedComponent(project.id, 'api');
+    const second = await seedComponent(project.id, 'worker');
+    const resource = await seedResource('relinked-running');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        componentId: first.id,
+        resourceId: resource.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'exited',
+        detail: 'api container exited',
+      },
+      {
+        projectId: project.id,
+        componentId: second.id,
+        resourceId: resource.id,
+        kind: 'container_status',
+        severity: 'info',
+        currentValue: 'running',
+        detail: 'worker container running',
+      },
+    ]);
+
+    const status = (await listProjectStatusData(db, [project.id])).get(project.id);
+
+    expect(status?.status).toBe('정상');
+    expect(status?.latestEvents).toHaveLength(1);
+    expect(status?.latestEvents[0]).toMatchObject({
+      componentId: second.id,
+      resourceId: resource.id,
+      kind: 'container_status',
+      severity: 'info',
+      currentValue: 'running',
+    });
+  });
+
+  it('자원을 다른 구성요소로 재연결한 뒤 exited이면 그 자원의 최신 상태로 장애다', async () => {
+    const project = await seedProject('relinked-exited');
+    const first = await seedComponent(project.id, 'api');
+    const second = await seedComponent(project.id, 'worker');
+    const resource = await seedResource('relinked-exited');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        componentId: first.id,
+        resourceId: resource.id,
+        kind: 'container_status',
+        severity: 'info',
+        currentValue: 'running',
+        detail: 'api container running',
+      },
+      {
+        projectId: project.id,
+        componentId: second.id,
+        resourceId: resource.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'exited',
+        detail: 'worker container exited',
+      },
+    ]);
+
+    const status = (await listProjectStatusData(db, [project.id])).get(project.id);
+
+    expect(status?.status).toBe('장애');
+    expect(status?.latestEvents).toHaveLength(1);
+    expect(status?.latestEvents[0]).toMatchObject({
+      componentId: second.id,
+      resourceId: resource.id,
+      kind: 'container_status',
+      severity: 'critical',
+      currentValue: 'exited',
+    });
+  });
+
+  it('같은 자원의 container_status와 container_health는 각각 최신 이벤트를 남긴다', async () => {
+    const project = await seedProject('resource-event-kinds');
+    const component = await seedComponent(project.id, 'api');
+    const resource = await seedResource('resource-event-kinds');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        componentId: component.id,
+        resourceId: resource.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'exited',
+        detail: 'container exited',
+      },
+      {
+        projectId: project.id,
+        componentId: component.id,
+        resourceId: resource.id,
+        kind: 'container_health',
+        severity: 'info',
+        currentValue: 'healthy',
+        detail: 'container healthy',
+      },
+    ]);
+
+    const status = (await listProjectStatusData(db, [project.id])).get(project.id);
+
+    expect(status?.status).toBe('장애');
+    expect(status?.latestEvents).toHaveLength(2);
+    expect(status?.latestEvents.map((latest) => latest.kind).sort()).toEqual([
+      'container_health',
+      'container_status',
+    ]);
+  });
+
+  it('구성요소 범위와 프로젝트 범위 이벤트는 같은 kind여도 서로 섞지 않는다', async () => {
+    const project = await seedProject('separate-scopes');
+    const component = await seedComponent(project.id, 'api');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        kind: 'health_status',
+        severity: 'critical',
+        currentValue: 'down',
+        detail: 'project health down',
+      },
+      {
+        projectId: project.id,
+        componentId: component.id,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'up',
+        detail: 'component health up',
+      },
+    ]);
+
+    const status = (await listProjectStatusData(db, [project.id])).get(project.id);
+
+    expect(status?.status).toBe('장애');
+    expect(status?.latestEvents).toHaveLength(2);
+  });
+
   it('서로 다른 대상의 최신 info와 critical을 모두 남겨 장애로 판정한다', async () => {
     const project = await seedProject('different-targets');
     const first = await seedComponent(project.id, 'api');
