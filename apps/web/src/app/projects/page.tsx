@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import { listProjects } from '@deployhub/db';
+import { listProjectsWithSummaryData } from '@deployhub/db';
 import { Topbar } from '../../components/shell/topbar';
-import { Badge, type Tone } from '../../components/ui/badge';
 import {
   Table,
   TableBody,
@@ -11,15 +10,9 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { db } from '../../lib/db';
+import { summarizeProject } from '../../lib/project-summary';
 
 export const dynamic = 'force-dynamic';
-
-const STATUS_TONES: Record<string, Tone> = {
-  active: 'success',
-  paused: 'warning',
-  maintenance: 'warning',
-  archived: 'neutral',
-};
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'medium',
@@ -27,7 +20,19 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
 });
 
 export default async function ProjectsPage() {
-  const projects = await listProjects(db);
+  const projects = await listProjectsWithSummaryData(db);
+  const rows = projects.map((project) => ({
+    ...project,
+    summary: summarizeProject({
+      components: project.components.map((component) => ({
+        type: component.componentType,
+        framework: component.framework,
+        runtime: component.runtime,
+        provider: component.provider,
+      })),
+      observedProviders: project.observedProviders,
+    }),
+  }));
 
   return (
     <>
@@ -37,7 +42,7 @@ export default async function ProjectsPage() {
           <div>
             <h2 className="text-xl font-medium text-[var(--color-ink)]">프로젝트</h2>
             <p className="mt-1 text-sm text-[var(--color-mute)]">
-              서비스의 상태와 저장소 연결을 한곳에서 관리합니다.
+              각 프로젝트의 구성과 실제 배포 기반을 한눈에 확인합니다.
             </p>
           </div>
           <Link
@@ -54,14 +59,13 @@ export default async function ProjectsPage() {
               <TableRow>
                 <TableHead>프로젝트</TableHead>
                 <TableHead>구성</TableHead>
-                <TableHead>상태</TableHead>
-                <TableHead>Lifecycle</TableHead>
-                <TableHead>저장소</TableHead>
-                <TableHead>최근 변경</TableHead>
+                <TableHead>배포</TableHead>
+                <TableHead>DB</TableHead>
+                <TableHead>최근 배포</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {projects.map((project) => (
+              {rows.map((project) => (
                 <TableRow key={project.id}>
                   <TableCell>
                     <Link
@@ -72,16 +76,17 @@ export default async function ProjectsPage() {
                     </Link>
                     <p className="mt-0.5 text-xs text-[var(--color-mute)]">{project.slug}</p>
                   </TableCell>
-                  <TableCell className="text-[var(--color-mute)]">—</TableCell>
+                  <TableCell>{project.summary.stack}</TableCell>
+                  <TableCell>{project.summary.deployment}</TableCell>
+                  <TableCell>{project.summary.database}</TableCell>
                   <TableCell>
-                    <Badge tone={STATUS_TONES[project.status] ?? 'neutral'}>{project.status}</Badge>
-                  </TableCell>
-                  <TableCell>{project.lifecycle}</TableCell>
-                  <TableCell>{project.repository ?? '—'}</TableCell>
-                  <TableCell>
-                    <time dateTime={project.updatedAt.toISOString()}>
-                      {DATE_FORMAT.format(project.updatedAt)}
-                    </time>
+                    {project.latestDeploymentAt ? (
+                      <time dateTime={project.latestDeploymentAt.toISOString()}>
+                        {DATE_FORMAT.format(project.latestDeploymentAt)}
+                      </time>
+                    ) : (
+                      <>—</>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
