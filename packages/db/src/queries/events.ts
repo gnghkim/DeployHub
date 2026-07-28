@@ -22,10 +22,21 @@ export async function recordChangeIfChanged(
   const target = input.resourceId !== null
     ? eq(changeEvents.resourceId, input.resourceId)
     : input.componentId !== null
-      ? eq(changeEvents.componentId, input.componentId)
-      : input.projectId !== null
-        ? eq(changeEvents.projectId, input.projectId)
-        : isNull(changeEvents.projectId);
+      ? and(
+        isNull(changeEvents.resourceId),
+        eq(changeEvents.componentId, input.componentId),
+      )
+    : input.projectId !== null
+        ? and(
+          isNull(changeEvents.resourceId),
+          isNull(changeEvents.componentId),
+          eq(changeEvents.projectId, input.projectId),
+        )
+        : and(
+          isNull(changeEvents.resourceId),
+          isNull(changeEvents.componentId),
+          isNull(changeEvents.projectId),
+        );
 
   const [latest] = await db
     .select({ currentValue: changeEvents.currentValue })

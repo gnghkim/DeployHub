@@ -117,4 +117,61 @@ describe('recordChangeIfChanged', () => {
     await expect(recordChangeIfChanged(db, input)).resolves.toBe(false);
     expect(await db.select().from(schema.changeEvents).where(isNull(schema.changeEvents.projectId))).toHaveLength(1);
   });
+
+  it('does not let a resource event contaminate component identity', async () => {
+    const project = await seedProject('component-scope');
+    const component = await seedComponent(project.id, 'api');
+    const resource = await seedResource('component-scope');
+    await recordChangeIfChanged(db, {
+      ...change, projectId: project.id, componentId: component.id, resourceId: resource.id, currentValue: 'running',
+    });
+
+    await expect(recordChangeIfChanged(db, {
+      ...change, projectId: project.id, componentId: component.id, resourceId: null, currentValue: 'running',
+    })).resolves.toBe(true);
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      { resourceId: resource.id, currentValue: 'running' },
+      { resourceId: null, componentId: component.id, previousValue: null, currentValue: 'running' },
+    ]);
+  });
+
+  it('does not let component or resource events contaminate project identity', async () => {
+    const project = await seedProject('project-scope');
+    const component = await seedComponent(project.id, 'api');
+    const resource = await seedResource('project-scope');
+    await recordChangeIfChanged(db, {
+      ...change, projectId: project.id, componentId: component.id, resourceId: null, currentValue: 'running',
+    });
+    await recordChangeIfChanged(db, {
+      ...change, projectId: project.id, componentId: component.id, resourceId: resource.id, currentValue: 'running',
+    });
+
+    await expect(recordChangeIfChanged(db, {
+      ...change, projectId: project.id, componentId: null, resourceId: null, currentValue: 'running',
+    })).resolves.toBe(true);
+    const rows = await db.select().from(schema.changeEvents);
+    expect(rows.find((row) => row.componentId === null && row.resourceId === null)).toMatchObject(
+      { projectId: project.id, previousValue: null, currentValue: 'running' },
+    );
+  });
+
+  it('does not let non-global null-project events contaminate global identity', async () => {
+    const project = await seedProject('global-scope');
+    const component = await seedComponent(project.id, 'api');
+    const resource = await seedResource('global-scope');
+    await recordChangeIfChanged(db, {
+      ...change, projectId: null, componentId: component.id, resourceId: null, currentValue: 'running',
+    });
+    await recordChangeIfChanged(db, {
+      ...change, projectId: null, componentId: component.id, resourceId: resource.id, currentValue: 'running',
+    });
+
+    await expect(recordChangeIfChanged(db, {
+      ...change, projectId: null, componentId: null, resourceId: null, currentValue: 'running',
+    })).resolves.toBe(true);
+    const rows = await db.select().from(schema.changeEvents);
+    expect(rows.find((row) => (
+      row.projectId === null && row.componentId === null && row.resourceId === null
+    ))).toMatchObject({ previousValue: null, currentValue: 'running' });
+  });
 });
