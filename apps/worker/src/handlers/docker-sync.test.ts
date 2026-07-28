@@ -10,6 +10,7 @@ import {
 import { asc, eq, sql } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
+  listProjectStatusData,
   schema,
   type Db,
   type JobRecord,
@@ -43,6 +44,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await db.delete(schema.changeEvents);
   await db.delete(schema.deployments);
   await db.delete(schema.containerSnapshots);
   await db.delete(schema.componentResources);
@@ -75,6 +77,14 @@ function collector(
     listDeployments: vi.fn().mockResolvedValue(deployments),
     listSnapshots: vi.fn().mockResolvedValue(snapshots),
   };
+}
+
+async function runEmptySync() {
+  await createDockerSyncHandler(
+    db,
+    'http://socket-proxy:2375',
+    { createCollector: () => collector([], [], []) },
+  )(job());
 }
 
 describe('Docker sync handler', () => {
@@ -411,6 +421,257 @@ describe('Docker sync handler', () => {
       imageName: 'postgres:17-alpine',
       startedAt: new Date('2026-07-26T11:00:00.000Z'),
     });
+  });
+
+  it('deletes an event older than 90 days when a newer event has the same scope and kind', async () => {
+    const [project] = await db.insert(schema.projects).values({
+      name: 'Retention',
+      slug: 'retention-replaced',
+    }).returning();
+    if (!project) throw new Error('project insert failed');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        kind: 'container_status',
+        severity: 'critical',
+        previousValue: null,
+        currentValue: 'exited',
+        detail: 'old status',
+        occurredAt: sql`now() - interval '91 days'`,
+      },
+      {
+        projectId: project.id,
+        kind: 'container_status',
+        severity: 'info',
+        previousValue: 'exited',
+        currentValue: 'running',
+        detail: 'new status',
+        occurredAt: sql`now() - interval '1 day'`,
+      },
+    ]);
+
+    await runEmptySync();
+
+    const events = await db.select().from(schema.changeEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.currentValue).toBe('running');
+  });
+
+  it('retains an event older than 90 days when it is latest for its scope and kind', async () => {
+    await db.insert(schema.changeEvents).values({
+      projectId: null,
+      componentId: null,
+      resourceId: null,
+      kind: 'sync_failure',
+      severity: 'critical',
+      previousValue: null,
+      currentValue: 'failed',
+      detail: 'old but latest global failure',
+      occurredAt: sql`now() - interval '91 days'`,
+    });
+
+    await runEmptySync();
+
+    const events = await db.select().from(schema.changeEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.currentValue).toBe('failed');
+  });
+
+  it('retains every event that is 90 days old or newer', async () => {
+    const [project] = await db.insert(schema.projects).values({
+      name: 'Recent retention',
+      slug: 'retention-recent',
+    }).returning();
+    if (!project) throw new Error('project insert failed');
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        kind: 'container_health',
+        severity: 'warning',
+        previousValue: null,
+        currentValue: 'unhealthy',
+        detail: 'recent old value',
+        occurredAt: sql`now() - interval '89 days'`,
+      },
+      {
+        projectId: project.id,
+        kind: 'container_health',
+        severity: 'info',
+        previousValue: 'unhealthy',
+        currentValue: 'healthy',
+        detail: 'recent new value',
+        occurredAt: sql`now() - interval '1 day'`,
+      },
+    ]);
+
+    await runEmptySync();
+
+    const events = await db
+      .select()
+      .from(schema.changeEvents)
+      .orderBy(asc(schema.changeEvents.seq));
+    expect(events.map((event) => event.currentValue)).toEqual([
+      'unhealthy',
+      'healthy',
+    ]);
+  });
+
+  it('does not treat a newer seq from another scope or kind as a replacement', async () => {
+    const [scopeA, scopeB, kindScope] = await db
+      .insert(schema.projects)
+      .values([
+        { name: 'Scope A', slug: 'retention-scope-a' },
+        { name: 'Scope B', slug: 'retention-scope-b' },
+        { name: 'Kind scope', slug: 'retention-kind-scope' },
+      ])
+      .returning();
+    if (!scopeA || !scopeB || !kindScope) {
+      throw new Error('project insert failed');
+    }
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: scopeA.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'scope-a-old',
+        detail: 'must survive a newer event in another scope',
+        occurredAt: sql`now() - interval '91 days'`,
+      },
+      {
+        projectId: kindScope.id,
+        kind: 'container_health',
+        severity: 'critical',
+        currentValue: 'health-old',
+        detail: 'must survive a newer event of another kind',
+        occurredAt: sql`now() - interval '91 days'`,
+      },
+      {
+        projectId: scopeB.id,
+        kind: 'container_status',
+        severity: 'info',
+        currentValue: 'scope-b-new',
+        detail: 'newer seq but another scope',
+        occurredAt: sql`now() - interval '1 day'`,
+      },
+      {
+        projectId: kindScope.id,
+        kind: 'container_status',
+        severity: 'info',
+        currentValue: 'status-new',
+        detail: 'newer seq but another kind',
+        occurredAt: sql`now() - interval '1 day'`,
+      },
+    ]);
+
+    await runEmptySync();
+
+    const events = await db.select().from(schema.changeEvents);
+    expect(events.map((event) => event.currentValue)).toEqual(
+      expect.arrayContaining([
+        'scope-a-old',
+        'health-old',
+        'scope-b-new',
+        'status-new',
+      ]),
+    );
+    expect(events).toHaveLength(4);
+  });
+
+  it('uses seq rather than occurredAt to decide which event is newer', async () => {
+    const [seqScope, timestampScope] = await db
+      .insert(schema.projects)
+      .values([
+        { name: 'Sequence scope', slug: 'retention-sequence' },
+        { name: 'Timestamp scope', slug: 'retention-timestamp' },
+      ])
+      .returning();
+    if (!seqScope || !timestampScope) {
+      throw new Error('project insert failed');
+    }
+    await db.insert(schema.changeEvents).values([
+      {
+        projectId: seqScope.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'lower-seq-old',
+        detail: 'deleted by a larger seq with an older timestamp',
+        occurredAt: sql`now() - interval '91 days'`,
+      },
+      {
+        projectId: seqScope.id,
+        kind: 'container_status',
+        severity: 'critical',
+        currentValue: 'higher-seq-older-time',
+        detail: 'latest by seq',
+        occurredAt: sql`now() - interval '120 days'`,
+      },
+      {
+        projectId: timestampScope.id,
+        kind: 'container_health',
+        severity: 'info',
+        currentValue: 'lower-seq-newer-time',
+        detail: 'newer timestamp but lower seq',
+        occurredAt: sql`now() - interval '1 day'`,
+      },
+      {
+        projectId: timestampScope.id,
+        kind: 'container_health',
+        severity: 'critical',
+        currentValue: 'higher-seq-old',
+        detail: 'old timestamp but latest by seq',
+        occurredAt: sql`now() - interval '91 days'`,
+      },
+    ]);
+
+    await runEmptySync();
+
+    const events = await db
+      .select()
+      .from(schema.changeEvents)
+      .orderBy(asc(schema.changeEvents.seq));
+    expect(events.map((event) => event.currentValue)).toEqual([
+      'higher-seq-older-time',
+      'lower-seq-newer-time',
+      'higher-seq-old',
+    ]);
+  });
+
+  it('does not change status judgement when cleanup preserves an old latest critical event', async () => {
+    const [project] = await db.insert(schema.projects).values({
+      name: 'Dead target',
+      slug: 'dead-target',
+    }).returning();
+    if (!project) throw new Error('project insert failed');
+    await db.insert(schema.changeEvents).values({
+      projectId: project.id,
+      componentId: null,
+      resourceId: null,
+      kind: 'container_status',
+      severity: 'critical',
+      previousValue: 'running',
+      currentValue: 'dead',
+      detail: 'target is still dead',
+      occurredAt: sql`now() - interval '91 days'`,
+    });
+
+    const before = (await listProjectStatusData(
+      db,
+      [project.id],
+    )).get(project.id);
+    await runEmptySync();
+    const after = (await listProjectStatusData(
+      db,
+      [project.id],
+    )).get(project.id);
+
+    expect(before?.status).toBe('장애');
+    expect(after?.status).toBe(before?.status);
+    expect(after?.latestEvents).toMatchObject([
+      {
+        currentValue: 'dead',
+        severity: 'critical',
+      },
+    ]);
   });
 
   it('quietly skips handling and enqueueing when DOCKER_HOST_URL is absent', async () => {

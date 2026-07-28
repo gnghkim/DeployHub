@@ -13,10 +13,24 @@ const shellSource = existsSync(shellPath)
   ? readFileSync(shellPath, 'utf8')
   : '';
 
-it('keeps only the three everyday top-level navigation items', () => {
-  expect(shellSource).toContain("{ label: '프로젝트', href: '/' }");
-  expect(shellSource).toContain("{ label: '발견', href: '/discovered' }");
-  expect(shellSource).toContain("{ label: '설정', href: '/settings' }");
+it('keeps the four everyday top-level navigation items in product order', () => {
+  const projects = shellSource.indexOf(
+    "{ label: '프로젝트', href: '/' }",
+  );
+  const discovered = shellSource.indexOf(
+    "{ label: '발견', href: '/discovered' }",
+  );
+  const events = shellSource.indexOf(
+    "{ label: '변경', href: '/events' }",
+  );
+  const settings = shellSource.indexOf(
+    "{ label: '설정', href: '/settings' }",
+  );
+
+  expect(projects).toBeGreaterThanOrEqual(0);
+  expect(projects).toBeLessThan(discovered);
+  expect(discovered).toBeLessThan(events);
+  expect(events).toBeLessThan(settings);
   expect(shellSource).not.toContain("href: '/projects'");
   expect(shellSource).not.toContain("href: '/providers'");
   expect(shellSource).not.toContain("href: '/resources'");
@@ -32,6 +46,9 @@ it('shows only the pending review Draft count beside 설정', () => {
     '<SidebarShell pendingDraftCount={pendingDrafts.length} />',
   );
   expect(source).not.toContain('validation_failed');
+  expect(shellSource).not.toContain(
+    "item.href === '/events' &&",
+  );
 });
 
 it('waits for a request before querying the Draft count', () => {

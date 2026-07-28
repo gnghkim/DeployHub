@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 const ACTIVE_ITEMS = [
   { label: '프로젝트', href: '/' },
   { label: '발견', href: '/discovered' },
+  { label: '변경', href: '/events' },
   { label: '설정', href: '/settings' },
 ] as const;
 

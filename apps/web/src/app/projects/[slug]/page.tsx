@@ -6,11 +6,13 @@ import {
   getProjectBySlug,
   listProjectStatusData,
   listProjectResources,
+  listTimelineEvents,
   schema,
   type DriftKind,
   type ProjectStatus,
 } from '@deployhub/db';
 import { Topbar } from '../../../components/shell/topbar';
+import { TimelineList } from '../../../components/events/timeline-list';
 import { Badge, type Tone } from '../../../components/ui/badge';
 import { Card } from '../../../components/ui/card';
 import {
@@ -94,6 +96,14 @@ export default async function ProjectDetailPage({
   const evidenceEvents = status.latestEvents.filter((event) => (
     event.severity === 'warning' || event.severity === 'critical'
   ));
+  const evidenceEventIds = new Set(evidenceEvents.map(
+    (event) => event.id,
+  ));
+  const { events: historyEvents } = await listTimelineEvents(db, {
+    projectId: project.id,
+    excludeIds: [...evidenceEventIds],
+    limit: 20,
+  });
   const deployment = summarizeProject({
     components: project.components.map((component) => ({
       type: component.componentType,
@@ -315,6 +325,24 @@ export default async function ProjectDetailPage({
               관측된 배포가 없습니다.
             </p>
           )}
+        </Card>
+
+        <Card>
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-base font-medium text-[var(--color-ink)]">
+              변경 이력
+            </h3>
+            <span className="text-xs text-[var(--color-mute)]">
+              최근 {historyEvents.length}건
+            </span>
+          </div>
+          <div className="mt-4 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)]">
+            <TimelineList
+              events={historyEvents}
+              renderedAt={renderedAt}
+              emptyMessage="현재 판정 근거 외에 기록된 변경이 없습니다"
+            />
+          </div>
         </Card>
 
         <Card>
