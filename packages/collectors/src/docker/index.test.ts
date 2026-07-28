@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import inspect from '../../test/fixtures/docker-inspect.json';
-import { createDockerCollector } from './index';
+import {
+  createDockerCollector,
+  extractContainerHealth,
+} from './index';
 
 type TestResponse = {
   ok: boolean;
@@ -10,7 +13,10 @@ type TestResponse = {
 };
 
 const fetchMock = vi.fn<
-  (input: string, init: { method: 'GET' }) => Promise<TestResponse>
+  (
+    input: string,
+    init: { method: 'GET'; signal: AbortSignal },
+  ) => Promise<TestResponse>
 >();
 
 beforeEach(() => {
@@ -33,6 +39,83 @@ function response(
 }
 
 describe('createDockerCollector', () => {
+  it('lists allowlisted container status fields in one bounded request', async () => {
+    const externalId = 'a'.repeat(64);
+    fetchMock.mockResolvedValueOnce(response([{
+      Id: externalId,
+      Names: ['/deployhub-worker'],
+      State: 'running',
+      Status: 'Up 2 hours (healthy)',
+      Labels: { secret: 'C:\\private\\.env' },
+      Mounts: [{ Source: 'C:\\private' }],
+      Image: 'deployhub:secret-tag',
+    }]));
+    const collector = createDockerCollector(
+      'http://socket-proxy:2375/',
+      { fetch: fetchMock },
+    );
+
+    const statuses = await collector.listContainerStatuses();
+
+    expect(statuses).toEqual([{
+      externalId,
+      name: 'deployhub-worker',
+      state: 'running',
+      status: 'Up 2 hours (healthy)',
+    }]);
+    expect(Object.keys(statuses[0]!).sort()).toEqual([
+      'externalId',
+      'name',
+      'state',
+      'status',
+    ]);
+    expect(extractContainerHealth(statuses[0]!.status)).toBe('healthy');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://socket-proxy:2375/containers/json?all=1',
+      {
+        method: 'GET',
+        signal: expect.any(AbortSignal),
+      },
+    );
+  });
+
+  it('returns null when a container status has no health marker', () => {
+    expect(extractContainerHealth('Up 2 hours')).toBeNull();
+  });
+
+  it('extracts unhealthy and starting health markers', () => {
+    expect(
+      extractContainerHealth('Up 2 hours (unhealthy)'),
+    ).toBe('unhealthy');
+    expect(
+      extractContainerHealth('Up 3 seconds (health: starting)'),
+    ).toBe('starting');
+  });
+
+  it('rejects status lists above the container cap without extra requests', async () => {
+    const containers = Array.from(
+      { length: 257 },
+      (_, index) => ({
+        Id: `container-${index}`,
+        Names: [`/container-${index}`],
+        State: 'running',
+        Status: 'Up 1 minute',
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(response(containers));
+
+    await expect(
+      createDockerCollector(
+        'http://socket-proxy:2375',
+        { fetch: fetchMock },
+      ).listContainerStatuses(),
+    ).rejects.toThrow(
+      'Docker 컨테이너 수가 수집 상한을 초과했습니다. (컨테이너 257건, 상한 256건)',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('collects resources and deployments from one bounded inspect scan', async () => {
     fetchMock
       .mockResolvedValueOnce(response([{ Id: inspect.Id }]))
@@ -93,7 +176,10 @@ describe('createDockerCollector', () => {
     );
     expect(fetchMock).toHaveBeenLastCalledWith(
       `http://socket-proxy:2375/containers/${inspect.Id}/stats?stream=false`,
-      { method: 'GET' },
+      {
+        method: 'GET',
+        signal: expect.any(AbortSignal),
+      },
     );
   });
 

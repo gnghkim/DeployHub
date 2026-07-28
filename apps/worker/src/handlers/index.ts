@@ -11,6 +11,11 @@ export {
   enqueueDockerSyncJob,
 } from './docker-sync';
 export {
+  createDockerHealthHandler,
+  DOCKER_HEALTH_INTERVAL_MS,
+  enqueueDockerHealthJob,
+} from './docker-health';
+export {
   createHealthCheckHandler,
   enqueueHealthCheckJob,
   HEALTH_CHECK_INTERVAL_MS,

@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { createDb } from '@deployhub/db';
 import { loadEncryptionKey, loadEnv } from '@deployhub/shared';
 import {
+  createDockerHealthHandler,
   createDockerSyncHandler,
   createGithubSyncHandler,
   createHealthCheckHandler,
   createVercelSyncHandler,
+  DOCKER_HEALTH_INTERVAL_MS,
+  enqueueDockerHealthJob,
   enqueueDockerSyncJob,
   enqueueGithubSyncJobs,
   enqueueHealthCheckJob,
@@ -26,6 +29,10 @@ async function main(): Promise<void> {
   const runner = createRunner(
     db,
     {
+      'docker.health': createDockerHealthHandler(
+        db,
+        env.DOCKER_HOST_URL,
+      ),
       'docker.sync': createDockerSyncHandler(db, env.DOCKER_HOST_URL),
       'github.sync': createGithubSyncHandler(db, encryptionKey),
       'health.check': createHealthCheckHandler(db),
@@ -50,6 +57,11 @@ async function main(): Promise<void> {
       console.error('[worker] Docker 동기화 job 등록 실패');
     });
   }, DOCKER_SYNC_INTERVAL_MS);
+  const dockerHealthSchedule = setInterval(() => {
+    void enqueueDockerHealthJob(db, env.DOCKER_HOST_URL).catch(() => {
+      console.error('[worker] Docker 상태 감시 job 등록 실패');
+    });
+  }, DOCKER_HEALTH_INTERVAL_MS);
   const healthSchedule = setInterval(() => {
     void enqueueHealthCheckJob(db).catch(() => {
       console.error('[worker] HTTP 헬스체크 job 등록 실패');
@@ -61,6 +73,7 @@ async function main(): Promise<void> {
     clearInterval(githubSchedule);
     clearInterval(vercelSchedule);
     clearInterval(dockerSchedule);
+    clearInterval(dockerHealthSchedule);
     clearInterval(healthSchedule);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -69,6 +82,7 @@ async function main(): Promise<void> {
   await enqueueGithubSyncJobs(db);
   await enqueueVercelSyncJobs(db);
   await enqueueDockerSyncJob(db, env.DOCKER_HOST_URL);
+  await enqueueDockerHealthJob(db, env.DOCKER_HOST_URL);
   await enqueueHealthCheckJob(db);
   console.log(`[worker] 시작 ${workerId}`);
   while (running) {
