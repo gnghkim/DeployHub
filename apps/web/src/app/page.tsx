@@ -27,6 +27,9 @@ export default async function Home() {
   const projects = await listProjectsWithSummaryData(db);
   const rows = projects.map((project) => ({
     ...project,
+    latestDeploymentRelative: project.latestDeploymentAt
+      ? formatRelativeTime(project.latestDeploymentAt, renderedAt)
+      : null,
     summary: summarizeProject({
       components: project.components.map((component) => ({
         type: component.componentType,
@@ -41,53 +44,106 @@ export default async function Home() {
   return (
     <>
       <Topbar title="프로젝트" />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <h2 className="text-xl font-medium text-[var(--color-ink)]">
           프로젝트 {projects.length}
         </h2>
 
         <section className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface)]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>프로젝트</TableHead>
-                <TableHead>구성</TableHead>
-                <TableHead>배포</TableHead>
-                <TableHead>DB</TableHead>
-                <TableHead>최근 배포</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((project) => (
-                <TableRow key={project.id}>
-                  <TableCell>
-                    <Link
-                      href={`/projects/${project.slug}`}
-                      className="font-medium text-[var(--color-ink)] hover:underline"
-                    >
-                      {project.name}
-                    </Link>
-                    <p className="mt-0.5 text-xs text-[var(--color-mute)]">{project.slug}</p>
-                  </TableCell>
-                  <TableCell>{project.summary.stack}</TableCell>
-                  <TableCell>{project.summary.deployment}</TableCell>
-                  <TableCell>{project.summary.database}</TableCell>
-                  <TableCell>
-                    {project.latestDeploymentAt ? (
-                      <time
-                        dateTime={project.latestDeploymentAt.toISOString()}
-                        title={DATE_FORMAT.format(project.latestDeploymentAt)}
-                      >
-                        {formatRelativeTime(project.latestDeploymentAt, renderedAt)}
-                      </time>
-                    ) : (
-                      <>—</>
-                    )}
-                  </TableCell>
+          {rows.length > 0 ? (
+            <div className="md:hidden">
+              <ul className="divide-y divide-[var(--color-hairline)]">
+                {rows.map((project) => (
+                  <li key={project.id} className="space-y-3 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <Link
+                          href={`/projects/${project.slug}`}
+                          className="font-medium text-[var(--color-ink)] hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                        <p className="mt-0.5 truncate text-xs text-[var(--color-mute)]">
+                          {project.slug}
+                        </p>
+                      </div>
+                      {project.latestDeploymentAt ? (
+                        <time
+                          className="shrink-0 text-xs text-[var(--color-mute)]"
+                          dateTime={project.latestDeploymentAt.toISOString()}
+                          title={DATE_FORMAT.format(project.latestDeploymentAt)}
+                        >
+                          {project.latestDeploymentRelative}
+                        </time>
+                      ) : (
+                        <span className="shrink-0 text-xs text-[var(--color-mute)]">
+                          —
+                        </span>
+                      )}
+                    </div>
+                    <dl className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                      <dt className="text-[var(--color-mute)]">구성</dt>
+                      <dd className="text-[var(--color-body)]">
+                        {project.summary.stack}
+                      </dd>
+                      <dt className="text-[var(--color-mute)]">배포</dt>
+                      <dd className="text-[var(--color-body)]">
+                        {project.summary.deployment}
+                      </dd>
+                      <dt className="text-[var(--color-mute)]">DB</dt>
+                      <dd className="text-[var(--color-body)]">
+                        {project.summary.database}
+                      </dd>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>프로젝트</TableHead>
+                  <TableHead>구성</TableHead>
+                  <TableHead>배포</TableHead>
+                  <TableHead>DB</TableHead>
+                  <TableHead>최근 배포</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rows.map((project) => (
+                  <TableRow key={project.id}>
+                    <TableCell>
+                      <Link
+                        href={`/projects/${project.slug}`}
+                        className="font-medium text-[var(--color-ink)] hover:underline"
+                      >
+                        {project.name}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-[var(--color-mute)]">{project.slug}</p>
+                    </TableCell>
+                    <TableCell>{project.summary.stack}</TableCell>
+                    <TableCell>{project.summary.deployment}</TableCell>
+                    <TableCell>{project.summary.database}</TableCell>
+                    <TableCell>
+                      {project.latestDeploymentAt ? (
+                        <time
+                          dateTime={project.latestDeploymentAt.toISOString()}
+                          title={DATE_FORMAT.format(project.latestDeploymentAt)}
+                        >
+                          {project.latestDeploymentRelative}
+                        </time>
+                      ) : (
+                        <>—</>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
           {projects.length === 0 ? (
             <div className="px-5 py-12 text-center text-sm">
               <p className="font-medium text-[var(--color-ink)]">

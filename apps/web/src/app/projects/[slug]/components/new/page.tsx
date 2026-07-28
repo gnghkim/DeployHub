@@ -20,7 +20,7 @@ export default async function NewComponentPage({
   return (
     <>
       <Topbar title="New Component" />
-      <main className="mx-auto max-w-4xl space-y-6 p-8">
+      <main className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
         <div>
           <Link
             href={`/projects/${project.slug}`}

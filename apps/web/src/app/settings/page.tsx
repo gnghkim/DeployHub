@@ -28,7 +28,7 @@ export default function SettingsPage() {
   return (
     <>
       <Topbar title="설정" />
-      <main className="p-8">
+      <main className="p-4 md:p-8">
         <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface)]">
           <ul className="divide-y divide-[var(--color-hairline)]">
             {SETTINGS_ITEMS.map((item) => (

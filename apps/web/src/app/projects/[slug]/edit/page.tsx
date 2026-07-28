@@ -26,7 +26,7 @@ export default async function EditProjectPage({
   return (
     <>
       <Topbar title={`${project.name} 편집`} />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <div>
           <Link
             href={`/projects/${project.slug}`}

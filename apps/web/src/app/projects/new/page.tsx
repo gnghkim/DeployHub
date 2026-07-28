@@ -7,7 +7,7 @@ export default function NewProjectPage() {
   return (
     <>
       <Topbar title="New Project" />
-      <main className="mx-auto max-w-4xl space-y-6 p-8">
+      <main className="mx-auto max-w-4xl space-y-6 p-4 md:p-8">
         <div>
           <Link href="/projects" className="text-sm text-[var(--color-mute)] hover:text-[var(--color-ink)]">
             ← 프로젝트 목록

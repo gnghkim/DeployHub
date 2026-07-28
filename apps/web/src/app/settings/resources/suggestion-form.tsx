@@ -54,14 +54,14 @@ export function SuggestionForm({
   }
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex min-w-0 flex-wrap items-center gap-2">
       <input type="hidden" name="resourceId" value={resourceId} />
-      <label className="text-xs text-[var(--color-mute)]">
+      <label className="min-w-0 max-w-full text-xs text-[var(--color-mute)]">
         구성요소
         <select
           name="componentId"
           required
-          className="ml-2 h-9 rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)]"
+          className="mt-1 block h-9 min-w-0 max-w-full rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)] sm:ml-2 sm:mt-0 sm:inline-block"
         >
           {components.map((component) => (
             <option key={component.id} value={component.id}>

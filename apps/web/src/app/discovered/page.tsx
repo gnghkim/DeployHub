@@ -11,7 +11,7 @@ export default async function DiscoveredPage() {
   return (
     <>
       <Topbar title="발견" />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <section className="rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface)] p-5 text-sm">
           <p className="text-[var(--color-body)]">
             등록하려면 해당 프로젝트를 작업 중인 AI에게
