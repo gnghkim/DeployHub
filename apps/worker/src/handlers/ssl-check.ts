@@ -9,6 +9,7 @@ import {
   type Db,
 } from '@deployhub/db';
 import {
+  asc,
   eq,
   inArray,
   isNull,
@@ -79,7 +80,8 @@ async function sslTargets(db: Db): Promise<SslCheck[]> {
       schema.projects,
       eq(schema.domains.projectId, schema.projects.id),
     )
-    .where(isNull(schema.projects.archivedAt));
+    .where(isNull(schema.projects.archivedAt))
+    .orderBy(asc(schema.domains.createdAt), asc(schema.domains.id));
   const targetsByHost = new Map<string, SslTarget[]>();
 
   for (const row of rows) {

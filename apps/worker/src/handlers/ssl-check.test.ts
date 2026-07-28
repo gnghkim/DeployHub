@@ -7,7 +7,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
   schema,
@@ -165,6 +165,131 @@ describe('SSL certificate check handler', () => {
         resourceId: null,
         kind: 'ssl_expiry',
         severity: 'info',
+        currentValue: '2030-02-15 (45d)',
+      },
+    ]);
+  });
+
+  it('keeps the same component event target across row-order changes without adding duplicate events', async () => {
+    const projectId = await insertProject('stable-component-target-project');
+    const preferredComponentId = '00000000-0000-4000-8000-000000000001';
+    const otherComponentId = '00000000-0000-4000-8000-000000000002';
+    const preferredDomainId = '10000000-0000-4000-8000-000000000001';
+    const otherDomainId = '10000000-0000-4000-8000-000000000002';
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    await db.insert(schema.components).values([
+      {
+        id: preferredComponentId,
+        projectId,
+        name: 'preferred-component',
+        slug: 'preferred-component',
+        componentType: 'frontend',
+      },
+      {
+        id: otherComponentId,
+        projectId,
+        name: 'other-component',
+        slug: 'other-component',
+        componentType: 'frontend',
+      },
+    ]);
+    await db.insert(schema.domains).values([
+      {
+        id: otherDomainId,
+        projectId,
+        componentId: otherComponentId,
+        domain: 'stable-component.example.com',
+        environment: 'preview',
+        createdAt,
+      },
+      {
+        id: preferredDomainId,
+        projectId,
+        componentId: preferredComponentId,
+        domain: 'stable-component.example.com',
+        environment: 'production',
+        createdAt,
+      },
+    ]);
+    const fetchCertificate = vi.fn().mockResolvedValue(certificate(45));
+    const handler = createSslCheckHandler(
+      db,
+      1_234,
+      { fetchCertificate },
+    );
+
+    await handler(job());
+    await db
+      .update(schema.domains)
+      .set({ updatedAt: new Date('2026-01-02T00:00:00.000Z') })
+      .where(eq(schema.domains.id, otherDomainId));
+    await handler(job());
+    await db
+      .update(schema.domains)
+      .set({ updatedAt: new Date('2026-01-03T00:00:00.000Z') })
+      .where(eq(schema.domains.id, preferredDomainId));
+    await handler(job());
+
+    expect(fetchCertificate).toHaveBeenCalledTimes(3);
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      {
+        projectId,
+        componentId: preferredComponentId,
+        currentValue: '2030-02-15 (45d)',
+      },
+    ]);
+  });
+
+  it('keeps the same project event target when every shared-host component is null', async () => {
+    const preferredProjectId = await insertProject(
+      'stable-null-target-project',
+    );
+    const otherProjectId = await insertProject('other-null-target-project');
+    const preferredDomainId = '20000000-0000-4000-8000-000000000001';
+    const otherDomainId = '20000000-0000-4000-8000-000000000002';
+    const createdAt = new Date('2026-01-01T00:00:00.000Z');
+    await db.insert(schema.domains).values([
+      {
+        id: otherDomainId,
+        projectId: otherProjectId,
+        componentId: null,
+        domain: 'stable-null.example.com',
+        environment: 'production',
+        createdAt,
+      },
+      {
+        id: preferredDomainId,
+        projectId: preferredProjectId,
+        componentId: null,
+        domain: 'stable-null.example.com',
+        environment: 'production',
+        createdAt,
+      },
+    ]);
+    const fetchCertificate = vi.fn().mockResolvedValue(certificate(45));
+    const handler = createSslCheckHandler(
+      db,
+      1_234,
+      { fetchCertificate },
+    );
+
+    await handler(job());
+    await db
+      .update(schema.domains)
+      .set({ updatedAt: new Date('2026-01-02T00:00:00.000Z') })
+      .where(eq(schema.domains.id, otherDomainId));
+    await handler(job());
+    await db
+      .update(schema.domains)
+      .set({ updatedAt: new Date('2026-01-03T00:00:00.000Z') })
+      .where(eq(schema.domains.id, preferredDomainId));
+    await handler(job());
+
+    expect(fetchCertificate).toHaveBeenCalledTimes(3);
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      {
+        projectId: preferredProjectId,
+        componentId: null,
         currentValue: '2030-02-15 (45d)',
       },
     ]);
