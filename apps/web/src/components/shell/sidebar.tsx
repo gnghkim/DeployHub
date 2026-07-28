@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 const ACTIVE_ITEMS = [
   { label: '프로젝트', href: '/' },
+  { label: '발견', href: '/discovered' },
   { label: 'Providers', href: '/providers' },
   { label: 'Resources', href: '/resources' },
   { label: 'Drafts', href: '/drafts' },
