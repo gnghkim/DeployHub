@@ -4,10 +4,13 @@ import { loadEncryptionKey, loadEnv } from '@deployhub/shared';
 import {
   createDockerSyncHandler,
   createGithubSyncHandler,
+  createHealthCheckHandler,
   createVercelSyncHandler,
   enqueueDockerSyncJob,
   enqueueGithubSyncJobs,
+  enqueueHealthCheckJob,
   enqueueVercelSyncJobs,
+  HEALTH_CHECK_INTERVAL_MS,
 } from './handlers';
 import { createRunner } from './runner';
 
@@ -25,6 +28,7 @@ async function main(): Promise<void> {
     {
       'docker.sync': createDockerSyncHandler(db, env.DOCKER_HOST_URL),
       'github.sync': createGithubSyncHandler(db, encryptionKey),
+      'health.check': createHealthCheckHandler(db),
       'vercel.sync': createVercelSyncHandler(db, encryptionKey),
     },
     workerId,
@@ -46,12 +50,18 @@ async function main(): Promise<void> {
       console.error('[worker] Docker 동기화 job 등록 실패');
     });
   }, DOCKER_SYNC_INTERVAL_MS);
+  const healthSchedule = setInterval(() => {
+    void enqueueHealthCheckJob(db).catch(() => {
+      console.error('[worker] HTTP 헬스체크 job 등록 실패');
+    });
+  }, HEALTH_CHECK_INTERVAL_MS);
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} 수신. 현재 배치를 마치고 종료합니다.`);
     running = false;
     clearInterval(githubSchedule);
     clearInterval(vercelSchedule);
     clearInterval(dockerSchedule);
+    clearInterval(healthSchedule);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
@@ -59,6 +69,7 @@ async function main(): Promise<void> {
   await enqueueGithubSyncJobs(db);
   await enqueueVercelSyncJobs(db);
   await enqueueDockerSyncJob(db, env.DOCKER_HOST_URL);
+  await enqueueHealthCheckJob(db);
   console.log(`[worker] 시작 ${workerId}`);
   while (running) {
     try {

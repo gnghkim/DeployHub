@@ -10,3 +10,8 @@ export {
   createDockerSyncHandler,
   enqueueDockerSyncJob,
 } from './docker-sync';
+export {
+  createHealthCheckHandler,
+  enqueueHealthCheckJob,
+  HEALTH_CHECK_INTERVAL_MS,
+} from './health-check';

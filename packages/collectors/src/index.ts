@@ -15,6 +15,8 @@ export type {
   DockerCollector,
   DockerContainerSnapshot,
 } from './docker';
+export { checkHttp } from './health';
+export type { HealthResult } from './health';
 export type {
   ConnectionResult,
   DeploymentCollector,
