@@ -10,6 +10,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { db } from '@/lib/db';
+import { formatRelativeTime } from '@/lib/backend-view';
 import { summarizeProject } from '@/lib/project-summary';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,9 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
 });
 
 export default async function Home() {
+  // 상대 시각은 서버에서 한 번만 계산한다. 클라이언트가 다시 계산하면
+  // 서버 렌더 결과와 달라져 hydration 이 어긋난다. 절대 시각은 title 에 둔다.
+  const renderedAt = new Date();
   const projects = await listProjectsWithSummaryData(db);
   const rows = projects.map((project) => ({
     ...project,
@@ -70,8 +74,11 @@ export default async function Home() {
                   <TableCell>{project.summary.database}</TableCell>
                   <TableCell>
                     {project.latestDeploymentAt ? (
-                      <time dateTime={project.latestDeploymentAt.toISOString()}>
-                        {DATE_FORMAT.format(project.latestDeploymentAt)}
+                      <time
+                        dateTime={project.latestDeploymentAt.toISOString()}
+                        title={DATE_FORMAT.format(project.latestDeploymentAt)}
+                      >
+                        {formatRelativeTime(project.latestDeploymentAt, renderedAt)}
                       </time>
                     ) : (
                       <>—</>
