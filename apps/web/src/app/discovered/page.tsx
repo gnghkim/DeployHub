@@ -20,7 +20,7 @@ export default async function DiscoveredPage() {
           <p className="mt-1 text-[var(--color-mute)]">
             AI가 deployhub.yaml 을 만들어 올리면{' '}
             <Link
-              href="/drafts"
+              href="/settings/drafts"
               className="font-medium text-[var(--color-ink)] hover:underline"
             >
               등록 초안 화면

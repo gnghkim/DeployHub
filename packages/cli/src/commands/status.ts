@@ -49,7 +49,7 @@ export async function runStatus(options: StatusOptions): Promise<0 | 1> {
     output(
       `Draft URL: ${absoluteDeployHubUrl(
         options.baseUrl,
-        `/drafts/${status.latestDraft.id}`,
+        `/settings/drafts/${status.latestDraft.id}`,
       )}`,
     );
   } else {

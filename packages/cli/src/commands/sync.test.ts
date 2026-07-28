@@ -46,7 +46,7 @@ describe('runSync', () => {
             {
               id: 'draft-2',
               status: 'pending_review',
-              url: '/drafts/draft-2',
+              url: '/settings/drafts/draft-2',
             },
             { status: 201 },
           );
@@ -101,7 +101,7 @@ describe('runSync', () => {
       },
     });
     expect(output).toContain(
-      'Draft submitted: https://hub.example/drafts/draft-2',
+      'Draft submitted: https://hub.example/settings/drafts/draft-2',
     );
     expect(output.join('\n')).not.toContain(token);
   });

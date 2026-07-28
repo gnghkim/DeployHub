@@ -110,7 +110,10 @@ describe('POST /api/v1/project-drafts', () => {
     const body = await response.json();
 
     expect(response.status).toBe(201);
-    expect(body).toMatchObject({ status: 'pending_review' });
+    expect(body).toMatchObject({
+      status: 'pending_review',
+      url: expect.stringMatching(/^\/settings\/drafts\//),
+    });
     expect(await db.select().from(schema.projectDrafts)).toHaveLength(1);
   });
 

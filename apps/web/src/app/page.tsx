@@ -99,7 +99,7 @@ export default async function Home() {
               <p className="mt-1 text-[var(--color-mute)]">
                 deployhub.yaml 을 만들어 올립니다. 올라온 초안은{' '}
                 <Link
-                  href="/drafts"
+                  href="/settings/drafts"
                   className="font-medium text-[var(--color-ink)] hover:underline"
                 >
                   등록 초안 화면

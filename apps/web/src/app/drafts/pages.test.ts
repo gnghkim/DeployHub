@@ -9,12 +9,12 @@ const source = (relativePath: string) => readFileSync(
 
 describe('Draft review screens', () => {
   it('renders both list and detail pages as server components', () => {
-    expect(source('./page.tsx')).not.toContain("'use client'");
-    expect(source('./[id]/page.tsx')).not.toContain("'use client'");
+    expect(source('../settings/drafts/page.tsx')).not.toContain("'use client'");
+    expect(source('../settings/drafts/[id]/page.tsx')).not.toContain("'use client'");
   });
 
   it('shows omitted components and highlights uncertain field sources', () => {
-    const detail = source('./[id]/page.tsx');
+    const detail = source('../settings/drafts/[id]/page.tsx');
 
     expect(detail).toContain('manifest에 없음');
     expect(detail).toContain('inferred');
@@ -22,7 +22,7 @@ describe('Draft review screens', () => {
   });
 
   it('shows component deployment declarations during review', () => {
-    const detail = source('./[id]/page.tsx');
+    const detail = source('../settings/drafts/[id]/page.tsx');
 
     expect(detail).toContain('component.provider');
     expect(detail).toContain('component.externalRef');
@@ -30,7 +30,7 @@ describe('Draft review screens', () => {
   });
 
   it('provides approve and reject forms', () => {
-    const detail = source('./[id]/page.tsx');
+    const detail = source('../settings/drafts/[id]/page.tsx');
 
     expect(detail).toContain('approveDraft');
     expect(detail).toContain('rejectDraft');
