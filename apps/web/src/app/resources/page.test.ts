@@ -75,12 +75,12 @@ describe('자원 화면 구성', () => {
     expect(page).toContain('title=');
   });
 
-  it('Overview에 다섯 가지 요약 지표가 있다', () => {
+  it('Overview에 행동할 수 없는 요약 지표가 없다', () => {
     const page = source('../page.tsx');
-    expect(page).toContain('전체 프로젝트');
-    expect(page).toContain('수집 저장소');
-    expect(page).toContain('실행 중 컨테이너');
-    expect(page).toContain('미연결 자원');
-    expect(page).toContain('Drift 있는 프로젝트');
+    expect(page).not.toContain('전체 프로젝트');
+    expect(page).not.toContain('수집 저장소');
+    expect(page).not.toContain('실행 중 컨테이너');
+    expect(page).not.toContain('미연결 자원');
+    expect(page).not.toContain('Drift 있는 프로젝트');
   });
 });

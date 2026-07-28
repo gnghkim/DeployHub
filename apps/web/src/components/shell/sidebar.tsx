@@ -1,8 +1,7 @@
 import Link from 'next/link';
 
 const ACTIVE_ITEMS = [
-  { label: 'Overview', href: '/' },
-  { label: 'Projects', href: '/projects' },
+  { label: '프로젝트', href: '/' },
   { label: 'Providers', href: '/providers' },
   { label: 'Resources', href: '/resources' },
   { label: 'Drafts', href: '/drafts' },

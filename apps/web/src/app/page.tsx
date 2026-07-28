@@ -1,75 +1,107 @@
-import { auth } from '@/auth/config';
+import Link from 'next/link';
+import { listProjectsWithSummaryData } from '@deployhub/db';
 import { Topbar } from '@/components/shell/topbar';
-import { Card } from '@/components/ui/card';
 import {
-  computeDrift,
-  listProjects,
-  listResources,
-} from '@deployhub/db';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { db } from '@/lib/db';
+import { summarizeProject } from '@/lib/project-summary';
 
 export const dynamic = 'force-dynamic';
 
+const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
 export default async function Home() {
-  const [session, projects, resources] = await Promise.all([
-    auth(),
-    listProjects(db),
-    listResources(db),
-  ]);
-  const repositoryCount = resources.filter(
-    (resource) => resource.resourceType === 'github_repository',
-  ).length;
-  const unlinkedCount = resources.filter(
-    (resource) => resource.links.length === 0,
-  ).length;
-  const runningContainerCount = resources.filter(
-    (resource) => (
-      resource.resourceType === 'docker_container'
-      && resource.status === 'running'
-    ),
-  ).length;
-  const driftByProject = await Promise.all(
-    projects.map((project) => computeDrift(db, project.id)),
-  );
-  const projectsWithDrift = driftByProject.filter(
-    (projectDrift) => projectDrift.length > 0,
-  ).length;
-  const summaries = [
-    { label: '전체 프로젝트', value: projects.length },
-    { label: '수집 저장소', value: repositoryCount },
-    { label: '실행 중 컨테이너', value: runningContainerCount },
-    { label: '미연결 자원', value: unlinkedCount },
-    { label: 'Drift 있는 프로젝트', value: projectsWithDrift },
-  ];
+  const projects = await listProjectsWithSummaryData(db);
+  const rows = projects.map((project) => ({
+    ...project,
+    summary: summarizeProject({
+      components: project.components.map((component) => ({
+        type: component.componentType,
+        framework: component.framework,
+        runtime: component.runtime,
+        provider: component.provider,
+      })),
+      observedProviders: project.observedProviders,
+    }),
+  }));
 
   return (
     <>
-      <Topbar title="Overview" />
+      <Topbar title="프로젝트" />
       <main className="space-y-6 p-8">
-        <section>
-          <h2 className="text-xl font-medium text-[var(--color-ink)]">Workspace</h2>
-          <p className="mt-1 text-sm text-[var(--color-mute)]">
-            프로젝트와 인프라 상태를 한곳에서 확인합니다.
-          </p>
-        </section>
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {summaries.map((summary) => (
-            <Card key={summary.label}>
-              <p className="text-sm text-[var(--color-mute)]">
-                {summary.label}
+        <h2 className="text-xl font-medium text-[var(--color-ink)]">
+          프로젝트 {projects.length}
+        </h2>
+
+        <section className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>프로젝트</TableHead>
+                <TableHead>구성</TableHead>
+                <TableHead>배포</TableHead>
+                <TableHead>DB</TableHead>
+                <TableHead>최근 배포</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((project) => (
+                <TableRow key={project.id}>
+                  <TableCell>
+                    <Link
+                      href={`/projects/${project.slug}`}
+                      className="font-medium text-[var(--color-ink)] hover:underline"
+                    >
+                      {project.name}
+                    </Link>
+                    <p className="mt-0.5 text-xs text-[var(--color-mute)]">{project.slug}</p>
+                  </TableCell>
+                  <TableCell>{project.summary.stack}</TableCell>
+                  <TableCell>{project.summary.deployment}</TableCell>
+                  <TableCell>{project.summary.database}</TableCell>
+                  <TableCell>
+                    {project.latestDeploymentAt ? (
+                      <time dateTime={project.latestDeploymentAt.toISOString()}>
+                        {DATE_FORMAT.format(project.latestDeploymentAt)}
+                      </time>
+                    ) : (
+                      <>—</>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {projects.length === 0 ? (
+            <div className="px-5 py-12 text-center text-sm">
+              <p className="font-medium text-[var(--color-ink)]">
+                아직 등록된 프로젝트가 없습니다.
               </p>
-              <p className="mt-2 text-2xl font-medium text-[var(--color-ink)]">
-                {summary.value}
+              <p className="mt-3 text-[var(--color-mute)]">
+                각 프로젝트를 작업 중인 AI에게 &quot;DeployHub에 등록해줘&quot;라고 하면
               </p>
-            </Card>
-          ))}
+              <p className="mt-1 text-[var(--color-mute)]">
+                deployhub.yaml 을 만들어 올립니다. 올라온 초안은{' '}
+                <Link
+                  href="/drafts"
+                  className="font-medium text-[var(--color-ink)] hover:underline"
+                >
+                  등록 초안 화면
+                </Link>
+                에서 승인합니다.
+              </p>
+            </div>
+          ) : null}
         </section>
-        <Card>
-          <p className="text-sm text-[var(--color-mute)]">Signed in as</p>
-          <p className="mt-1 font-medium text-[var(--color-ink)]">
-            {session?.user?.name ?? '인증되지 않음'}
-          </p>
-        </Card>
       </main>
     </>
   );
