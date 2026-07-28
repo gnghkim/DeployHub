@@ -2,10 +2,53 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
-import { claim, complete, enqueue, fail } from './queue';
+import { claim, complete, enqueue, enqueueUnique, fail } from './queue';
 
 let db: Db;
 let stop: () => Promise<void>;
+
+describe('enqueueUnique', () => {
+  it('does not insert when the same type is pending', async () => {
+    await enqueue(db, { type: 'sync.github' });
+
+    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(false);
+    expect(await db.select().from(schema.jobs)).toHaveLength(1);
+  });
+
+  it('does not insert when the same type is running', async () => {
+    await enqueue(db, { type: 'sync.github' });
+    await claim(db, 'worker-1', 1, 60);
+
+    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(false);
+  });
+
+  it('inserts when same-type jobs are terminal', async () => {
+    const succeeded = await enqueue(db, { type: 'sync.github' });
+    await claim(db, 'worker-1', 1, 60);
+    await complete(db, succeeded.id);
+
+    const failed = await enqueue(db, { type: 'sync.github', maxAttempts: 1 });
+    await claim(db, 'worker-1', 1, 60);
+    await fail(db, failed.id, 'test failure');
+
+    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(true);
+    expect(await db.select().from(schema.jobs)).toHaveLength(3);
+  });
+
+  it('is not blocked by a different job type', async () => {
+    await enqueue(db, { type: 'sync.github' });
+
+    await expect(enqueueUnique(db, { type: 'sync.vercel' })).resolves.toBe(true);
+    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+  });
+
+  it('does not alter enqueue unconditional behavior', async () => {
+    await enqueue(db, { type: 'sync.github' });
+    await enqueue(db, { type: 'sync.github' });
+
+    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+  });
+});
 
 beforeAll(async () => {
   const started = await startTestDb();

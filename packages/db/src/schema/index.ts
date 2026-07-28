@@ -5,3 +5,4 @@ export * from './resources';
 export * from './jobs';
 export * from './registration';
 export * from './observations';
+export * from './events';
