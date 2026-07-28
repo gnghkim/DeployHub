@@ -144,7 +144,8 @@ export async function listProjectStatusData(
       observedProjects,
       eq(observedProjects.projectId, projects.id),
     )
-    .where(inArray(projects.id, projectIds));
+    .where(inArray(projects.id, projectIds))
+    .orderBy(projects.id, desc(latestEvents.seq));
 
   const result = new Map<string, ProjectStatusData>();
   for (const projectId of projectIds) {

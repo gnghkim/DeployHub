@@ -194,6 +194,36 @@ describe('listProjectStatusData', () => {
     expect(status?.latestEvents).toHaveLength(2);
   });
 
+  it('여러 대상의 최신 이벤트를 seq 내림차순으로 돌려준다', async () => {
+    const project = await seedProject('evidence-order');
+    const inserted = await db.insert(schema.changeEvents).values([
+      {
+        projectId: project.id,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'healthy',
+        detail: 'older health evidence',
+      },
+      {
+        projectId: project.id,
+        kind: 'sync_failure',
+        severity: 'warning',
+        currentValue: 'failed',
+        detail: 'newer sync evidence',
+      },
+    ]).returning();
+    const older = inserted[0];
+    const newer = inserted[1];
+    if (!older || !newer) throw new Error('event insert failed');
+
+    const status = (await listProjectStatusData(db, [project.id])).get(project.id);
+
+    expect(status?.latestEvents.map((event) => event.seq)).toEqual([
+      newer.seq,
+      older.seq,
+    ]);
+  });
+
   it('suggested 연결은 관측이 아니고 확정된 활성 자원 연결만 관측이다', async () => {
     const suggestedProject = await seedProject('suggested-only');
     const suggestedComponent = await seedComponent(suggestedProject.id, 'api');
