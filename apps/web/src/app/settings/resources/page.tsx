@@ -107,11 +107,16 @@ export default async function ResourcesPage({
       repository: project.repository,
     })),
   );
+  const resourceRows = filteredResources.map((resource) => ({
+    resource,
+    details: githubResourceDetails(resource.metadata),
+    image: metadataString(resource.metadata, 'image'),
+  }));
 
   return (
     <>
       <Topbar title="Resources" />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <div>
           <h2 className="text-xl font-medium text-[var(--color-ink)]">
             관측 자원
@@ -162,41 +167,136 @@ export default async function ResourcesPage({
             </form>
           </div>
           {filteredResources.length > 0 ? (
-            <Table className="mt-4">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>자원</TableHead>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Resource type</TableHead>
-                  <TableHead>상태</TableHead>
-                  <TableHead>상세</TableHead>
-                  <TableHead>연결</TableHead>
-                  <TableHead>연결 추가</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredResources.map((resource) => {
-                  const details = githubResourceDetails(resource.metadata);
-                  const image = metadataString(resource.metadata, 'image');
-                  return (
-                    <TableRow key={resource.id}>
-                      <TableCell>
-                        <p className="font-medium text-[var(--color-ink)]">
-                          {resource.name}
-                        </p>
-                        <p
-                          className="mt-1 font-mono text-xs text-[var(--color-mute)]"
-                          title={resource.externalId}
-                        >
-                          {resource.resourceType === 'docker_container'
-                            ? shortContainerId(resource.externalId)
-                            : resource.externalId}
-                        </p>
-                      </TableCell>
-                      <TableCell>{resource.provider}</TableCell>
-                      <TableCell>{resource.resourceType}</TableCell>
-                      <TableCell>{resource.status ?? '—'}</TableCell>
-                      <TableCell>
+            <>
+              <div className="hidden md:block">
+                <Table className="mt-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>자원</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Resource type</TableHead>
+                      <TableHead>상태</TableHead>
+                      <TableHead>상세</TableHead>
+                      <TableHead>연결</TableHead>
+                      <TableHead>연결 추가</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {resourceRows.map(({ resource, details, image }) => (
+                      <TableRow key={resource.id}>
+                        <TableCell>
+                          <p className="font-medium text-[var(--color-ink)]">
+                            {resource.name}
+                          </p>
+                          <p
+                            className="mt-1 font-mono text-xs text-[var(--color-mute)]"
+                            title={resource.externalId}
+                          >
+                            {resource.resourceType === 'docker_container'
+                              ? shortContainerId(resource.externalId)
+                              : resource.externalId}
+                          </p>
+                        </TableCell>
+                        <TableCell>{resource.provider}</TableCell>
+                        <TableCell>{resource.resourceType}</TableCell>
+                        <TableCell>{resource.status ?? '—'}</TableCell>
+                        <TableCell>
+                          {details.lastCommit ? (
+                            <div className="text-xs">
+                              <p className="font-mono text-[var(--color-ink)]">
+                                commit {details.lastCommit.sha.slice(0, 7)}
+                              </p>
+                              <p className="mt-1 text-[var(--color-mute)]">
+                                {displayDate(details.lastCommit.committedAt)}
+                                {details.lastWorkflowRun?.conclusion
+                                  ? ` · ${details.lastWorkflowRun.conclusion}`
+                                  : ''}
+                              </p>
+                            </div>
+                          ) : (image ?? resource.region ?? '—')}
+                        </TableCell>
+                        <TableCell>
+                          {resource.links.length > 0 ? (
+                            <div className="space-y-2">
+                              {resource.links.map((link) => (
+                                <div
+                                  key={link.linkId}
+                                  className="flex flex-wrap items-center gap-2"
+                                >
+                                  <Link
+                                    href={`/projects/${link.projectSlug}`}
+                                    className="text-sm text-[var(--color-info)] hover:underline"
+                                  >
+                                    {link.projectName} / {link.componentName}
+                                  </Link>
+                                  <form action={removeResourceLink}>
+                                    <input
+                                      type="hidden"
+                                      name="linkId"
+                                      value={link.linkId}
+                                    />
+                                    <Button
+                                      type="submit"
+                                      variant="tertiary"
+                                      className="h-7 px-2 text-xs"
+                                    >
+                                      연결 해제
+                                    </Button>
+                                  </form>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <Badge>Unlinked</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <SuggestionForm
+                            resourceId={resource.id}
+                            components={componentOptions}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="space-y-3 md:hidden">
+                {resourceRows.map(({ resource, details, image }) => (
+                  <article
+                    key={resource.id}
+                    className="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] p-4 first:mt-4"
+                  >
+                    <div>
+                      <p className="font-medium text-[var(--color-ink)]">
+                        {resource.name}
+                      </p>
+                      <p
+                        className="mt-1 break-all font-mono text-xs text-[var(--color-mute)]"
+                        title={resource.externalId}
+                      >
+                        {resource.resourceType === 'docker_container'
+                          ? shortContainerId(resource.externalId)
+                          : resource.externalId}
+                      </p>
+                    </div>
+
+                    <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                      <dt className="text-[var(--color-mute)]">Provider</dt>
+                      <dd className="min-w-0 break-words text-[var(--color-body)]">
+                        {resource.provider}
+                      </dd>
+                      <dt className="text-[var(--color-mute)]">Resource type</dt>
+                      <dd className="min-w-0 break-words text-[var(--color-body)]">
+                        {resource.resourceType}
+                      </dd>
+                      <dt className="text-[var(--color-mute)]">상태</dt>
+                      <dd className="text-[var(--color-body)]">
+                        {resource.status ?? '—'}
+                      </dd>
+                      <dt className="text-[var(--color-mute)]">상세</dt>
+                      <dd className="min-w-0 break-words text-[var(--color-body)]">
                         {details.lastCommit ? (
                           <div className="text-xs">
                             <p className="font-mono text-[var(--color-ink)]">
@@ -210,53 +310,61 @@ export default async function ResourcesPage({
                             </p>
                           </div>
                         ) : (image ?? resource.region ?? '—')}
-                      </TableCell>
-                      <TableCell>
-                        {resource.links.length > 0 ? (
-                          <div className="space-y-2">
-                            {resource.links.map((link) => (
-                              <div
-                                key={link.linkId}
-                                className="flex flex-wrap items-center gap-2"
+                      </dd>
+                    </dl>
+
+                    <div className="border-t border-[var(--color-hairline)] pt-3">
+                      <p className="mb-2 text-xs font-medium text-[var(--color-mute)]">
+                        연결
+                      </p>
+                      {resource.links.length > 0 ? (
+                        <div className="space-y-2">
+                          {resource.links.map((link) => (
+                            <div
+                              key={link.linkId}
+                              className="flex flex-wrap items-center gap-2"
+                            >
+                              <Link
+                                href={`/projects/${link.projectSlug}`}
+                                className="text-sm text-[var(--color-info)] hover:underline"
                               >
-                                <Link
-                                  href={`/projects/${link.projectSlug}`}
-                                  className="text-sm text-[var(--color-info)] hover:underline"
+                                {link.projectName} / {link.componentName}
+                              </Link>
+                              <form action={removeResourceLink}>
+                                <input
+                                  type="hidden"
+                                  name="linkId"
+                                  value={link.linkId}
+                                />
+                                <Button
+                                  type="submit"
+                                  variant="tertiary"
+                                  className="h-7 px-2 text-xs"
                                 >
-                                  {link.projectName} / {link.componentName}
-                                </Link>
-                                <form action={removeResourceLink}>
-                                  <input
-                                    type="hidden"
-                                    name="linkId"
-                                    value={link.linkId}
-                                  />
-                                  <Button
-                                    type="submit"
-                                    variant="tertiary"
-                                    className="h-7 px-2 text-xs"
-                                  >
-                                    연결 해제
-                                  </Button>
-                                </form>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <Badge>Unlinked</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <SuggestionForm
-                          resourceId={resource.id}
-                          components={componentOptions}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                                  연결 해제
+                                </Button>
+                              </form>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <Badge>Unlinked</Badge>
+                      )}
+                    </div>
+
+                    <div className="border-t border-[var(--color-hairline)] pt-3">
+                      <p className="mb-2 text-xs font-medium text-[var(--color-mute)]">
+                        연결 추가
+                      </p>
+                      <SuggestionForm
+                        resourceId={resource.id}
+                        components={componentOptions}
+                      />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
           ) : (
             <p className="mt-4 text-sm text-[var(--color-mute)]">
               조건에 맞는 자원이 없습니다.

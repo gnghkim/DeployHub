@@ -35,7 +35,7 @@ export default async function DraftsPage() {
   return (
     <>
       <Topbar title="Drafts" />
-      <main className="p-8">
+      <main className="p-4 md:p-8">
         <Card>
           <h2 className="text-lg font-medium text-[var(--color-ink)]">
             프로젝트 등록 검토

@@ -39,4 +39,24 @@ describe('project overview routes', () => {
     expect(projects).toContain("from 'next/navigation'");
     expect(projects).toContain("redirect('/');");
   });
+
+  it('renders project cards on mobile and the existing table on desktop', () => {
+    const home = source('./page.tsx');
+
+    expect(home).toContain('className="md:hidden"');
+    expect(home).toContain('className="hidden md:block"');
+    expect(home).toContain('구성');
+    expect(home).toContain('배포');
+    expect(home).toContain('DB');
+    expect(home.match(/href=\{`\/projects\/\$\{project\.slug\}`\}/g))
+      .toHaveLength(2);
+  });
+
+  it('calculates each relative deployment time once for both layouts', () => {
+    const home = source('./page.tsx');
+
+    expect(home.match(/formatRelativeTime\(/g)).toHaveLength(1);
+    expect(home.match(/\{project\.latestDeploymentRelative\}/g))
+      .toHaveLength(2);
+  });
 });

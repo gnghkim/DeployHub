@@ -91,7 +91,7 @@ export default async function DraftDetailPage({
   return (
     <>
       <Topbar title={`Draft · ${title}`} />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <div>
           <Link
             href="/settings/drafts"

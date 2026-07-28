@@ -60,7 +60,7 @@ export function ArchitectureComposition({
           </p>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] border-b border-[var(--color-hairline)] px-4 py-2 text-xs text-[var(--color-ash)]">
+        <div className="hidden grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] border-b border-[var(--color-hairline)] px-4 py-2 text-xs text-[var(--color-ash)] md:grid">
           <span>선언</span>
           <span aria-hidden="true" />
           <span>관측</span>
@@ -71,9 +71,12 @@ export function ArchitectureComposition({
             {composition.rows.map((row) => (
               <li
                 key={row.key}
-                className="grid grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] items-start px-4 py-3"
+                className="grid grid-cols-1 items-start gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] md:gap-0"
               >
                 <div className="min-w-0">
+                  <p className="mb-1 text-xs font-medium text-[var(--color-ash)] md:hidden">
+                    선언
+                  </p>
                   <p className="truncate text-sm font-medium text-[var(--color-ink)]">
                     {row.declaration.name}
                   </p>
@@ -83,11 +86,14 @@ export function ArchitectureComposition({
                 </div>
                 <span
                   aria-hidden="true"
-                  className="pt-1 text-center text-[var(--color-stone)]"
+                  className="hidden pt-1 text-center text-[var(--color-stone)] md:block"
                 >
                   →
                 </span>
-                <div className="min-w-0 space-y-2">
+                <div className="min-w-0 space-y-2 border-l border-[var(--color-hairline)] pl-3 md:border-l-0 md:pl-0">
+                  <p className="text-xs font-medium text-[var(--color-ash)] md:hidden">
+                    관측
+                  </p>
                   {row.observations.map((observation) => (
                     <div key={observation.key}>
                       <p className={

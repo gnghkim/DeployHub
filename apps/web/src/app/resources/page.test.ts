@@ -92,4 +92,28 @@ describe('자원 화면 구성', () => {
     expect(page).not.toContain('미연결 자원');
     expect(page).not.toContain('Drift 있는 프로젝트');
   });
+
+  it('자원 표는 데스크톱에 유지하고 모바일에서는 카드로 표시한다', () => {
+    const page = source('../settings/resources/page.tsx');
+
+    expect(page).toContain('className="hidden md:block"');
+    expect(page).toContain('className="space-y-3 md:hidden"');
+    expect(page).toContain('Provider');
+    expect(page).toContain('Resource type');
+    expect(page).toContain('연결 추가');
+  });
+
+  it('발견 목록은 이미 모바일에서 한 열로 쌓이므로 별도 카드를 복제하지 않는다', () => {
+    const page = source('../discovered/page.tsx');
+
+    expect(page).toContain('sm:grid-cols-');
+    expect(page).not.toContain('hidden md:block');
+  });
+
+  it('모바일 카드의 구성요소 선택기가 카드 폭을 넘지 않는다', () => {
+    const form = source('../settings/resources/suggestion-form.tsx');
+
+    expect(form).toContain('min-w-0');
+    expect(form).toContain('max-w-full');
+  });
 });

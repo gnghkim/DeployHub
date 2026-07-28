@@ -52,7 +52,7 @@ export default async function RegistrationTokensPage() {
   return (
     <>
       <Topbar title="Registration tokens" />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <Card>
           <h2 className="text-lg font-medium text-[var(--color-ink)]">
             CLI 등록 토큰 발급

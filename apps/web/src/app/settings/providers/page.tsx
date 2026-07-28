@@ -50,7 +50,7 @@ export default async function ProvidersPage() {
   return (
     <>
       <Topbar title="Providers" />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <div>
           <h2 className="text-xl font-medium text-[var(--color-ink)]">
             GitHub 연결

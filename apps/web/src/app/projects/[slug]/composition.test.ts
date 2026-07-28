@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   buildComposition,
@@ -157,5 +159,27 @@ describe('buildComposition', () => {
         missing: true,
       }),
     ]);
+  });
+});
+
+describe('ArchitectureComposition responsive layout', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('./composition.tsx', import.meta.url)),
+    'utf8',
+  );
+
+  it('stacks declaration above observation on mobile', () => {
+    expect(source).toContain('grid-cols-1');
+    expect(source).toContain(
+      'md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)]',
+    );
+    expect(source).toContain('md:grid');
+    expect(source).toContain('md:hidden');
+  });
+
+  it('labels both sides in the stacked layout', () => {
+    expect(source).toContain('선언');
+    expect(source).toContain('관측');
+    expect(source).toContain('{observation.name}');
   });
 });

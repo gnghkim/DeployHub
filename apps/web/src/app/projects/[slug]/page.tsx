@@ -113,7 +113,7 @@ export default async function ProjectDetailPage({
   return (
     <>
       <Topbar title={project.name} />
-      <main className="space-y-6 p-8">
+      <main className="space-y-6 p-4 md:p-8">
         <div className="flex items-start justify-between gap-4">
           <div>
             <Link
