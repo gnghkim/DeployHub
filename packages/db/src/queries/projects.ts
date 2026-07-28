@@ -11,6 +11,10 @@ import type { Db } from '../client';
 import { deployments } from '../schema/observations';
 import { components, domains, projects } from '../schema/projects';
 import { componentResources, resources } from '../schema/resources';
+import {
+  listProjectStatusData,
+  type ProjectStatus,
+} from './status';
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type ComponentRow = typeof components.$inferSelect;
@@ -23,6 +27,7 @@ export type ProjectListSummaryData = ProjectRow & {
   components: ComponentRow[];
   observedProviders: string[];
   latestDeploymentAt: Date | null;
+  judgement: ProjectStatus;
 };
 
 export async function listProjects(db: Db): Promise<ProjectRow[]> {
@@ -41,9 +46,14 @@ export async function listProjectsWithSummaryData(
     ${deployments.createdAt}
   )`.mapWith(deployments.createdAt);
 
-  // These are the only three follow-up queries for the whole project list.
-  // The total stays at four regardless of how many projects are returned.
-  const [componentRows, linkedResourceRows, latestDeploymentRows] = await Promise.all([
+  // These are the only four follow-up queries for the whole project list.
+  // The total stays at five regardless of how many projects are returned.
+  const [
+    componentRows,
+    linkedResourceRows,
+    latestDeploymentRows,
+    statusByProject,
+  ] = await Promise.all([
     db
       .select()
       .from(components)
@@ -76,6 +86,7 @@ export async function listProjectsWithSummaryData(
         desc(deploymentTime),
         desc(deployments.createdAt),
       ),
+    listProjectStatusData(db, projectIds),
   ]);
 
   const componentsByProject = new Map<string, ComponentRow[]>();
@@ -105,6 +116,7 @@ export async function listProjectsWithSummaryData(
     components: componentsByProject.get(project.id) ?? [],
     observedProviders: [...(providersByProject.get(project.id) ?? [])].sort(),
     latestDeploymentAt: latestDeploymentByProject.get(project.id) ?? null,
+    judgement: statusByProject.get(project.id)?.status ?? '미확인',
   }));
 }
 

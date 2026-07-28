@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
+import * as databaseSchema from '../schema';
 import {
   getProjectBySlug,
   listProjects,
@@ -9,14 +12,31 @@ import {
 
 let db: Db;
 let stop: () => Promise<void>;
+let countedDb: Db;
+let closeCountedDb: () => Promise<void>;
+let queryCount = 0;
 
 beforeAll(async () => {
   const s = await startTestDb();
   db = s.db;
   stop = s.stop;
+  const pool = new pg.Pool({ connectionString: s.connectionString });
+  countedDb = drizzle(pool, {
+    schema: databaseSchema,
+    logger: {
+      logQuery() {
+        queryCount += 1;
+      },
+    },
+  });
+  closeCountedDb = () => pool.end();
 }, 120_000);
-afterAll(async () => { await stop(); });
+afterAll(async () => {
+  await closeCountedDb();
+  await stop();
+});
 beforeEach(async () => {
+  await db.delete(schema.changeEvents);
   await db.delete(schema.deployments);
   await db.delete(schema.resources);
   await db.delete(schema.projects);
@@ -132,5 +152,30 @@ describe('프로젝트 조회', () => {
     ]);
     expect(rows[0]?.observedProviders).toEqual(['docker']);
     expect(rows[0]?.latestDeploymentAt).toEqual(latest);
+    expect(rows[0]?.judgement).toBe('정상');
+  });
+
+  it('프로젝트가 1개든 10개든 목록 요약은 정확히 5개 쿼리만 실행한다', async () => {
+    await db.insert(schema.projects).values({ name: 'Project 1', slug: 'project-1' });
+
+    queryCount = 0;
+    await listProjectsWithSummaryData(countedDb);
+    const oneProjectQueryCount = queryCount;
+
+    await db.delete(schema.projects);
+    await db.insert(schema.projects).values(Array.from(
+      { length: 10 },
+      (_, index) => ({
+        name: `Project ${index + 1}`,
+        slug: `project-${index + 1}`,
+      }),
+    ));
+
+    queryCount = 0;
+    await listProjectsWithSummaryData(countedDb);
+    const tenProjectQueryCount = queryCount;
+
+    expect(oneProjectQueryCount).toBe(5);
+    expect(tenProjectQueryCount).toBe(oneProjectQueryCount);
   });
 });

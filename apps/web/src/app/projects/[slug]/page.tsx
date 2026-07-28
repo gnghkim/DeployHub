@@ -4,12 +4,14 @@ import { desc, eq, sql } from 'drizzle-orm';
 import {
   computeDrift,
   getProjectBySlug,
+  listProjectStatusData,
   listProjectResources,
   schema,
   type DriftKind,
+  type ProjectStatus,
 } from '@deployhub/db';
 import { Topbar } from '../../../components/shell/topbar';
-import { Badge } from '../../../components/ui/badge';
+import { Badge, type Tone } from '../../../components/ui/badge';
 import { Card } from '../../../components/ui/card';
 import {
   Table,
@@ -46,6 +48,13 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
   timeStyle: 'short',
 });
 
+const STATUS_TONES: Record<ProjectStatus, Tone> = {
+  정상: 'neutral',
+  미확인: 'neutral',
+  주의: 'warning',
+  장애: 'error',
+};
+
 export default async function ProjectDetailPage({
   params,
 }: {
@@ -56,7 +65,12 @@ export default async function ProjectDetailPage({
   if (!project) notFound();
 
   const renderedAt = new Date();
-  const [linkedResources, drift, deployments] = await Promise.all([
+  const [
+    linkedResources,
+    drift,
+    deployments,
+    statusByProject,
+  ] = await Promise.all([
     listProjectResources(db, project.id),
     computeDrift(db, project.id),
     db
@@ -70,7 +84,16 @@ export default async function ProjectDetailPage({
         )`),
         desc(schema.deployments.createdAt),
       ),
+    listProjectStatusData(db, [project.id]),
   ]);
+  const status = statusByProject.get(project.id) ?? {
+    status: '미확인' as const,
+    hasObservation: false,
+    latestEvents: [],
+  };
+  const evidenceEvents = status.latestEvents.filter((event) => (
+    event.severity === 'warning' || event.severity === 'critical'
+  ));
   const deployment = summarizeProject({
     components: project.components.map((component) => ({
       type: component.componentType,
@@ -140,6 +163,10 @@ export default async function ProjectDetailPage({
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--color-body)]">
           <span>{project.lifecycle}</span>
           <MetadataDot />
+          <Badge tone={STATUS_TONES[status.status]}>
+            {status.status}
+          </Badge>
+          <MetadataDot />
           <span>중요도 {project.importance}</span>
           <MetadataDot />
           <span>{project.owner ?? '담당자 없음'}</span>
@@ -165,6 +192,63 @@ export default async function ProjectDetailPage({
             ))}
             domains={project.domains}
           />
+        </Card>
+
+        <Card>
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-base font-medium text-[var(--color-ink)]">
+              판정 근거
+            </h3>
+            <span className="text-xs text-[var(--color-mute)]">
+              최신 주의·장애 이벤트 {evidenceEvents.length}건
+            </span>
+          </div>
+          {evidenceEvents.length > 0 ? (
+            <ul className="mt-4 space-y-3">
+              {evidenceEvents.map((event) => {
+                const component = project.components.find(
+                  (candidate) => candidate.id === event.componentId,
+                );
+                const resource = linkedResources.find(
+                  (candidate) => candidate.id === event.resourceId,
+                );
+                return (
+                  <li
+                    key={event.id}
+                    className="rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={event.severity === 'critical' ? 'error' : 'warning'}>
+                        {event.severity === 'critical' ? '장애' : '주의'}
+                      </Badge>
+                      <span className="text-sm font-medium text-[var(--color-ink)]">
+                        {resource?.name ?? component?.name ?? project.name}
+                      </span>
+                      <span className="font-mono text-xs text-[var(--color-mute)]">
+                        {event.kind}
+                      </span>
+                      <time
+                        className="text-xs text-[var(--color-mute)]"
+                        dateTime={event.occurredAt.toISOString()}
+                        title={DATE_FORMAT.format(event.occurredAt)}
+                      >
+                        {formatRelativeTime(event.occurredAt, renderedAt)}
+                      </time>
+                    </div>
+                    <p className="mt-2 text-sm text-[var(--color-body)]">
+                      <span className="font-mono">{event.currentValue}</span>
+                      <span aria-hidden="true"> · </span>
+                      {event.detail}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--color-mute)]">
+              최신 주의 또는 장애 이벤트가 없습니다.
+            </p>
+          )}
         </Card>
 
         <Card>

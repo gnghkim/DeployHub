@@ -11,3 +11,4 @@ export * from './queries/drift';
 export * from './queries/declared-link';
 export * from './queries/discovered';
 export * from './queries/events';
+export * from './queries/status';
