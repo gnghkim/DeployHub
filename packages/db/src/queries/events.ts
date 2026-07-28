@@ -54,7 +54,7 @@ export async function recordChangeIfChanged(
       .select({ currentValue: changeEvents.currentValue })
       .from(changeEvents)
       .where(and(target, eq(changeEvents.kind, input.kind)))
-      .orderBy(desc(changeEvents.occurredAt), desc(changeEvents.id))
+      .orderBy(desc(changeEvents.seq))
       .limit(1);
 
     if (latest?.currentValue === input.currentValue) return false;

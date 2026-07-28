@@ -1,5 +1,5 @@
 {
-  "id": "8a1144fe-e03d-478b-9b43-6cea10074c9e",
+  "id": "86f3b4f7-620a-496c-b260-e1081ce37279",
   "prevId": "b4e0a59d-f2fa-4014-a443-916c34f33cc1",
   "version": "7",
   "dialect": "postgresql",
@@ -1431,6 +1431,23 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "change_events_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
         "project_id": {
           "name": "project_id",
           "type": "uuid",
@@ -1492,7 +1509,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "clock_timestamp()"
         }
       },
       "indexes": {

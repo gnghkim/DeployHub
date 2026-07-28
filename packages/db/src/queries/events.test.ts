@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { isNull } from 'drizzle-orm';
+import { asc, isNull } from 'drizzle-orm';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
 import { recordChangeIfChanged } from './events';
@@ -85,6 +85,60 @@ describe('recordChangeIfChanged', () => {
     await recordChangeIfChanged(db, { ...change, ...target, currentValue: 'running' });
 
     expect(await db.select().from(schema.changeEvents)).toHaveLength(3);
+  });
+
+  it('records every transition in sequence within one transaction', async () => {
+    const target = { projectId: null, componentId: null, resourceId: null };
+    const written = await db.transaction(async (tx) => {
+      const transactionDb = tx as unknown as Db;
+      return [
+        await recordChangeIfChanged(transactionDb, {
+          ...change, ...target, currentValue: 'running',
+        }),
+        await recordChangeIfChanged(transactionDb, {
+          ...change, ...target, currentValue: 'exited',
+        }),
+        await recordChangeIfChanged(transactionDb, {
+          ...change, ...target, currentValue: 'running',
+        }),
+      ];
+    });
+
+    expect(written).toEqual([true, true, true]);
+    const rows = await db
+      .select()
+      .from(schema.changeEvents)
+      .orderBy(asc(schema.changeEvents.seq));
+    expect(rows).toHaveLength(3);
+    expect(rows.map(({ previousValue, currentValue }) => (
+      `${previousValue}->${currentValue}`
+    ))).toEqual([
+      'null->running',
+      'running->exited',
+      'exited->running',
+    ]);
+    expect(new Set(rows.map(({ seq }) => seq)).size).toBe(3);
+  });
+
+  it('does not record an unchanged value within one transaction', async () => {
+    const input = {
+      ...change,
+      projectId: null,
+      componentId: null,
+      resourceId: null,
+      currentValue: 'running',
+    };
+
+    const written = await db.transaction(async (tx) => {
+      const transactionDb = tx as unknown as Db;
+      return [
+        await recordChangeIfChanged(transactionDb, input),
+        await recordChangeIfChanged(transactionDb, input),
+      ];
+    });
+
+    expect(written).toEqual([true, false]);
+    expect(await db.select().from(schema.changeEvents)).toHaveLength(1);
   });
 
   it('uses resource identity before component and project identity', async () => {

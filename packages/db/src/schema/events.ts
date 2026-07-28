@@ -1,4 +1,5 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { changeEventKind, eventSeverity } from './enums';
 import { components, projects } from './projects';
 import { resources } from './resources';
@@ -7,6 +8,7 @@ export const changeEvents = pgTable(
   'change_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    seq: bigint('seq', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
     projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     componentId: uuid('component_id').references(() => components.id, { onDelete: 'cascade' }),
     resourceId: uuid('resource_id').references(() => resources.id, { onDelete: 'cascade' }),
@@ -16,7 +18,9 @@ export const changeEvents = pgTable(
     currentValue: text('current_value').notNull(),
     detail: text('detail').notNull(),
     notifiedAt: timestamp('notified_at', { withTimezone: true }),
-    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
   },
   (t) => [
     index('change_events_occurred_idx').on(t.occurredAt),

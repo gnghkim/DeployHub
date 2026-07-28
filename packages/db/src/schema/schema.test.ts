@@ -39,17 +39,22 @@ describe('change_events schema', () => {
     expect(result.rows[0]?.notified_at).toBeNull();
   });
 
-  it('occurred_at is assigned by database now()', async () => {
+  it('occurred_at is assigned by database clock_timestamp()', async () => {
     const appTimestamp = new Date('2000-01-01T00:00:00.000Z');
-    const clock = await db.execute<{ before: Date }>(`SELECT now() AS before`);
-    const result = await db.execute<{ occurred_at: Date }>(
-      `INSERT INTO change_events (kind, severity, current_value, detail) VALUES ('health_status', 'info', 'ok', 'test') RETURNING occurred_at`,
-    );
+    await db.transaction(async (tx) => {
+      const clock = await tx.execute<{ before: Date }>(
+        `SELECT clock_timestamp() AS before`,
+      );
+      await tx.execute(`SELECT pg_sleep(0.01)`);
+      const result = await tx.execute<{ occurred_at: Date }>(
+        `INSERT INTO change_events (kind, severity, current_value, detail) VALUES ('health_status', 'info', 'ok', 'test') RETURNING occurred_at`,
+      );
 
-    expect(new Date(result.rows[0]?.occurred_at ?? 0).getTime()).toBeGreaterThanOrEqual(
-      new Date(clock.rows[0]?.before ?? 0).getTime(),
-    );
-    expect(new Date(result.rows[0]?.occurred_at ?? 0)).not.toEqual(appTimestamp);
+      expect(new Date(result.rows[0]?.occurred_at ?? 0).getTime()).toBeGreaterThan(
+        new Date(clock.rows[0]?.before ?? 0).getTime(),
+      );
+      expect(new Date(result.rows[0]?.occurred_at ?? 0)).not.toEqual(appTimestamp);
+    });
   });
 });
 
