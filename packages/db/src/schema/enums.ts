@@ -35,6 +35,14 @@ export const jobStatus = pgEnum('job_status', [
   'pending', 'running', 'succeeded', 'failed',
 ]);
 
+export const changeEventKind = pgEnum('change_event_kind', [
+  'health_status', 'container_status', 'container_health', 'deployment', 'ssl_expiry', 'sync_failure',
+]);
+
+export const eventSeverity = pgEnum('event_severity', [
+  'info', 'warning', 'critical',
+]);
+
 export const draftStatus = pgEnum('draft_status', [
   'draft', 'validation_failed', 'pending_review', 'approved', 'rejected', 'superseded',
 ]);

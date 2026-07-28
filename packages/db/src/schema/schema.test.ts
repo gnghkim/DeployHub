@@ -6,6 +6,53 @@ import { schema, type Db } from '../index';
 let db: Db;
 let stop: () => Promise<void>;
 
+describe('change_events schema', () => {
+  it('rejects unsupported severity values', async () => {
+    await expect(
+      db.execute(
+        `INSERT INTO change_events (kind, severity, current_value, detail) VALUES ('health_status', 'urgent', 'ok', 'test')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('permits a global event with all target IDs null', async () => {
+    await db.execute(
+      `INSERT INTO change_events (project_id, component_id, resource_id, kind, severity, current_value, detail) VALUES (NULL, NULL, NULL, 'health_status', 'info', 'ok', 'test')`,
+    );
+
+    const result = await db.execute<{
+      project_id: string | null;
+      component_id: string | null;
+      resource_id: string | null;
+    }>(`SELECT project_id, component_id, resource_id FROM change_events`);
+    expect(result.rows).toEqual([{
+      project_id: null,
+      component_id: null,
+      resource_id: null,
+    }]);
+  });
+
+  it('notified_at defaults to null', async () => {
+    const result = await db.execute<{ notified_at: Date | null }>(
+      `INSERT INTO change_events (kind, severity, current_value, detail) VALUES ('health_status', 'info', 'ok', 'test') RETURNING notified_at`,
+    );
+    expect(result.rows[0]?.notified_at).toBeNull();
+  });
+
+  it('occurred_at is assigned by database now()', async () => {
+    const appTimestamp = new Date('2000-01-01T00:00:00.000Z');
+    const clock = await db.execute<{ before: Date }>(`SELECT now() AS before`);
+    const result = await db.execute<{ occurred_at: Date }>(
+      `INSERT INTO change_events (kind, severity, current_value, detail) VALUES ('health_status', 'info', 'ok', 'test') RETURNING occurred_at`,
+    );
+
+    expect(new Date(result.rows[0]?.occurred_at ?? 0).getTime()).toBeGreaterThanOrEqual(
+      new Date(clock.rows[0]?.before ?? 0).getTime(),
+    );
+    expect(new Date(result.rows[0]?.occurred_at ?? 0)).not.toEqual(appTimestamp);
+  });
+});
+
 beforeAll(async () => {
   const started = await startTestDb();
   db = started.db;

@@ -36,6 +36,24 @@ export async function enqueue(db: Db, options: EnqueueOptions): Promise<JobRecor
   return toRecord(row);
 }
 
+/** Do not insert if the same type has a pending or running job. Return true only when inserted. */
+export async function enqueueUnique(db: Db, options: EnqueueOptions): Promise<boolean> {
+  const result = await db.execute<{ id: string }>(sql`
+    INSERT INTO jobs (type, payload, run_at, max_attempts)
+    SELECT
+      ${options.type},
+      ${JSON.stringify(options.payload ?? {})}::jsonb,
+      now(),
+      ${options.maxAttempts ?? 3}
+    WHERE NOT EXISTS (
+      SELECT 1 FROM jobs
+      WHERE type = ${options.type} AND status IN ('pending', 'running')
+    )
+    RETURNING id
+  `);
+  return result.rows.length > 0;
+}
+
 export async function claim(
   db: Db,
   workerId: string,
