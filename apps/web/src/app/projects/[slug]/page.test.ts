@@ -27,9 +27,31 @@ describe('project detail status', () => {
     expect(evidence).toBeLessThan(deployments);
   });
 
-  it('keeps evidence separate from composition observations and adds no timeline', () => {
-    expect(page).not.toContain('href="/events"');
-    expect(page).not.toContain('/events?');
+  it('keeps current evidence separate from a project-scoped history timeline', () => {
+    const evidence = page.indexOf('판정 근거');
+    const deployments = page.indexOf('최종 배포');
+    const timeline = page.indexOf('변경 이력');
+
+    expect(page).toContain('listTimelineEvents(db, {');
+    expect(page).toContain('projectId: project.id');
+    expect(page).toContain('limit: 20');
+    expect(page).toContain('<TimelineList');
+    expect(page).toContain(
+      'const evidenceEventIds = new Set(evidenceEvents.map',
+    );
+    expect(page).toContain(
+      'const { events: historyEvents } = await listTimelineEvents',
+    );
+    expect(page).toContain('excludeIds: [...evidenceEventIds]');
+    expect(page).toContain('events={historyEvents}');
+    expect(page).not.toContain('timelinePage.events.filter');
+    expect(page.indexOf('listProjectStatusData(db, [project.id])'))
+      .toBeLessThan(page.lastIndexOf('listTimelineEvents(db, {'));
+    expect(page).toContain(
+      'emptyMessage="현재 판정 근거 외에 기록된 변경이 없습니다"',
+    );
+    expect(evidence).toBeLessThan(deployments);
+    expect(deployments).toBeLessThan(timeline);
     expect(page).toContain('space-y-6 p-4 md:p-8');
   });
 });

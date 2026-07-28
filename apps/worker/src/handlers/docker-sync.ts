@@ -23,6 +23,7 @@ import type { JobHandler } from '../runner';
 
 const SYNC_ERROR = 'Docker 동기화에 실패했습니다.';
 const SNAPSHOT_RETENTION_DAYS = 14;
+const CHANGE_EVENT_RETENTION_DAYS = 90;
 
 type DockerSyncDependencies = {
   createCollector?: (baseUrl: string) => DockerCollector;
@@ -217,6 +218,29 @@ export function createDockerSyncHandler(
               sql`now() - ${SNAPSHOT_RETENTION_DAYS} * interval '1 day'`,
             ),
           );
+
+        await tx.execute(sql`
+          delete from ${schema.changeEvents} as old_event
+          where old_event.occurred_at
+              < now() - ${CHANGE_EVENT_RETENTION_DAYS} * interval '1 day'
+            and exists (
+              select 1
+              from ${schema.changeEvents} as newer_event
+              where coalesce(
+                  newer_event.resource_id::text,
+                  newer_event.component_id::text,
+                  newer_event.project_id::text,
+                  'global'
+                ) = coalesce(
+                  old_event.resource_id::text,
+                  old_event.component_id::text,
+                  old_event.project_id::text,
+                  'global'
+                )
+                and newer_event.kind = old_event.kind
+                and newer_event.seq > old_event.seq
+            )
+        `);
 
         for (const deployment of deployments) {
           const resource = resourceByExternalId.get(

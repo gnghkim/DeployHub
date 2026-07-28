@@ -12,3 +12,4 @@ export * from './queries/declared-link';
 export * from './queries/discovered';
 export * from './queries/events';
 export * from './queries/status';
+export * from './queries/timeline';

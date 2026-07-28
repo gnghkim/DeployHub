@@ -10,6 +10,7 @@ const source = (relativePath: string) => readFileSync(
 const PAGE_PATHS = [
   './page.tsx',
   './discovered/page.tsx',
+  './events/page.tsx',
   './projects/new/page.tsx',
   './projects/[slug]/page.tsx',
   './projects/[slug]/edit/page.tsx',
