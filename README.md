@@ -24,6 +24,15 @@
 
 ## DeployHub CLI
 
+Node.js 22 이상에서 npm 공개 패키지를 설치해 사용할 수 있다.
+
+```bash
+npm install --global @deployhub/cli
+export DEPLOYHUB_URL="https://deployhub.example.invalid"
+deployhub init --detect
+```
+
+예시 URL은 관리자가 제공한 DeployHub 서버 URL로 바꾼다.
 CLI는 서버 URL이나 등록 토큰에 기본값을 사용하지 않는다. 서버 URL은
 `DEPLOYHUB_URL`, Draft 제출용 일회성 토큰은 `DEPLOYHUB_TOKEN` 환경변수로
 전달한다. 토큰을 명령 인자로 전달하거나 파일에 저장하지 않는다.
@@ -42,3 +51,14 @@ node packages/cli/dist/index.js sync --draft
 `register`와 `sync`는 로컬 검증을 통과한 manifest만 Draft로 제출한다.
 `diff`에서 manifest에 없는 기존 구성요소는 표시만 하며 자동 삭제하지
 않는다. 자세한 AI 작업 절차는 [AGENTS.md](./AGENTS.md)를 따른다.
+
+다른 저장소에서 AI 에이전트가 같은 절차를 따르게 하려면
+[DeployHub AGENTS 템플릿](./templates/AGENTS.deployhub.md)을 그 저장소의
+기존 지침에 합쳐 사용한다. 기존 `AGENTS.md`를 덮어쓰지 않는다.
+
+관리자가 npm에 새 버전을 올리는 절차는
+[CLI npm 게시 절차](./docs/cli-npm-publishing.md)에 정리되어 있다.
+
+## 라이선스
+
+MIT

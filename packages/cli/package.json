@@ -1,21 +1,40 @@
 {
   "name": "@deployhub/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Detect, validate, and submit DeployHub project manifests",
   "type": "module",
   "bin": {
     "deployhub": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
   },
-  "dependencies": {
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gnghkim/DeployHub.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/gnghkim/DeployHub#readme",
+  "bugs": {
+    "url": "https://github.com/gnghkim/DeployHub/issues"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "devDependencies": {
     "@deployhub/manifest": "workspace:*",
     "commander": "^15.0.0",
+    "tsup": "^8.5.1",
     "yaml": "^2.9.0"
-  },
-  "devDependencies": {
-    "tsup": "^8.5.1"
   }
 }
