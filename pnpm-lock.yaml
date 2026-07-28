@@ -84,20 +84,19 @@ importers:
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0)
 
   packages/cli:
-    dependencies:
+    devDependencies:
       '@deployhub/manifest':
         specifier: workspace:*
         version: link:../manifest
       commander:
         specifier: ^15.0.0
         version: 15.0.0
-      yaml:
-        specifier: ^2.9.0
-        version: 2.9.0
-    devDependencies:
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.23.1)(typescript@7.0.2)(yaml@2.9.0)
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
 
   packages/collectors:
     dependencies:
