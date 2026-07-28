@@ -6,14 +6,17 @@ import {
   createDockerSyncHandler,
   createGithubSyncHandler,
   createHealthCheckHandler,
+  createSslCheckHandler,
   createVercelSyncHandler,
   DOCKER_HEALTH_INTERVAL_MS,
   enqueueDockerHealthJob,
   enqueueDockerSyncJob,
   enqueueGithubSyncJobs,
   enqueueHealthCheckJob,
+  enqueueSslCheckJob,
   enqueueVercelSyncJobs,
   HEALTH_CHECK_INTERVAL_MS,
+  SSL_CHECK_INTERVAL_MS,
 } from './handlers';
 import { createRunner } from './runner';
 
@@ -36,6 +39,7 @@ async function main(): Promise<void> {
       'docker.sync': createDockerSyncHandler(db, env.DOCKER_HOST_URL),
       'github.sync': createGithubSyncHandler(db, encryptionKey),
       'health.check': createHealthCheckHandler(db),
+      'ssl.check': createSslCheckHandler(db),
       'vercel.sync': createVercelSyncHandler(db, encryptionKey),
     },
     workerId,
@@ -67,6 +71,11 @@ async function main(): Promise<void> {
       console.error('[worker] HTTP 헬스체크 job 등록 실패');
     });
   }, HEALTH_CHECK_INTERVAL_MS);
+  const sslSchedule = setInterval(() => {
+    void enqueueSslCheckJob(db).catch(() => {
+      console.error('[worker] SSL certificate check job enqueue failed');
+    });
+  }, SSL_CHECK_INTERVAL_MS);
   const shutdown = (signal: string): void => {
     console.log(`[worker] ${signal} 수신. 현재 배치를 마치고 종료합니다.`);
     running = false;
@@ -75,6 +84,7 @@ async function main(): Promise<void> {
     clearInterval(dockerSchedule);
     clearInterval(dockerHealthSchedule);
     clearInterval(healthSchedule);
+    clearInterval(sslSchedule);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
@@ -84,6 +94,7 @@ async function main(): Promise<void> {
   await enqueueDockerSyncJob(db, env.DOCKER_HOST_URL);
   await enqueueDockerHealthJob(db, env.DOCKER_HOST_URL);
   await enqueueHealthCheckJob(db);
+  await enqueueSslCheckJob(db);
   console.log(`[worker] 시작 ${workerId}`);
   while (running) {
     try {

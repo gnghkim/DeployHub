@@ -22,6 +22,8 @@ export type {
 } from './docker';
 export { checkHttp } from './health';
 export type { HealthResult } from './health';
+export { fetchCertificate } from './tls';
+export type { CertificateResult } from './tls';
 export type {
   ConnectionResult,
   DeploymentCollector,

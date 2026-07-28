@@ -20,3 +20,8 @@ export {
   enqueueHealthCheckJob,
   HEALTH_CHECK_INTERVAL_MS,
 } from './health-check';
+export {
+  createSslCheckHandler,
+  enqueueSslCheckJob,
+  SSL_CHECK_INTERVAL_MS,
+} from './ssl-check';
