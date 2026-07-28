@@ -1,6 +1,10 @@
 import Link from 'next/link';
-import { listProjectsWithSummaryData } from '@deployhub/db';
+import {
+  listProjectsWithSummaryData,
+  type ProjectStatus,
+} from '@deployhub/db';
 import { Topbar } from '@/components/shell/topbar';
+import { Badge, type Tone } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -19,6 +23,13 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+
+const STATUS_TONES: Record<ProjectStatus, Tone> = {
+  정상: 'neutral',
+  미확인: 'neutral',
+  주의: 'warning',
+  장애: 'error',
+};
 
 export default async function Home() {
   // 상대 시각은 서버에서 한 번만 계산한다. 클라이언트가 다시 계산하면
@@ -82,6 +93,12 @@ export default async function Home() {
                       )}
                     </div>
                     <dl className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+                      <dt className="text-[var(--color-mute)]">판정</dt>
+                      <dd>
+                        <Badge tone={STATUS_TONES[project.judgement]}>
+                          {project.judgement}
+                        </Badge>
+                      </dd>
                       <dt className="text-[var(--color-mute)]">구성</dt>
                       <dd className="text-[var(--color-body)]">
                         {project.summary.stack}
@@ -105,6 +122,7 @@ export default async function Home() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>판정</TableHead>
                   <TableHead>프로젝트</TableHead>
                   <TableHead>구성</TableHead>
                   <TableHead>배포</TableHead>
@@ -115,6 +133,11 @@ export default async function Home() {
               <TableBody>
                 {rows.map((project) => (
                   <TableRow key={project.id}>
+                    <TableCell>
+                      <Badge tone={STATUS_TONES[project.judgement]}>
+                        {project.judgement}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       <Link
                         href={`/projects/${project.slug}`}

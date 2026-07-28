@@ -52,6 +52,26 @@ describe('project overview routes', () => {
       .toHaveLength(2);
   });
 
+  it('shows judgement first in the desktop table and in each mobile card', () => {
+    const home = source('./page.tsx');
+    const judgementHead = home.indexOf('<TableHead>판정</TableHead>');
+    const projectHead = home.indexOf('<TableHead>프로젝트</TableHead>');
+
+    expect(judgementHead).toBeGreaterThanOrEqual(0);
+    expect(judgementHead).toBeLessThan(projectHead);
+    expect(home).toContain('<dt className="text-[var(--color-mute)]">판정</dt>');
+    expect(home.match(/\{project\.judgement\}/g)).toHaveLength(2);
+  });
+
+  it('keeps normal and unknown quiet while distinguishing warning and failure', () => {
+    const home = source('./page.tsx');
+
+    expect(home).toContain("정상: 'neutral'");
+    expect(home).toContain("미확인: 'neutral'");
+    expect(home).toContain("주의: 'warning'");
+    expect(home).toContain("장애: 'error'");
+  });
+
   it('calculates each relative deployment time once for both layouts', () => {
     const home = source('./page.tsx');
 
