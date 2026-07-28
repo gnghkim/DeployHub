@@ -70,6 +70,7 @@ function collector(
   return {
     provider: 'docker',
     testConnection: vi.fn(),
+    listContainerStatuses: vi.fn().mockResolvedValue([]),
     listResources: vi.fn().mockResolvedValue(resources),
     listDeployments: vi.fn().mockResolvedValue(deployments),
     listSnapshots: vi.fn().mockResolvedValue(snapshots),

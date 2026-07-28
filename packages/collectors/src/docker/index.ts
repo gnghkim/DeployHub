@@ -10,6 +10,7 @@ import {
 
 const MAX_CONTAINER_COUNT = 256;
 const DETAIL_CONCURRENCY = 8;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const REQUEST_ERROR = 'Docker API 요청에 실패했습니다.';
 const RESPONSE_ERROR = 'Docker API 응답 형식이 올바르지 않습니다.';
 
@@ -22,9 +23,9 @@ type FetchResponse = {
   text(): Promise<string>;
 };
 
-type FetchImplementation = (
+export type DockerFetchImplementation = (
   input: string,
-  init: { method: 'GET' },
+  init: { method: 'GET'; signal: AbortSignal },
 ) => Promise<FetchResponse>;
 
 type InspectedContainer = {
@@ -39,9 +40,24 @@ export type DockerContainerSnapshot = {
   restartCount: number;
 };
 
+export type ContainerStatus = {
+  externalId: string;
+  name: string;
+  state: string;
+  status: string;
+};
+
+export type ContainerHealth = 'healthy' | 'unhealthy' | 'starting';
+
 export interface DockerCollector extends DeploymentCollector {
+  listContainerStatuses(): Promise<ContainerStatus[]>;
   listSnapshots(): Promise<DockerContainerSnapshot[]>;
 }
+
+export type DockerCollectorDependencies = {
+  fetch?: DockerFetchImplementation;
+  requestTimeoutMs?: number;
+};
 
 class DockerHttpError extends Error {
   constructor(
@@ -70,6 +86,36 @@ function containerCountSuffix(containerCount?: number): string {
   return containerCount === undefined
     ? ''
     : ` (컨테이너 ${containerCount}건)`;
+}
+
+function assertContainerCountWithinLimit(containerCount: number): void {
+  if (containerCount > MAX_CONTAINER_COUNT) {
+    throw new Error(
+      'Docker 컨테이너 수가 수집 상한을 초과했습니다. '
+      + `(컨테이너 ${containerCount}건, 상한 ${MAX_CONTAINER_COUNT}건)`,
+    );
+  }
+}
+
+function requiredString(
+  value: unknown,
+  containerCount: number,
+): string {
+  if (typeof value !== 'string' || value === '') {
+    throw new Error(
+      `${RESPONSE_ERROR}${containerCountSuffix(containerCount)}`,
+    );
+  }
+  return value;
+}
+
+export function extractContainerHealth(
+  status: string,
+): ContainerHealth | null {
+  if (status.includes('(unhealthy)')) return 'unhealthy';
+  if (status.includes('(healthy)')) return 'healthy';
+  if (status.includes('(health: starting)')) return 'starting';
+  return null;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -157,15 +203,20 @@ function normalizeSnapshot(
   };
 }
 
-export function createDockerCollector(baseUrl: string): DockerCollector {
+export function createDockerCollector(
+  baseUrl: string,
+  dependencies: DockerCollectorDependencies = {},
+): DockerCollector {
   const apiUrl = baseUrl.replace(/\/+$/, '');
+  const requestTimeoutMs = dependencies.requestTimeoutMs
+    ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   async function request(
     pathname: string,
     containerCount?: number,
   ): Promise<FetchResponse> {
-    const fetchImplementation = (
-      globalThis as { fetch?: FetchImplementation }
+    const fetchImplementation = dependencies.fetch ?? (
+      globalThis as { fetch?: DockerFetchImplementation }
     ).fetch;
     if (fetchImplementation === undefined) {
       throw new Error(
@@ -177,6 +228,7 @@ export function createDockerCollector(baseUrl: string): DockerCollector {
     try {
       response = await fetchImplementation(`${apiUrl}${pathname}`, {
         method: 'GET',
+        signal: AbortSignal.timeout(requestTimeoutMs),
       });
     } catch {
       throw new Error(
@@ -206,12 +258,7 @@ export function createDockerCollector(baseUrl: string): DockerCollector {
   async function scanContainers(): Promise<InspectedContainer[]> {
     const list = await requestJson('/containers/json?all=1');
     if (!Array.isArray(list)) throw new Error(RESPONSE_ERROR);
-    if (list.length > MAX_CONTAINER_COUNT) {
-      throw new Error(
-        'Docker 컨테이너 수가 수집 상한을 초과했습니다. '
-        + `(컨테이너 ${list.length}건, 상한 ${MAX_CONTAINER_COUNT}건)`,
-      );
-    }
+    assertContainerCountWithinLimit(list.length);
 
     const ids = list.map((entry) => asRecord(entry).Id);
     if (ids.some((id) => typeof id !== 'string' || id === '')) {
@@ -263,6 +310,26 @@ export function createDockerCollector(baseUrl: string): DockerCollector {
 
     async listResources(): Promise<ExternalResource[]> {
       return (await scan()).map(({ resource }) => resource);
+    },
+
+    async listContainerStatuses(): Promise<ContainerStatus[]> {
+      const list = await requestJson('/containers/json?all=1');
+      if (!Array.isArray(list)) throw new Error(RESPONSE_ERROR);
+      assertContainerCountWithinLimit(list.length);
+
+      return list.map((value) => {
+        const container = asRecord(value);
+        const names = Array.isArray(container.Names)
+          ? container.Names
+          : [];
+        const name = requiredString(names[0], list.length);
+        return {
+          externalId: requiredString(container.Id, list.length),
+          name: name.startsWith('/') ? name.slice(1) : name,
+          state: requiredString(container.State, list.length),
+          status: requiredString(container.Status, list.length),
+        };
+      });
     },
 
     async listDeployments(): Promise<ExternalDeployment[]> {

@@ -8,12 +8,17 @@ export {
 export type { VercelEnvironmentVariable } from './vercel';
 export {
   createDockerCollector,
+  extractContainerHealth,
   normalizeDockerContainer,
   normalizeDockerDeployment,
 } from './docker';
 export type {
+  ContainerHealth,
+  ContainerStatus,
   DockerCollector,
+  DockerCollectorDependencies,
   DockerContainerSnapshot,
+  DockerFetchImplementation,
 } from './docker';
 export { checkHttp } from './health';
 export type { HealthResult } from './health';
