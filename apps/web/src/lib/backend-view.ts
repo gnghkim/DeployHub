@@ -12,7 +12,7 @@ export function summarizeBackend({
   const hasVercel = observed.has('vercel');
 
   if (hasDocker && hasVercel) return 'Vercel + VPS';
-  if (hasDocker) return 'VPS 단독';
+  if (hasDocker) return 'VPS Docker';
   if (hasVercel) return 'Vercel';
 
   // M2 의 수집기는 docker 와 vercel 만 만들지만 M4 에서 supabase 와

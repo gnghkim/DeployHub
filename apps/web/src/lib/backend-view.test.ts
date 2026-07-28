@@ -7,7 +7,7 @@ import {
 
 describe('backend summary', () => {
   it.each([
-    [['docker'], 'VPS 단독'],
+    [['docker'], 'VPS Docker'],
     [['vercel'], 'Vercel'],
     [['docker', 'vercel'], 'Vercel + VPS'],
     [[], '미확인'],
@@ -45,7 +45,7 @@ describe('backend summary', () => {
     expect(summarizeBackend({
       observedProviders: ['docker'],
       declaredProviders: ['vercel', 'hostinger'],
-    })).toBe('VPS 단독');
+    })).toBe('VPS Docker');
   });
 });
 
