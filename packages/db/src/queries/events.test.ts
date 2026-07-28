@@ -174,4 +174,37 @@ describe('recordChangeIfChanged', () => {
       row.projectId === null && row.componentId === null && row.resourceId === null
     ))).toMatchObject({ previousValue: null, currentValue: 'running' });
   });
+
+  it('records one transition when concurrent callers submit the same value', async () => {
+    const target = { projectId: null, componentId: null, resourceId: null };
+    await recordChangeIfChanged(db, { ...change, ...target, currentValue: 'running' });
+
+    const results = await Promise.all(Array.from(
+      { length: 20 },
+      () => recordChangeIfChanged(db, { ...change, ...target, currentValue: 'exited' }),
+    ));
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const rows = await db.select().from(schema.changeEvents);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.currentValue === 'exited')).toMatchObject({
+      previousValue: 'running',
+    });
+  });
+
+  it('records equal values independently for different kinds', async () => {
+    const target = { projectId: null, componentId: null, resourceId: null };
+
+    await expect(recordChangeIfChanged(db, {
+      ...change, ...target, currentValue: 'running',
+    })).resolves.toBe(true);
+    await expect(recordChangeIfChanged(db, {
+      ...change, ...target, kind: 'container_health', currentValue: 'running',
+    })).resolves.toBe(true);
+
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      { kind: 'container_status', previousValue: null, currentValue: 'running' },
+      { kind: 'container_health', previousValue: null, currentValue: 'running' },
+    ]);
+  });
 });
