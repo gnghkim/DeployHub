@@ -68,7 +68,7 @@ spec:
       'Components: 1',
       'Linked resources: 2',
       'Latest Draft: pending_review',
-      'Draft URL: https://hub.example/drafts/draft-1',
+      'Draft URL: https://hub.example/settings/drafts/draft-1',
       'URL: https://hub.example/projects/example',
     ]);
     expect(fetchImpl).toHaveBeenCalledWith(

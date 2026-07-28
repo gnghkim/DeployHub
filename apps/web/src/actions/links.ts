@@ -104,7 +104,7 @@ export async function confirmResourceLink(
     };
   }
 
-  revalidatePath('/resources');
+  revalidatePath('/settings/resources');
   revalidatePath(`/projects/${selection.projectSlug}`);
   revalidatePath('/');
   return { status: 'success', message: '자원을 연결했습니다.' };
@@ -130,7 +130,7 @@ export async function removeResourceLink(formData: FormData): Promise<void> {
     )
     .where(eq(schema.components.id, deleted.componentId));
 
-  revalidatePath('/resources');
+  revalidatePath('/settings/resources');
   if (project) revalidatePath(`/projects/${project.projectSlug}`);
   revalidatePath('/');
 }

@@ -46,4 +46,23 @@ describe('middleware matcher', () => {
       expect(isAuthenticatedPath(pathname), pathname).toBe(true);
     }
   });
+
+  it('authenticates new settings routes and their legacy redirects', () => {
+    for (const pathname of [
+      '/',
+      '/discovered',
+      '/settings',
+      '/settings/resources',
+      '/settings/providers',
+      '/settings/drafts',
+      '/settings/drafts/draft-id',
+      '/settings/tokens',
+      '/resources',
+      '/providers',
+      '/drafts',
+      '/drafts/draft-id',
+    ]) {
+      expect(isAuthenticatedPath(pathname), pathname).toBe(true);
+    }
+  });
 });

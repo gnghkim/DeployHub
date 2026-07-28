@@ -63,7 +63,7 @@ export async function saveGithubProvider(
     };
   }
 
-  revalidatePath('/providers');
+  revalidatePath('/settings/providers');
   return {
     status: 'success',
     message: 'GitHub 연결을 확인하고 안전하게 저장했습니다.',
@@ -84,5 +84,5 @@ export async function enqueueGithubSync(formData: FormData): Promise<void> {
     type: 'github.sync',
     payload: { accountId },
   });
-  revalidatePath('/providers');
+  revalidatePath('/settings/providers');
 }

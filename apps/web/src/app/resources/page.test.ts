@@ -11,7 +11,7 @@ function source(relativeUrl: string): string {
 
 describe('자원 화면 구성', () => {
   it('조회 화면은 서버 컴포넌트이며 세 영역을 표시한다', () => {
-    const page = source('./page.tsx');
+    const page = source('../settings/resources/page.tsx');
 
     expect(page).not.toContain("'use client'");
     expect(page).toContain('수집된 자원');
@@ -21,7 +21,7 @@ describe('자원 화면 구성', () => {
   });
 
   it('provider와 resourceType을 서버에서 필터링한다', () => {
-    const page = source('./page.tsx');
+    const page = source('../settings/resources/page.tsx');
 
     expect(page).toContain('searchParams');
     expect(page).toContain('name="provider"');
@@ -31,14 +31,14 @@ describe('자원 화면 구성', () => {
   });
 
   it('컨테이너 ID는 렌더링할 때만 12자로 줄인다', () => {
-    const page = source('./page.tsx');
+    const page = source('../settings/resources/page.tsx');
 
     expect(page).toContain('shortContainerId');
     expect(page).toContain("resource.resourceType === 'docker_container'");
   });
 
   it('이미 연결된 자원도 자원 행에서 다른 구성요소에 추가 연결할 수 있다', () => {
-    const page = source('./page.tsx');
+    const page = source('../settings/resources/page.tsx');
 
     expect(page).not.toMatch(/suggestMatches\(\s*unlinkedResources/);
     expect(page).toContain('const componentOptions');
@@ -46,7 +46,7 @@ describe('자원 화면 구성', () => {
   });
 
   it('각 기존 연결에 연결 해제 버튼이 있다', () => {
-    const page = source('./page.tsx');
+    const page = source('../settings/resources/page.tsx');
 
     expect(page).toContain('removeResourceLink');
     expect(page).toContain('name="linkId"');

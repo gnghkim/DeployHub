@@ -2,41 +2,33 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 
-it('links to Draft review and registration token settings', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('./sidebar.tsx', import.meta.url)),
-    'utf8',
-  );
+const source = readFileSync(
+  fileURLToPath(new URL('./sidebar.tsx', import.meta.url)),
+  'utf8',
+);
 
-  expect(source).toContain("href: '/drafts'");
-  expect(source).toContain("href: '/settings/tokens'");
-});
-
-it('uses the root project list as the only overview navigation item', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('./sidebar.tsx', import.meta.url)),
-    'utf8',
-  );
-
+it('keeps only the three everyday top-level navigation items', () => {
   expect(source).toContain("{ label: '프로젝트', href: '/' }");
-  expect(source).not.toContain("{ label: 'Overview'");
-  expect(source).not.toContain("{ label: 'Projects'");
+  expect(source).toContain("{ label: '발견', href: '/discovered' }");
+  expect(source).toContain("{ label: '설정', href: '/settings' }");
   expect(source).not.toContain("href: '/projects'");
+  expect(source).not.toContain("href: '/providers'");
+  expect(source).not.toContain("href: '/resources'");
+  expect(source).not.toContain("href: '/drafts'");
+  expect(source).not.toContain("href: '/settings/tokens'");
 });
 
-it('places 발견 immediately after 프로젝트 without changing other navigation items', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('./sidebar.tsx', import.meta.url)),
-    'utf8',
-  );
-
-  expect(source).toMatch(
-    /\{ label: '프로젝트', href: '\/' \},\r?\n  \{ label: '발견', href: '\/discovered' \},/,
-  );
-  expect(source).toContain("{ label: 'Providers', href: '/providers' }");
-  expect(source).toContain("{ label: 'Resources', href: '/resources' }");
-  expect(source).toContain("{ label: 'Drafts', href: '/drafts' }");
+it('shows only the pending review Draft count beside 설정', () => {
   expect(source).toContain(
-    "{ label: 'Registration tokens', href: '/settings/tokens' }",
+    "listDrafts(db, { status: 'pending_review' })",
+  );
+  expect(source).toContain('{pendingDrafts.length}');
+  expect(source).not.toContain('validation_failed');
+});
+
+it('waits for a request before querying the Draft count', () => {
+  expect(source).toContain("import { connection } from 'next/server'");
+  expect(source.indexOf('await connection()')).toBeLessThan(
+    source.indexOf("listDrafts(db, { status: 'pending_review' })"),
   );
 });

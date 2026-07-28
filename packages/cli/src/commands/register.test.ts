@@ -41,7 +41,7 @@ describe('runRegister', () => {
         {
           id: 'draft-1',
           status: 'pending_review',
-          url: '/drafts/draft-1',
+          url: '/settings/drafts/draft-1',
         },
         { status: 201 },
       ),
@@ -63,7 +63,7 @@ describe('runRegister', () => {
 
     expect(exitCode).toBe(0);
     expect(output).toContain(
-      'Draft submitted: https://hub.example/drafts/draft-1',
+      'Draft submitted: https://hub.example/settings/drafts/draft-1',
     );
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://hub.example/api/v1/project-drafts',

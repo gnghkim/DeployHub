@@ -5,8 +5,8 @@ import { useActionState, useState } from 'react';
 import {
   confirmResourceLink,
   type ResourceLinkActionState,
-} from '../../actions/links';
-import { Button } from '../../components/ui/button';
+} from '../../../actions/links';
+import { Button } from '../../../components/ui/button';
 
 type ComponentOption = {
   id: string;

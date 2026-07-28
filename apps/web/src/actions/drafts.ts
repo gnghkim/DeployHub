@@ -141,8 +141,8 @@ export async function approveDraft(id: string): Promise<void> {
     }
   });
 
-  revalidatePath('/drafts');
-  revalidatePath(`/drafts/${id}`);
+  revalidatePath('/settings/drafts');
+  revalidatePath(`/settings/drafts/${id}`);
   revalidatePath('/projects');
 }
 
@@ -165,6 +165,6 @@ export async function rejectDraft(id: string): Promise<void> {
     .returning({ id: schema.projectDrafts.id });
 
   if (!draft) throw new Error('거부할 수 없는 Draft입니다.');
-  revalidatePath('/drafts');
-  revalidatePath(`/drafts/${id}`);
+  revalidatePath('/settings/drafts');
+  revalidatePath(`/settings/drafts/${id}`);
 }

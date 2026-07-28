@@ -27,7 +27,7 @@ describe('발견 화면', () => {
     expect(page).toContain('AI가 deployhub.yaml 을 만들어 올리면');
     expect(page).toContain('등록 초안 화면');
     expect(page).toContain('에서 승인합니다.');
-    expect(page).toContain('href="/drafts"');
+    expect(page).toContain('href="/settings/drafts"');
     expect(page.match(/DeployHub에 등록해줘/g)).toHaveLength(1);
   });
 

@@ -127,7 +127,7 @@ export function createProjectDraftHandler(database: Db) {
         {
           id: draft.id,
           status: draft.status,
-          url: `/drafts/${draft.id}`,
+          url: `/settings/drafts/${draft.id}`,
         },
         { status: 201 },
       );
@@ -165,7 +165,7 @@ export function createProjectDraftHandler(database: Db) {
       {
         id: draft.id,
         status: draft.status,
-        url: `/drafts/${draft.id}`,
+        url: `/settings/drafts/${draft.id}`,
       },
       { status: 201 },
     );

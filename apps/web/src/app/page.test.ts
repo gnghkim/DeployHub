@@ -16,7 +16,7 @@ describe('project overview routes', () => {
     expect(home).toContain('프로젝트 {projects.length}');
     expect(home).toContain('아직 등록된 프로젝트가 없습니다.');
     expect(home).toContain('DeployHub에 등록해줘');
-    expect(home).toContain('href="/drafts"');
+    expect(home).toContain('href="/settings/drafts"');
     expect(home).toContain('등록 초안');
   });
 
