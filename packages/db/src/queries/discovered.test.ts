@@ -8,7 +8,10 @@ import {
 } from 'vitest';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
-import { listDiscoveredStacks } from './discovered';
+import {
+  countDiscoveredStacks,
+  listDiscoveredStacks,
+} from './discovered';
 
 let db: Db;
 let stop: () => Promise<void> = async () => {};
@@ -182,5 +185,47 @@ describe('listDiscoveredStacks', () => {
       'alpha-api',
       'alpha-web',
     ]);
+  });
+});
+
+describe('countDiscoveredStacks', () => {
+  it('목록을 가져오지 않고 미등록 스택 개수만 센다', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'DeployHub', slug: 'deployhub' })
+      .returning();
+    const [component] = await db
+      .insert(schema.components)
+      .values({
+        projectId: project!.id,
+        name: 'web',
+        slug: 'web',
+        componentType: 'frontend',
+      })
+      .returning();
+    const linked = await insertResource({
+      name: 'deployhub-web',
+      metadata: { composeProject: 'deployhub' },
+    });
+    await insertResource({
+      name: 'deployhub-worker',
+      metadata: { composeProject: 'deployhub' },
+    });
+    await insertResource({
+      name: 'workwiki-web',
+      metadata: { composeProject: 'workwiki' },
+    });
+    await insertResource({
+      name: 'standalone',
+      metadata: {},
+    });
+    await db.insert(schema.componentResources).values({
+      componentId: component!.id,
+      resourceId: linked.id,
+      relationType: 'deployed_to',
+      linkedBy: 'manifest',
+    });
+
+    await expect(countDiscoveredStacks(db)).resolves.toBe(2);
   });
 });

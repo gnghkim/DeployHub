@@ -5,6 +5,7 @@ import {
   eq,
   inArray,
   isNull,
+  ne,
   sql,
 } from 'drizzle-orm';
 import type { Db } from '../client';
@@ -28,6 +29,8 @@ export type ProjectListSummaryData = ProjectRow & {
   observedProviders: string[];
   latestDeploymentAt: Date | null;
   judgement: ProjectStatus;
+  /** 구성요소 id → 관측된 컨테이너 이름과 상태. 없으면 키가 없다. */
+  componentObservations: Map<string, { name: string; state: string }>;
 };
 
 export async function listProjects(db: Db): Promise<ProjectRow[]> {
@@ -63,6 +66,9 @@ export async function listProjectsWithSummaryData(
       .select({
         projectId: components.projectId,
         provider: resources.provider,
+        componentId: componentResources.componentId,
+        resourceName: resources.name,
+        resourceStatus: resources.status,
       })
       .from(componentResources)
       .innerJoin(
@@ -73,7 +79,15 @@ export async function listProjectsWithSummaryData(
       .where(and(
         inArray(components.projectId, projectIds),
         isNull(resources.deletedAt),
-      )),
+        ne(componentResources.linkedBy, 'suggested'),
+      ))
+      .orderBy(
+        asc(components.projectId),
+        asc(componentResources.componentId),
+        asc(resources.name),
+        asc(resources.status),
+        asc(resources.id),
+      ),
     db
       .selectDistinctOn([deployments.projectId], {
         projectId: deployments.projectId,
@@ -97,10 +111,23 @@ export async function listProjectsWithSummaryData(
   }
 
   const providersByProject = new Map<string, Set<string>>();
+  const observationsByProject = new Map<
+    string,
+    Map<string, { name: string; state: string }>
+  >();
   for (const resource of linkedResourceRows) {
     const providers = providersByProject.get(resource.projectId) ?? new Set<string>();
     providers.add(resource.provider);
     providersByProject.set(resource.projectId, providers);
+
+    const observations = observationsByProject.get(resource.projectId) ?? new Map();
+    if (!observations.has(resource.componentId)) {
+      observations.set(resource.componentId, {
+        name: resource.resourceName,
+        state: resource.resourceStatus ?? '',
+      });
+    }
+    observationsByProject.set(resource.projectId, observations);
   }
 
   const latestDeploymentByProject = new Map(
@@ -117,6 +144,7 @@ export async function listProjectsWithSummaryData(
     observedProviders: [...(providersByProject.get(project.id) ?? [])].sort(),
     latestDeploymentAt: latestDeploymentByProject.get(project.id) ?? null,
     judgement: statusByProject.get(project.id)?.status ?? '미확인',
+    componentObservations: observationsByProject.get(project.id) ?? new Map(),
   }));
 }
 

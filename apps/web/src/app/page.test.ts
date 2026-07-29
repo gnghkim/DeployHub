@@ -8,11 +8,11 @@ const source = (relativePath: string) => readFileSync(
 );
 
 describe('project overview routes', () => {
-  it('renders the project summary list and an actionable empty state at the root', () => {
+  it('renders project sheets and an actionable empty state at the root', () => {
     const home = source('./page.tsx');
 
     expect(home).toContain('listProjectsWithSummaryData');
-    expect(home).toContain('summarizeProject');
+    expect(home).toContain('<ProjectSheet');
     expect(home).toContain('프로젝트 {projects.length}');
     expect(home).toContain('아직 등록된 프로젝트가 없습니다.');
     expect(home).toContain('DeployHub에 등록해줘');
@@ -40,27 +40,20 @@ describe('project overview routes', () => {
     expect(projects).toContain("redirect('/');");
   });
 
-  it('renders project cards on mobile and the existing table on desktop', () => {
+  it('renders one semantic list of project sheets at every viewport', () => {
     const home = source('./page.tsx');
 
-    expect(home).toContain('className="md:hidden"');
-    expect(home).toContain('className="hidden md:block"');
-    expect(home).toContain('구성');
-    expect(home).toContain('배포');
-    expect(home).toContain('DB');
-    expect(home.match(/href=\{`\/projects\/\$\{project\.slug\}`\}/g))
-      .toHaveLength(2);
+    expect(home).toContain('<ul className="space-y-4">');
+    expect(home).toContain('<ProjectSheet');
+    expect(home).not.toContain('<Table');
+    expect(home).not.toContain('md:hidden');
+    expect(home).not.toContain('hidden md:block');
   });
 
-  it('shows judgement first in the desktop table and in each mobile card', () => {
+  it('passes the existing M3 judgement tone into each project sheet', () => {
     const home = source('./page.tsx');
-    const judgementHead = home.indexOf('<TableHead>판정</TableHead>');
-    const projectHead = home.indexOf('<TableHead>프로젝트</TableHead>');
 
-    expect(judgementHead).toBeGreaterThanOrEqual(0);
-    expect(judgementHead).toBeLessThan(projectHead);
-    expect(home).toContain('<dt className="text-[var(--annotation)]">판정</dt>');
-    expect(home.match(/\{project\.judgement\}/g)).toHaveLength(2);
+    expect(home).toContain('tone={STATUS_TONES[project.judgement]}');
   });
 
   it('keeps normal and unknown quiet while distinguishing warning and failure', () => {
@@ -72,26 +65,21 @@ describe('project overview routes', () => {
     expect(home).toContain("장애: 'fault'");
   });
 
-  it('calculates each relative deployment time once for both layouts', () => {
+  it('calculates each relative deployment time once on the server', () => {
     const home = source('./page.tsx');
+    const projectSheet = source('../components/schematic/project-sheet.tsx');
 
     expect(home.match(/formatRelativeTime\(/g)).toHaveLength(1);
-    expect(home.match(/\{project\.latestDeploymentRelative\}/g))
-      .toHaveLength(2);
+    expect(projectSheet.match(/\{project\.latestDeploymentRelative\}/g))
+      .toHaveLength(1);
   });
 
-  it('uses measured typography for project slugs and deployment times', () => {
+  it('fetches only the discovered count and links to the discovery screen', () => {
     const home = source('./page.tsx');
 
-    expect(home).toContain(
-      'className="mt-0.5 truncate font-mono text-xs text-[var(--annotation)]"',
-    );
-    expect(home).toContain(
-      'className="mt-0.5 font-mono text-xs text-[var(--annotation)]"',
-    );
-    expect(home).toContain(
-      'className="shrink-0 font-mono text-xs text-[var(--annotation)]"',
-    );
-    expect(home).toContain('className="font-mono"');
+    expect(home).toContain('countDiscoveredStacks');
+    expect(home).not.toContain('listDiscoveredStacks');
+    expect(home).toContain('등록되지 않은 스택 {discoveredCount}');
+    expect(home).toContain('href="/discovered"');
   });
 });

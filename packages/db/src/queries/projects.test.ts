@@ -178,4 +178,127 @@ describe('프로젝트 조회', () => {
     expect(oneProjectQueryCount).toBe(5);
     expect(tenProjectQueryCount).toBe(oneProjectQueryCount);
   });
+
+  describe('구성요소 관측', () => {
+    beforeEach(async () => {
+      const [project] = await db
+        .insert(schema.projects)
+        .values({ name: 'A', slug: 'a' })
+        .returning();
+      if (!project) throw new Error('project insert 실패');
+
+      const [web] = await db
+        .insert(schema.components)
+        .values([
+          {
+            projectId: project.id,
+            name: 'web',
+            slug: 'web',
+            componentType: 'frontend',
+          },
+          {
+            projectId: project.id,
+            name: 'worker',
+            slug: 'worker',
+            componentType: 'worker',
+          },
+        ])
+        .returning();
+      if (!web) throw new Error('component insert 실패');
+
+      const [laterResource, firstResource] = await db
+        .insert(schema.resources)
+        .values([
+          {
+            provider: 'docker',
+            externalId: 'container-z',
+            resourceType: 'docker_container',
+            name: 'z-deployhub-web',
+            status: 'restarting',
+          },
+          {
+            provider: 'docker',
+            externalId: 'container-a',
+            resourceType: 'docker_container',
+            name: 'deployhub-web',
+            status: 'running',
+          },
+        ])
+        .returning();
+      if (!laterResource || !firstResource) throw new Error('resource insert 실패');
+
+      await db.insert(schema.componentResources).values([
+        {
+          componentId: web.id,
+          resourceId: laterResource.id,
+          relationType: 'runs_on',
+          linkedBy: 'user',
+        },
+        {
+          componentId: web.id,
+          resourceId: firstResource.id,
+          relationType: 'runs_on',
+          linkedBy: 'user',
+        },
+      ]);
+    });
+
+    it('구성요소별 관측을 함께 낸다', async () => {
+      const [project] = await listProjectsWithSummaryData(db);
+      const web = project!.components.find((c) => c.slug === 'web');
+      expect(project!.componentObservations.get(web!.id)).toEqual({
+        name: 'deployhub-web',
+        state: 'running',
+      });
+    });
+
+    it('관측이 없는 구성요소는 키가 없다', async () => {
+      const [project] = await listProjectsWithSummaryData(db);
+      const worker = project!.components.find((c) => c.slug === 'worker');
+      expect(project!.componentObservations.has(worker!.id)).toBe(false);
+    });
+  });
+
+  it('추정 링크는 관측 provider와 구성요소 관측에서 제외한다', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'A', slug: 'a' })
+      .returning();
+    if (!project) throw new Error('project insert 실패');
+
+    const [web] = await db
+      .insert(schema.components)
+      .values({
+        projectId: project.id,
+        name: 'web',
+        slug: 'web',
+        componentType: 'frontend',
+      })
+      .returning();
+    if (!web) throw new Error('component insert 실패');
+
+    const [resource] = await db
+      .insert(schema.resources)
+      .values({
+        provider: 'docker',
+        externalId: 'suggested-container',
+        resourceType: 'docker_container',
+        name: 'suggested-web',
+        status: 'running',
+      })
+      .returning();
+    if (!resource) throw new Error('resource insert 실패');
+
+    await db.insert(schema.componentResources).values({
+      componentId: web.id,
+      resourceId: resource.id,
+      relationType: 'runs_on',
+      linkedBy: 'suggested',
+    });
+
+    const [summary] = await listProjectsWithSummaryData(db);
+
+    expect(summary!.observedProviders).toEqual([]);
+    expect(summary!.componentObservations.has(web.id)).toBe(false);
+  });
 });
