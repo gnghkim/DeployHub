@@ -87,8 +87,10 @@ Drift 판별은 `packages/db/src/queries/drift.ts` 의 `computeDrift` 를 쓴다
 --annotation:  #9c9c9d   /* 관측 — 실측 주기 */
 --absent:      #6a6b6c   /* 관측되지 않음 */
 
---fault:       #ff6161   /* 장애 */
+--fault:       #ff6161   /* 장애·오류 */
 --caution:     #ffc533   /* 주의 */
+--confirm:     #59d499   /* 폼 성공, diff 추가 항목 */
+--accent:      #57c1ff   /* 포커스 링, 링크 */
 
 --radius-card:   10px
 --radius-button:  8px
@@ -114,15 +116,27 @@ Drift 판별은 `packages/db/src/queries/drift.ts` 의 `computeDrift` 를 쓴다
 | `--color-hairline` | 44 | `--rule` | 동일 |
 | `--color-error` | 13 | `--fault` | 동일 |
 | `--color-warning` | 11 | `--caution` | 동일 |
-| `--color-success` | 8 | **삭제** | — |
-| `--color-info` | 9 | **삭제** | — |
+| `--color-success` | 8 | `--confirm` | 동일 |
+| `--color-info` | 9 | `--accent` | 동일 |
 | `--radius-modal` | 0 | **삭제** | — |
 | `--radius-badge` | 1 | `--radius-button` | 로 접음 |
 | `--radius-row` | 1 | `--radius-button` | 로 접음 |
 
-**`success` 와 `info` 를 없애는 이유.** 정상에 색을 주면 대부분이 정상이라 화면이
-색으로 덮이고 진짜 경고가 묻힌다. M3 에서 이미 정한 규칙인데 토큰이 유혹으로
-남아 있다. 정상은 `--line`, 미확인은 `--absent` 로 조용히 둔다.
+**`success`·`info` 를 지우지 않고 이름만 바꾸는 이유.** 처음에는 지우려 했으나
+실제 사용처를 확인하니 상태 표시가 아니었다.
+
+```
+--color-info    포커스 링 (input, button, 폼 2개), 링크 색 (자원 화면, 제안 폼)
+--color-success 폼 성공 메시지 (폼 4개), diff 추가 항목, 활성 토큰 배지
+```
+
+포커스 링을 없애면 접근성 회귀이고, diff 의 추가 항목이 초록인 것은 표준
+관례다. 지켜야 할 규칙은 "초록을 아예 쓰지 마라" 가 아니라 **"정상 상태에 색을
+쓰지 마라"** 다. 이름을 의미에 맞게 바꿔 둘을 갈라 놓는다.
+
+**정상에 색을 쓰지 않는 규칙은 이미 지켜지고 있다.** `apps/web/src/app/page.tsx`
+의 `STATUS_TONES` 가 정상·미확인을 `neutral` 로 보낸다. M3 에서 정한 것이다.
+이 재디자인은 그것을 되돌리지 않고, 아래 9절에서 기계로 고정한다.
 
 **표면 3단계를 2단계로 접는 이유.** 세 값의 차이가 `#0d0d0d`·`#101111`·`#121212`
 라 실제로 구분되지 않는다. 바탕과 도면 블록 둘이면 충분하다.
@@ -267,7 +281,9 @@ M3 가 붙인 판정·근거·변경 이력은 도면 아래 주기로 정리한
 
 1. 기존 테스트 572건 전부 통과
 2. `git grep` 으로 옛 토큰(`--color-ink` 등) 잔존 **0건**
-3. `--color-success`·`--color-info` 사용 **0건** — 정상에 색 쓰지 않기를 기계로 강제
+3. **정상·미확인 판정에 색이 없다.** `STATUS_TONES` 가 정상·미확인을 색 없는
+   tone 으로 보내는지 테스트로 단언한다. 토큰을 지우는 것으로는 이 규칙을
+   지킬 수 없다 — 색은 포커스 링과 폼 피드백에도 필요하기 때문이다
 4. `pnpm --filter web build` 통과
 5. 모든 화면이 실제로 응답 (307 또는 200, 404·500 없음)
 6. `md` 미만에서 도면이 가로 스크롤 없이 읽힘
