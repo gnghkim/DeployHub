@@ -398,6 +398,17 @@ export function Annotation({
 
 - [ ] **Step 5: Tone 이름 교체**
 
+**주의 — Task 1 이 심어 둔 지뢰가 있다.** `apps/web/src/components/ui/tokens.test.ts`
+가 이렇게 단언한다.
+
+```ts
+expect(projectDetail).toContain("tone={conflict ? 'error' : 'neutral'}");
+```
+
+`'error'` 를 문자열로 박아 놨다. 이 Step 이 `error` → `fault` 로 바꾸는 순간 그
+테스트가 깨진다. **함께 고쳐라.** 테스트를 지우지 말고 새 이름으로 갱신한다.
+
+
 `badge.tsx`:
 
 ```tsx
