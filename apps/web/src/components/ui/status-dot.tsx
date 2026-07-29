@@ -1,11 +1,11 @@
 import type { Tone } from './badge';
 
 const TONES: Record<Tone, string> = {
-  success: 'bg-[var(--color-success)]',
-  warning: 'bg-[var(--color-warning)]',
-  error: 'bg-[var(--color-error)]',
-  info: 'bg-[var(--color-info)]',
-  neutral: 'bg-[var(--color-ash)]',
+  success: 'bg-[var(--confirm)]',
+  warning: 'bg-[var(--caution)]',
+  error: 'bg-[var(--fault)]',
+  info: 'bg-[var(--accent)]',
+  neutral: 'bg-[var(--absent)]',
 };
 
 export function StatusDot({ tone = 'neutral', label }: { tone?: Tone; label?: string }) {

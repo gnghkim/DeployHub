@@ -7,9 +7,9 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
 });
 
 const SEVERITY_TEXT = {
-  info: 'text-[var(--color-mute)]',
-  warning: 'text-[var(--color-warning)]',
-  critical: 'text-[var(--color-error)]',
+  info: 'text-[var(--annotation)]',
+  warning: 'text-[var(--caution)]',
+  critical: 'text-[var(--fault)]',
 } as const;
 
 export function TimelineList({
@@ -28,14 +28,14 @@ export function TimelineList({
 
   if (rows.length === 0) {
     return (
-      <p className="py-10 text-center text-sm text-[var(--color-mute)]">
+      <p className="py-10 text-center text-sm text-[var(--annotation)]">
         {emptyMessage}
       </p>
     );
   }
 
   return (
-    <ol className="divide-y divide-[var(--color-hairline)]">
+    <ol className="divide-y divide-[var(--rule)]">
       {rows.map(({ event, relativeTime }) => (
         <li
           key={event.id}
@@ -48,7 +48,7 @@ export function TimelineList({
               {event.severity}
             </span>
             <time
-              className="block text-xs text-[var(--color-mute)] sm:mt-1"
+              className="block font-mono text-xs text-[var(--annotation)] sm:mt-1"
               dateTime={event.occurredAt.toISOString()}
               title={DATE_FORMAT.format(event.occurredAt)}
             >
@@ -57,17 +57,17 @@ export function TimelineList({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-              <span className="font-mono text-xs text-[var(--color-mute)]">
+              <span className="font-mono text-xs text-[var(--annotation)]">
                 {event.kind}
               </span>
-              <p className="min-w-0 break-words text-[var(--color-body)]">
+              <p className="min-w-0 break-words text-[var(--line-mute)]">
                 {event.previousValue === null ? (
                   <>
-                    <span className="text-[var(--color-mute)]">
+                    <span className="text-[var(--annotation)]">
                       최초 관측
                     </span>
                     <span aria-hidden="true"> · </span>
-                    <span className="font-mono text-[var(--color-ink)]">
+                    <span className="font-mono text-[var(--line)]">
                       {event.currentValue}
                     </span>
                   </>
@@ -76,7 +76,7 @@ export function TimelineList({
                     <span className="font-mono">{event.previousValue}</span>
                     <span className="sr-only">에서</span>
                     <span aria-hidden="true"> → </span>
-                    <span className="font-mono text-[var(--color-ink)]">
+                    <span className="font-mono text-[var(--line)]">
                       {event.currentValue}
                     </span>
                     <span className="sr-only">으로 변경</span>
@@ -84,7 +84,7 @@ export function TimelineList({
                 )}
               </p>
             </div>
-            <p className="mt-1 text-xs text-[var(--color-mute)]">
+            <p className="mt-1 text-xs text-[var(--annotation)]">
               {event.detail}
             </p>
           </div>

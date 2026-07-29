@@ -24,12 +24,12 @@ export default async function NewComponentPage({
         <div>
           <Link
             href={`/projects/${project.slug}`}
-            className="text-sm text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+            className="text-sm text-[var(--annotation)] hover:text-[var(--line)]"
           >
             ← {project.name}
           </Link>
-          <h2 className="mt-4 text-xl font-medium text-[var(--color-ink)]">구성요소 등록</h2>
-          <p className="mt-1 text-sm text-[var(--color-mute)]">
+          <h2 className="mt-4 text-xl font-medium text-[var(--line)]">구성요소 등록</h2>
+          <p className="mt-1 text-sm text-[var(--annotation)]">
             기술 스택과 운영 중요도를 입력합니다.
           </p>
         </div>

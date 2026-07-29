@@ -52,17 +52,17 @@ export default async function ProvidersPage() {
       <Topbar title="Providers" />
       <main className="space-y-6 p-4 md:p-8">
         <div>
-          <h2 className="text-xl font-medium text-[var(--color-ink)]">
+          <h2 className="text-xl font-medium text-[var(--line)]">
             GitHub 연결
           </h2>
-          <p className="mt-1 text-sm text-[var(--color-mute)]">
+          <p className="mt-1 text-sm text-[var(--annotation)]">
             토큰은 연결 확인 후 암호화해 저장하며 다시 표시하지 않습니다.
           </p>
         </div>
 
         <Card>
           <form action={connectGithub} className="flex items-end gap-3">
-            <label className="min-w-0 flex-1 text-sm text-[var(--color-body)]">
+            <label className="min-w-0 flex-1 text-sm text-[var(--line-mute)]">
               Personal access token
               <Input
                 className="mt-2"
@@ -85,31 +85,31 @@ export default async function ProvidersPage() {
               className="flex items-center justify-between gap-4"
             >
               <div>
-                <h3 className="font-medium text-[var(--color-ink)]">
+                <h3 className="font-medium text-[var(--line)]">
                   {account.name}
                 </h3>
                 <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
                   <div>
-                    <dt className="text-xs text-[var(--color-mute)]">토큰</dt>
-                    <dd className="font-mono text-[var(--color-body)]">
+                    <dt className="text-xs text-[var(--annotation)]">토큰</dt>
+                    <dd className="font-mono text-[var(--line-mute)]">
                       ••••{displayTokenSuffix(account.encryptedToken)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-[var(--color-mute)]">
+                    <dt className="text-xs text-[var(--annotation)]">
                       마지막 확인
                     </dt>
-                    <dd className="text-[var(--color-body)]">
+                    <dd className="font-mono text-[var(--line-mute)]">
                       {account.lastVerifiedAt
                         ? DATE_FORMAT.format(account.lastVerifiedAt)
                         : '—'}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-[var(--color-mute)]">
+                    <dt className="text-xs text-[var(--annotation)]">
                       마지막 동기화
                     </dt>
-                    <dd className="text-[var(--color-body)]">
+                    <dd className="font-mono text-[var(--line-mute)]">
                       {account.lastSyncAt
                         ? DATE_FORMAT.format(account.lastSyncAt)
                         : '—'}
@@ -117,7 +117,7 @@ export default async function ProvidersPage() {
                   </div>
                 </dl>
                 {account.lastError ? (
-                  <p className="mt-2 text-sm text-[var(--color-error)]">
+                  <p className="mt-2 text-sm text-[var(--fault)]">
                     {account.lastError}
                   </p>
                 ) : null}
@@ -130,7 +130,7 @@ export default async function ProvidersPage() {
           ))}
           {accounts.length === 0 ? (
             <Card>
-              <p className="text-sm text-[var(--color-mute)]">
+              <p className="text-sm text-[var(--annotation)]">
                 연결된 GitHub 계정이 없습니다.
               </p>
             </Card>

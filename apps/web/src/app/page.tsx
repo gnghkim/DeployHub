@@ -56,59 +56,59 @@ export default async function Home() {
     <>
       <Topbar title="프로젝트" />
       <main className="space-y-6 p-4 md:p-8">
-        <h2 className="text-xl font-medium text-[var(--color-ink)]">
+        <h2 className="text-xl font-medium text-[var(--line)]">
           프로젝트 {projects.length}
         </h2>
 
-        <section className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface)]">
+        <section className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)]">
           {rows.length > 0 ? (
             <div className="md:hidden">
-              <ul className="divide-y divide-[var(--color-hairline)]">
+              <ul className="divide-y divide-[var(--rule)]">
                 {rows.map((project) => (
                   <li key={project.id} className="space-y-3 p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
                         <Link
                           href={`/projects/${project.slug}`}
-                          className="font-medium text-[var(--color-ink)] hover:underline"
+                          className="font-medium text-[var(--line)] hover:underline"
                         >
                           {project.name}
                         </Link>
-                        <p className="mt-0.5 truncate text-xs text-[var(--color-mute)]">
+                        <p className="mt-0.5 truncate font-mono text-xs text-[var(--annotation)]">
                           {project.slug}
                         </p>
                       </div>
                       {project.latestDeploymentAt ? (
                         <time
-                          className="shrink-0 text-xs text-[var(--color-mute)]"
+                          className="shrink-0 font-mono text-xs text-[var(--annotation)]"
                           dateTime={project.latestDeploymentAt.toISOString()}
                           title={DATE_FORMAT.format(project.latestDeploymentAt)}
                         >
                           {project.latestDeploymentRelative}
                         </time>
                       ) : (
-                        <span className="shrink-0 text-xs text-[var(--color-mute)]">
+                        <span className="shrink-0 text-xs text-[var(--annotation)]">
                           —
                         </span>
                       )}
                     </div>
                     <dl className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                      <dt className="text-[var(--color-mute)]">판정</dt>
+                      <dt className="text-[var(--annotation)]">판정</dt>
                       <dd>
                         <Badge tone={STATUS_TONES[project.judgement]}>
                           {project.judgement}
                         </Badge>
                       </dd>
-                      <dt className="text-[var(--color-mute)]">구성</dt>
-                      <dd className="text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">구성</dt>
+                      <dd className="text-[var(--line-mute)]">
                         {project.summary.stack}
                       </dd>
-                      <dt className="text-[var(--color-mute)]">배포</dt>
-                      <dd className="text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">배포</dt>
+                      <dd className="text-[var(--line-mute)]">
                         {project.summary.deployment}
                       </dd>
-                      <dt className="text-[var(--color-mute)]">DB</dt>
-                      <dd className="text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">DB</dt>
+                      <dd className="text-[var(--line-mute)]">
                         {project.summary.database}
                       </dd>
                     </dl>
@@ -141,11 +141,11 @@ export default async function Home() {
                     <TableCell>
                       <Link
                         href={`/projects/${project.slug}`}
-                        className="font-medium text-[var(--color-ink)] hover:underline"
+                        className="font-medium text-[var(--line)] hover:underline"
                       >
                         {project.name}
                       </Link>
-                      <p className="mt-0.5 text-xs text-[var(--color-mute)]">{project.slug}</p>
+                      <p className="mt-0.5 font-mono text-xs text-[var(--annotation)]">{project.slug}</p>
                     </TableCell>
                     <TableCell>{project.summary.stack}</TableCell>
                     <TableCell>{project.summary.deployment}</TableCell>
@@ -153,6 +153,7 @@ export default async function Home() {
                     <TableCell>
                       {project.latestDeploymentAt ? (
                         <time
+                          className="font-mono"
                           dateTime={project.latestDeploymentAt.toISOString()}
                           title={DATE_FORMAT.format(project.latestDeploymentAt)}
                         >
@@ -169,17 +170,17 @@ export default async function Home() {
           </div>
           {projects.length === 0 ? (
             <div className="px-5 py-12 text-center text-sm">
-              <p className="font-medium text-[var(--color-ink)]">
+              <p className="font-medium text-[var(--line)]">
                 아직 등록된 프로젝트가 없습니다.
               </p>
-              <p className="mt-3 text-[var(--color-mute)]">
+              <p className="mt-3 text-[var(--annotation)]">
                 각 프로젝트를 작업 중인 AI에게 &quot;DeployHub에 등록해줘&quot;라고 하면
               </p>
-              <p className="mt-1 text-[var(--color-mute)]">
+              <p className="mt-1 text-[var(--annotation)]">
                 deployhub.yaml 을 만들어 올립니다. 올라온 초안은{' '}
                 <Link
                   href="/settings/drafts"
-                  className="font-medium text-[var(--color-ink)] hover:underline"
+                  className="font-medium text-[var(--line)] hover:underline"
                 >
                   등록 초안 화면
                 </Link>

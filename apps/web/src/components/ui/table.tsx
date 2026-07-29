@@ -9,7 +9,7 @@ export function Table({ className = '', ...props }: ComponentPropsWithoutRef<'ta
 }
 
 export function TableHeader({ className = '', ...props }: ComponentPropsWithoutRef<'thead'>) {
-  return <thead className={`text-xs text-[var(--color-mute)] ${className}`} {...props} />;
+  return <thead className={`text-xs text-[var(--annotation)] ${className}`} {...props} />;
 }
 
 export function TableBody({ className = '', ...props }: ComponentPropsWithoutRef<'tbody'>) {
@@ -19,7 +19,7 @@ export function TableBody({ className = '', ...props }: ComponentPropsWithoutRef
 export function TableRow({ className = '', ...props }: ComponentPropsWithoutRef<'tr'>) {
   return (
     <tr
-      className={`border-b border-[var(--color-hairline)] transition-colors hover:bg-[var(--color-surface-card)] aria-selected:bg-[var(--color-surface-card)] ${className}`}
+      className={`border-b border-[var(--rule)] transition-colors hover:bg-white/[0.02] aria-selected:bg-white/[0.02] ${className}`}
       {...props}
     />
   );
@@ -30,5 +30,5 @@ export function TableHead({ className = '', ...props }: ComponentPropsWithoutRef
 }
 
 export function TableCell({ className = '', ...props }: ComponentPropsWithoutRef<'td'>) {
-  return <td className={`h-11 px-3 text-[var(--color-body)] ${className}`} {...props} />;
+  return <td className={`h-11 px-3 text-[var(--line-mute)] ${className}`} {...props} />;
 }

@@ -12,11 +12,11 @@ import { Input } from '../../components/ui/input';
 
 const INITIAL_STATE: ProjectActionState = { status: 'idle' };
 const CONTROL_CLASS =
-  'h-9 w-full rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-info)]';
+  'h-9 w-full rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm text-[var(--line)] outline-none focus:border-[var(--accent)]';
 
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages?.length) return null;
-  return <p className="mt-1 text-xs text-[var(--color-error)]">{messages[0]}</p>;
+  return <p className="mt-1 text-xs text-[var(--fault)]">{messages[0]}</p>;
 }
 
 export function ProjectForm({ project }: { project?: ProjectRow }) {
@@ -26,7 +26,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
   return (
     <form action={formAction} className="space-y-5">
       <div className="grid gap-5 md:grid-cols-2">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           이름
           <Input
             className="mt-2"
@@ -38,7 +38,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
           <FieldError messages={state.fieldErrors?.name} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Slug
           <Input
             className="mt-2"
@@ -51,7 +51,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
         </label>
       </div>
 
-      <label className="block text-sm text-[var(--color-body)]">
+      <label className="block text-sm text-[var(--line-mute)]">
         설명
         <textarea
           className={`${CONTROL_CLASS} mt-2 min-h-24 py-2`}
@@ -63,7 +63,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
       </label>
 
       <div className="grid gap-5 md:grid-cols-3">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           상태
           <select className={`${CONTROL_CLASS} mt-2`} name="status" defaultValue={project?.status ?? 'active'}>
             <option value="active">Active</option>
@@ -74,7 +74,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
           <FieldError messages={state.fieldErrors?.status} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Lifecycle
           <select
             className={`${CONTROL_CLASS} mt-2`}
@@ -89,7 +89,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
           <FieldError messages={state.fieldErrors?.lifecycle} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           중요도
           <Input
             className="mt-2"
@@ -105,13 +105,13 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           담당자
           <Input className="mt-2" name="owner" defaultValue={project?.owner ?? ''} maxLength={100} />
           <FieldError messages={state.fieldErrors?.owner} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           저장소
           <Input
             className="mt-2"
@@ -127,7 +127,7 @@ export function ProjectForm({ project }: { project?: ProjectRow }) {
         <p
           role="status"
           className={`text-sm ${
-            state.status === 'success' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'
+            state.status === 'success' ? 'text-[var(--confirm)]' : 'text-[var(--fault)]'
           }`}
         >
           {state.message}
