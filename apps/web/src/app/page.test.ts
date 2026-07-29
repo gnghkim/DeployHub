@@ -68,8 +68,8 @@ describe('project overview routes', () => {
 
     expect(home).toContain("정상: 'neutral'");
     expect(home).toContain("미확인: 'neutral'");
-    expect(home).toContain("주의: 'warning'");
-    expect(home).toContain("장애: 'error'");
+    expect(home).toContain("주의: 'caution'");
+    expect(home).toContain("장애: 'fault'");
   });
 
   it('calculates each relative deployment time once for both layouts', () => {

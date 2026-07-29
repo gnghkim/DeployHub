@@ -398,7 +398,7 @@ export default async function ResourcesPage({
                       {suggestion.projectSlug}
                     </p>
                     <div className="mt-2">
-                      <Badge tone={suggestion.basis === 'repository' ? 'info' : 'warning'}>
+                      <Badge tone={suggestion.basis === 'repository' ? 'accent' : 'caution'}>
                         근거: {suggestion.basis}
                       </Badge>
                     </div>

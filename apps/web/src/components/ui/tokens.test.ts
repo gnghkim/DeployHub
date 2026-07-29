@@ -38,8 +38,8 @@ describe('DeployHub design tokens', () => {
   });
 
   it('keeps drift neutral unless a conflict is a fault', () => {
-    expect(projectDetail).toContain("tone={conflict ? 'error' : 'neutral'}");
-    expect(projectDetail).not.toContain("tone={conflict ? 'error' : 'warning'}");
+    expect(projectDetail).toContain("tone={conflict ? 'fault' : 'neutral'}");
+    expect(projectDetail).not.toContain("tone={conflict ? 'fault' : 'caution'}");
   });
 
   it('caps the topbar type scale at 20px', () => {

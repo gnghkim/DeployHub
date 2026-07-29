@@ -1,10 +1,10 @@
 import type { Tone } from './badge';
 
 const TONES: Record<Tone, string> = {
-  success: 'bg-[var(--confirm)]',
-  warning: 'bg-[var(--caution)]',
-  error: 'bg-[var(--fault)]',
-  info: 'bg-[var(--accent)]',
+  fault: 'bg-[var(--fault)]',
+  caution: 'bg-[var(--caution)]',
+  confirm: 'bg-[var(--confirm)]',
+  accent: 'bg-[var(--accent)]',
   neutral: 'bg-[var(--absent)]',
 };
 

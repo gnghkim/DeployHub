@@ -27,8 +27,8 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
 const STATUS_TONES: Record<ProjectStatus, Tone> = {
   정상: 'neutral',
   미확인: 'neutral',
-  주의: 'warning',
-  장애: 'error',
+  주의: 'caution',
+  장애: 'fault',
 };
 
 export default async function Home() {

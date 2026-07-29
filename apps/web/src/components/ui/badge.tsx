@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 
 const TONES = {
-  success: 'text-[var(--confirm)]',
-  warning: 'text-[var(--caution)]',
-  error: 'text-[var(--fault)]',
-  info: 'text-[var(--accent)]',
+  fault: 'text-[var(--fault)]',
+  caution: 'text-[var(--caution)]',
+  confirm: 'text-[var(--confirm)]',
+  accent: 'text-[var(--accent)]',
   neutral: 'text-[var(--annotation)]',
 } as const;
 
