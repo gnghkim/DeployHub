@@ -16,12 +16,12 @@ import { db } from '../../../lib/db';
 export const dynamic = 'force-dynamic';
 
 const STATUS_TONES: Record<string, Tone> = {
-  pending_review: 'warning',
-  approved: 'success',
-  validation_failed: 'error',
+  pending_review: 'caution',
+  approved: 'confirm',
+  validation_failed: 'fault',
   rejected: 'neutral',
   superseded: 'neutral',
-  draft: 'info',
+  draft: 'accent',
 };
 
 const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {

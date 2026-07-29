@@ -111,7 +111,7 @@ export default async function DraftDetailPage({
               {title}
             </h2>
             <Badge
-              tone={draft.status === 'pending_review' ? 'warning' : 'neutral'}
+              tone={draft.status === 'pending_review' ? 'caution' : 'neutral'}
             >
               {draft.status}
             </Badge>

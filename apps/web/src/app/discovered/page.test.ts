@@ -34,8 +34,8 @@ describe('발견 화면', () => {
   it('등록 동작이나 경고 판정을 만들지 않는다', () => {
     expect(page).not.toContain('등록' + '하기');
     expect(page).not.toContain('register' + 'Stack');
-    expect(page).not.toContain('tone="warning"');
-    expect(page).not.toContain('tone="error"');
+    expect(page).not.toContain('tone="caution"');
+    expect(page).not.toContain('tone="fault"');
   });
 
   it('발견된 스택이 없으면 좋은 상태임을 명확히 표시한다', () => {

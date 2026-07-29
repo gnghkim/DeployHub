@@ -53,8 +53,8 @@ const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
 const STATUS_TONES: Record<ProjectStatus, Tone> = {
   정상: 'neutral',
   미확인: 'neutral',
-  주의: 'warning',
-  장애: 'error',
+  주의: 'caution',
+  장애: 'fault',
 };
 
 export default async function ProjectDetailPage({
@@ -228,7 +228,7 @@ export default async function ProjectDetailPage({
                     className="rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] p-4"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone={event.severity === 'critical' ? 'error' : 'warning'}>
+                      <Badge tone={event.severity === 'critical' ? 'fault' : 'caution'}>
                         {event.severity === 'critical' ? '장애' : '주의'}
                       </Badge>
                       <span className="text-sm font-medium text-[var(--line)]">
@@ -375,7 +375,7 @@ export default async function ProjectDetailPage({
                       }
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={conflict ? 'error' : 'neutral'}>
+                        <Badge tone={conflict ? 'fault' : 'neutral'}>
                           {DRIFT_LABELS[item.kind]}
                         </Badge>
                         {item.declared ? (

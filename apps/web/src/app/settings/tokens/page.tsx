@@ -94,7 +94,7 @@ export default async function RegistrationTokensPage() {
                   <TableRow key={token.id}>
                     <TableCell>
                       <Badge
-                        tone={status === 'active' ? 'success' : 'neutral'}
+                        tone={status === 'active' ? 'confirm' : 'neutral'}
                       >
                         {status}
                       </Badge>
