@@ -25,10 +25,9 @@ export type CompositionInput = {
 
 export type CompositionObservation = {
   key: string;
-  name: string;
+  name: string | null;
   provider: string | null;
   status: string | null;
-  missing: boolean;
 };
 
 export type CompositionRow = {
@@ -127,7 +126,6 @@ export function buildComposition({
         name: resource.name,
         provider: resource.provider,
         status: resource.status,
-        missing: false,
       }));
 
     return {
@@ -140,10 +138,9 @@ export function buildComposition({
         ? observed
         : [{
           key: `${component.id}:unobserved`,
-          name: '관측되지 않음',
+          name: null,
           provider: null,
           status: null,
-          missing: true,
         }],
     };
   });

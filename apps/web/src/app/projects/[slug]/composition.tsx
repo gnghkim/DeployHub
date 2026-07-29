@@ -1,4 +1,6 @@
 import type { Composition } from './composition-model';
+import { Annotation } from '../../../components/schematic/annotation';
+import { Sheet } from '../../../components/schematic/sheet';
 
 export {
   buildComposition,
@@ -35,7 +37,7 @@ export function ArchitectureComposition({
   ));
 
   return (
-    <div className="mt-5">
+    <Sheet className="mt-5 min-w-0 overflow-hidden">
       {repository ? (
         <>
           <div className="inline-flex items-baseline gap-3 rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] px-4 py-3">
@@ -60,9 +62,8 @@ export function ArchitectureComposition({
           </p>
         </div>
 
-        <div className="hidden grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] border-b border-[var(--rule)] px-4 py-2 text-xs text-[var(--absent)] md:grid">
+        <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)] border-b border-[var(--rule)] px-4 py-2 text-xs text-[var(--absent)] md:grid">
           <span>선언</span>
-          <span aria-hidden="true" />
           <span>관측</span>
         </div>
 
@@ -71,7 +72,7 @@ export function ArchitectureComposition({
             {composition.rows.map((row) => (
               <li
                 key={row.key}
-                className="grid grid-cols-1 items-start gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] md:gap-0"
+                className="grid min-w-0 grid-cols-1 items-start gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-0"
               >
                 <div className="min-w-0">
                   <p className="mb-1 text-xs font-medium text-[var(--absent)] md:hidden">
@@ -84,33 +85,21 @@ export function ArchitectureComposition({
                     {row.declaration.technology}
                   </p>
                 </div>
-                <span
-                  aria-hidden="true"
-                  className="hidden pt-1 text-center text-[var(--absent)] md:block"
-                >
-                  →
-                </span>
                 <div className="min-w-0 space-y-2 border-l border-[var(--rule)] pl-3 md:border-l-0 md:pl-0">
                   <p className="text-xs font-medium text-[var(--absent)] md:hidden">
                     관측
                   </p>
                   {row.observations.map((observation) => (
-                    <div key={observation.key}>
-                      <p className={
-                        observation.missing
-                          ? 'text-sm text-[var(--absent)]'
-                          : 'truncate font-mono text-sm text-[var(--line-mute)]'
-                      }>
-                        {observation.name}
-                      </p>
-                      {!observation.missing ? (
-                        <p className="mt-0.5 font-mono text-xs text-[var(--annotation)]">
-                          {[
+                    <div className="min-w-0 break-all" key={observation.key}>
+                      <Annotation
+                        value={observation.name === null
+                          ? null
+                          : [
+                            observation.name,
                             observation.provider,
-                            observation.status ?? '상태 미확인',
+                            observation.status,
                           ].filter(Boolean).join(' · ')}
-                        </p>
-                      ) : null}
+                      />
                     </div>
                   ))}
                 </div>
@@ -144,7 +133,7 @@ export function ArchitectureComposition({
           </div>
         </>
       ) : null}
-    </div>
+    </Sheet>
   );
 }
 

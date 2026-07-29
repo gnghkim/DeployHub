@@ -8,10 +8,54 @@ const page = readFileSync(
 );
 
 describe('project detail status', () => {
+  it('구성도가 Annotation 으로 관측을 그린다', () => {
+    const composition = readFileSync(
+      fileURLToPath(new URL('./composition.tsx', import.meta.url)), 'utf8');
+    expect(composition).toContain('<Annotation');
+  });
+
+  it('구성도만 Sheet 안에 그린다', () => {
+    const composition = readFileSync(
+      fileURLToPath(new URL('./composition.tsx', import.meta.url)), 'utf8');
+    expect(composition).toContain('<Sheet');
+    expect(page).not.toContain('<Sheet');
+  });
+
+  it('구성도의 관측 자리를 판정이 덮지 않는다', () => {
+    const composition = readFileSync(
+      fileURLToPath(new URL('./composition.tsx', import.meta.url)), 'utf8');
+    expect(composition).not.toContain('judgeStatus');
+    expect(composition).not.toContain('ProjectStatus');
+  });
+
+  it('Drift 에 경고색을 쓰지 않는다', () => {
+    const page = readFileSync(
+      fileURLToPath(new URL('./page.tsx', import.meta.url)), 'utf8');
+    const driftBlock = page.slice(page.indexOf('DRIFT_LABELS'));
+    expect(driftBlock).not.toContain("tone={conflict ? 'fault' : 'caution'}");
+    expect(driftBlock).toContain('<Annotation');
+    expect(driftBlock).toContain('drift=');
+  });
+
+  it('관측 상태 부재를 프로젝트 판정 문구로 표시하지 않는다', () => {
+    const composition = readFileSync(
+      fileURLToPath(new URL('./composition.tsx', import.meta.url)), 'utf8');
+    expect(composition).not.toContain('상태 미확인');
+  });
+
   it('adds the derived status to the top metadata line', () => {
     expect(page).toContain('listProjectStatusData(db, [project.id])');
     expect(page).toContain('<Badge tone={STATUS_TONES[status.status]}>');
     expect(page).toContain('{status.status}');
+  });
+
+  it('orders declared metadata before the judgement badge', () => {
+    expect(page.indexOf('{project.lifecycle}'))
+      .toBeLessThan(page.indexOf('중요도 {project.importance}'));
+    expect(page.indexOf('중요도 {project.importance}'))
+      .toBeLessThan(page.indexOf("{project.owner ?? '담당자 없음'}"));
+    expect(page.indexOf("{project.owner ?? '담당자 없음'}"))
+      .toBeLessThan(page.indexOf('<Badge tone={STATUS_TONES[status.status]}>'));
   });
 
   it('shows latest warning and critical evidence below the composition', () => {
@@ -53,5 +97,9 @@ describe('project detail status', () => {
     expect(evidence).toBeLessThan(deployments);
     expect(deployments).toBeLessThan(timeline);
     expect(page).toContain('space-y-6 p-4 md:p-8');
+  });
+
+  it('shows Drift only when there is a difference', () => {
+    expect(page).not.toContain('Drift 없음');
   });
 });
