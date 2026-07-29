@@ -13,6 +13,7 @@ import {
 } from '@deployhub/db';
 import { Topbar } from '../../../components/shell/topbar';
 import { TimelineList } from '../../../components/events/timeline-list';
+import { Annotation } from '../../../components/schematic/annotation';
 import { Badge, type Tone } from '../../../components/ui/badge';
 import { Card } from '../../../components/ui/card';
 import {
@@ -170,19 +171,18 @@ export default async function ProjectDetailPage({
           </Link>
         </div>
 
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--line-mute)]">
-          <span>{project.lifecycle}</span>
-          <MetadataDot />
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--line-mute)]">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{project.lifecycle}</span>
+            <MetadataDot />
+            <span>중요도 {project.importance}</span>
+            <MetadataDot />
+            <span>{project.owner ?? '담당자 없음'}</span>
+          </p>
           <Badge tone={STATUS_TONES[status.status]}>
             {status.status}
           </Badge>
-          <MetadataDot />
-          <span>중요도 {project.importance}</span>
-          <MetadataDot />
-          <span>{project.owner ?? '담당자 없음'}</span>
-          <MetadataDot />
-          <span className="font-mono">{project.repository ?? '저장소 없음'}</span>
-        </p>
+        </div>
 
         <Card>
           <div>
@@ -349,56 +349,51 @@ export default async function ProjectDetailPage({
           </div>
         </Card>
 
-        <Card>
-          {drift.length === 0 ? (
-            <p className="text-sm text-[var(--annotation)]">Drift 없음</p>
-          ) : (
-            <>
-              <div className="flex items-center gap-3">
-                <h3 className="text-base font-medium text-[var(--line)]">
-                  Drift
-                </h3>
-                <span className="text-xs text-[var(--annotation)]">
-                  {drift.length}건
-                </span>
-              </div>
-              <ul className="mt-4 space-y-2">
-                {drift.map((item, index) => {
-                  const conflict = item.kind === 'link_conflict';
-                  return (
-                    <li
-                      key={`${item.kind}:${item.componentId ?? 'project'}:${index}`}
-                      className={
-                        conflict
-                          ? 'rounded-[var(--radius-card)] border-2 border-[var(--fault)] bg-[var(--paper)] p-3'
-                          : 'rounded-[var(--radius-card)] border border-[var(--rule)] p-3'
-                      }
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={conflict ? 'fault' : 'neutral'}>
-                          {DRIFT_LABELS[item.kind]}
-                        </Badge>
-                        {item.declared ? (
-                          <span className="font-mono text-xs text-[var(--annotation)]">
-                            선언: {item.declared}
-                          </span>
-                        ) : null}
-                        {item.observed ? (
-                          <span className="font-mono text-xs text-[var(--annotation)]">
-                            관측: {item.observed}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-2 text-sm text-[var(--line-mute)]">
-                        {item.detail}
-                      </p>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-        </Card>
+        {drift.length > 0 ? (
+          <Card>
+            <div className="flex items-center gap-3">
+              <h3 className="text-base font-medium text-[var(--line)]">
+                Drift
+              </h3>
+              <span className="text-xs text-[var(--annotation)]">
+                {drift.length}건
+              </span>
+            </div>
+            <ul className="mt-4 space-y-2">
+              {drift.map((item, index) => {
+                const conflict = item.kind === 'link_conflict';
+                return (
+                  <li
+                    key={`${item.kind}:${item.componentId ?? 'project'}:${index}`}
+                    className={
+                      conflict
+                        ? 'rounded-[var(--radius-card)] border-2 border-[var(--fault)] bg-[var(--paper)] p-3'
+                        : 'rounded-[var(--radius-card)] border border-[var(--rule)] p-3'
+                    }
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={conflict ? 'fault' : 'neutral'}>
+                        {DRIFT_LABELS[item.kind]}
+                      </Badge>
+                      {item.declared ? (
+                        <span className="font-mono text-xs text-[var(--annotation)]">
+                          선언: {item.declared}
+                        </span>
+                      ) : null}
+                      <Annotation
+                        value={item.observed}
+                        drift={item.observed !== null}
+                      />
+                    </div>
+                    <p className="mt-2 text-sm text-[var(--line-mute)]">
+                      {item.detail}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        ) : null}
       </main>
     </>
   );

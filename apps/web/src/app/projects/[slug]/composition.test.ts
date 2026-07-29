@@ -37,15 +37,15 @@ describe('buildComposition', () => {
         technology: 'Node',
       },
       observations: [{
-        name: '관측되지 않음',
+        name: null,
         provider: null,
         status: null,
-        missing: true,
       }],
     });
     expect(composition.rows[0]?.observations).not.toContainEqual(
       expect.objectContaining({ name: 'deployhub-worker' }),
     );
+    expect(composition.rows[0]?.observations[0]).not.toHaveProperty('missing');
   });
 
   it('returns components in a stable architecture order', () => {
@@ -126,9 +126,9 @@ describe('buildComposition', () => {
         name: 'observed-web',
         provider: 'docker',
         status: 'running',
-        missing: false,
       }],
     });
+    expect(composition.rows[0]?.observations[0]).not.toHaveProperty('missing');
   });
 
   it('does not treat the repository node as a component runtime observation', () => {
@@ -155,8 +155,7 @@ describe('buildComposition', () => {
 
     expect(composition.rows[0]?.observations).toEqual([
       expect.objectContaining({
-        name: '관측되지 않음',
-        missing: true,
+        name: null,
       }),
     ]);
   });
@@ -171,15 +170,17 @@ describe('ArchitectureComposition responsive layout', () => {
   it('stacks declaration above observation on mobile', () => {
     expect(source).toContain('grid-cols-1');
     expect(source).toContain(
-      'md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)]',
+      'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
     );
     expect(source).toContain('md:grid');
     expect(source).toContain('md:hidden');
+    expect(source).toContain('break-all');
+    expect(source).not.toContain('→');
   });
 
   it('labels both sides in the stacked layout', () => {
     expect(source).toContain('선언');
     expect(source).toContain('관측');
-    expect(source).toContain('{observation.name}');
+    expect(source).toContain('<Annotation');
   });
 });

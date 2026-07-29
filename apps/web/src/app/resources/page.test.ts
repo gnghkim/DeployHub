@@ -72,7 +72,8 @@ describe('자원 화면 구성', () => {
     expect(page).toContain('구성도');
     expect(composition).toContain('선언');
     expect(composition).toContain('관측');
-    expect(compositionModel).toContain('관측되지 않음');
+    expect(compositionModel).toContain('name: null');
+    expect(compositionModel).not.toContain('관측되지 않음');
     expect(page).toContain('declared_not_observed');
     expect(page).toContain('observed_not_declared');
     expect(page).toContain('image_mismatch');
