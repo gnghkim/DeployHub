@@ -487,12 +487,21 @@ export type ProjectListSummaryData = ProjectRow & {
 (drizzle `logger.logQuery` 로 `queryCount` 를 세는 인스턴스)를 그대로 쓴다.
 **새 헬퍼를 만들지 마라.**
 
-조회가 하나 늘므로 그 단언을 `toBe(6)` 으로 고친다. 프로젝트 1개와 10개가 같다는
-단언은 그대로 둔다 — 그것이 이 카드가 지켜야 할 성질이다.
+**조회를 새로 더하지 마라. 있는 것을 넓혀라.**
+
+`listProjectsWithSummaryData` 안의 두 번째 조회(`linkedResourceRows`)가 이미
+`componentResources` → `components` → `resources` 를 조인하고 있다. 지금은
+`projectId` 와 `provider` 두 열만 뽑는다. 여기에 `componentId`·`name`·`status` 를
+더하면 된다.
+
+`resources.name` 과 `resources.status` 는 **최상위 열**이다. `metadata` 안이
+아니다. `docker.sync` 가 `Name` 의 앞 슬래시를 떼어 `name` 에 넣는다.
+
+이러면 **조회 수가 5회 그대로다.** `toBe(5)` 단언을 고치지 마라.
 
 ```ts
-// 기존 테스트 수정: 178행
-expect(oneProjectQueryCount).toBe(6);
+// 178행은 그대로 둔다
+expect(oneProjectQueryCount).toBe(5);
 expect(tenProjectQueryCount).toBe(oneProjectQueryCount);
 
 // 새 테스트
@@ -516,11 +525,31 @@ it('관측이 없는 구성요소는 키가 없다', async () => {
 
 - [ ] **Step 2: 실패 확인 → 조회 구현**
 
-`listProjectsWithSummaryData` 에 조회를 **한 건** 더한다. `componentResources` 와 `resources` 를 조인해 `provider='docker'`, `deletedAt IS NULL`, `linkedBy <> 'suggested'` 인 것을 `inArray(components.projectId, projectIds)` 로 한 번에 가져와 메모리에서 묶는다.
+기존 `linkedResourceRows` 조회의 `select` 에 세 열을 더한다.
 
-같은 파일의 `latestDeploymentRows` 가 같은 모양이다. 읽고 따라라.
+```ts
+.select({
+  projectId: components.projectId,
+  provider: resources.provider,
+  componentId: componentResources.componentId,
+  resourceName: resources.name,
+  resourceStatus: resources.status,
+})
+```
 
-**프로젝트마다 조회하지 마라.** 조회 수가 6회로 고정돼야 하고, 프로젝트가 1개일
+`where` 에 `ne(componentResources.linkedBy, 'suggested')` 를 더한다. 추정 링크는
+관측이 아니다. `drift.ts` 와 `resources.ts` 가 이미 같은 규칙을 쓴다.
+
+**`provider` 집계가 깨지지 않게 조심해라.** 지금 이 조회의 결과로
+`observedProviders` 를 만든다. 열을 더해도 행 수는 같지만, `suggested` 를 빼면
+provider 집합이 달라질 수 있다. 기존 테스트가 그것을 잡는지 확인하고, 안 잡으면
+그대로 두지 말고 보고해라.
+
+한 자원이 여러 구성요소에 연결될 수 있다. `componentId` 로 묶을 때 **가장
+먼저 오는 하나**만 쓰되, 정렬을 명시해 결과가 실행마다 달라지지 않게 해라.
+`ORDER BY` 없는 조회의 행 순서는 보장되지 않는다.
+
+**프로젝트마다 조회하지 마라.** 조회 수가 5회로 고정돼야 하고, 프로젝트가 1개일
 때와 10개일 때 같아야 한다.
 
 - [ ] **Step 3: 실패하는 화면 테스트 작성**
