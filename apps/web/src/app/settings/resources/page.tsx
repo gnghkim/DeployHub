@@ -118,10 +118,10 @@ export default async function ResourcesPage({
       <Topbar title="Resources" />
       <main className="space-y-6 p-4 md:p-8">
         <div>
-          <h2 className="text-xl font-medium text-[var(--color-ink)]">
+          <h2 className="text-xl font-medium text-[var(--line)]">
             관측 자원
           </h2>
-          <p className="mt-1 text-sm text-[var(--color-mute)]">
+          <p className="mt-1 text-sm text-[var(--annotation)]">
             서버에서 관측한 자원을 연결 여부와 관계없이 모두 표시합니다.
           </p>
         </div>
@@ -129,20 +129,20 @@ export default async function ResourcesPage({
         <Card>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="flex items-center gap-3">
-              <h3 className="text-base font-medium text-[var(--color-ink)]">
+              <h3 className="text-base font-medium text-[var(--line)]">
                 수집된 자원
               </h3>
-              <span className="text-xs text-[var(--color-mute)]">
+              <span className="text-xs text-[var(--annotation)]">
                 {filteredResources.length}개 / 전체 {resources.length}개
               </span>
             </div>
             <form className="flex flex-wrap items-end gap-3">
-              <label className="text-xs text-[var(--color-mute)]">
+              <label className="text-xs text-[var(--annotation)]">
                 Provider
                 <select
                   name="provider"
                   defaultValue={provider}
-                  className="mt-1 block h-9 rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)]"
+                  className="mt-1 block h-9 rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 font-mono text-sm text-[var(--line)]"
                 >
                   <option value="">전체</option>
                   {providers.map((value) => (
@@ -150,12 +150,12 @@ export default async function ResourcesPage({
                   ))}
                 </select>
               </label>
-              <label className="text-xs text-[var(--color-mute)]">
+              <label className="text-xs text-[var(--annotation)]">
                 Resource type
                 <select
                   name="resourceType"
                   defaultValue={resourceType}
-                  className="mt-1 block h-9 rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)]"
+                  className="mt-1 block h-9 rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 font-mono text-sm text-[var(--line)]"
                 >
                   <option value="">전체</option>
                   {resourceTypes.map((value) => (
@@ -185,11 +185,11 @@ export default async function ResourcesPage({
                     {resourceRows.map(({ resource, details, image }) => (
                       <TableRow key={resource.id}>
                         <TableCell>
-                          <p className="font-medium text-[var(--color-ink)]">
+                          <p className="font-mono font-medium text-[var(--line)]">
                             {resource.name}
                           </p>
                           <p
-                            className="mt-1 font-mono text-xs text-[var(--color-mute)]"
+                            className="mt-1 font-mono text-xs text-[var(--annotation)]"
                             title={resource.externalId}
                           >
                             {resource.resourceType === 'docker_container'
@@ -197,16 +197,16 @@ export default async function ResourcesPage({
                               : resource.externalId}
                           </p>
                         </TableCell>
-                        <TableCell>{resource.provider}</TableCell>
-                        <TableCell>{resource.resourceType}</TableCell>
-                        <TableCell>{resource.status ?? '—'}</TableCell>
-                        <TableCell>
+                        <TableCell className="font-mono">{resource.provider}</TableCell>
+                        <TableCell className="font-mono">{resource.resourceType}</TableCell>
+                        <TableCell className="font-mono">{resource.status ?? '—'}</TableCell>
+                        <TableCell className="font-mono">
                           {details.lastCommit ? (
                             <div className="text-xs">
-                              <p className="font-mono text-[var(--color-ink)]">
+                              <p className="font-mono text-[var(--line)]">
                                 commit {details.lastCommit.sha.slice(0, 7)}
                               </p>
-                              <p className="mt-1 text-[var(--color-mute)]">
+                              <p className="mt-1 font-mono text-[var(--annotation)]">
                                 {displayDate(details.lastCommit.committedAt)}
                                 {details.lastWorkflowRun?.conclusion
                                   ? ` · ${details.lastWorkflowRun.conclusion}`
@@ -225,7 +225,7 @@ export default async function ResourcesPage({
                                 >
                                   <Link
                                     href={`/projects/${link.projectSlug}`}
-                                    className="text-sm text-[var(--color-info)] hover:underline"
+                                    className="text-sm text-[var(--accent)] hover:underline"
                                   >
                                     {link.projectName} / {link.componentName}
                                   </Link>
@@ -266,14 +266,14 @@ export default async function ResourcesPage({
                 {resourceRows.map(({ resource, details, image }) => (
                   <article
                     key={resource.id}
-                    className="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] p-4 first:mt-4"
+                    className="space-y-4 rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] p-4 first:mt-4"
                   >
                     <div>
-                      <p className="font-medium text-[var(--color-ink)]">
+                      <p className="font-mono font-medium text-[var(--line)]">
                         {resource.name}
                       </p>
                       <p
-                        className="mt-1 break-all font-mono text-xs text-[var(--color-mute)]"
+                        className="mt-1 break-all font-mono text-xs text-[var(--annotation)]"
                         title={resource.externalId}
                       >
                         {resource.resourceType === 'docker_container'
@@ -283,26 +283,26 @@ export default async function ResourcesPage({
                     </div>
 
                     <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
-                      <dt className="text-[var(--color-mute)]">Provider</dt>
-                      <dd className="min-w-0 break-words text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">Provider</dt>
+                      <dd className="min-w-0 break-words font-mono text-[var(--line-mute)]">
                         {resource.provider}
                       </dd>
-                      <dt className="text-[var(--color-mute)]">Resource type</dt>
-                      <dd className="min-w-0 break-words text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">Resource type</dt>
+                      <dd className="min-w-0 break-words font-mono text-[var(--line-mute)]">
                         {resource.resourceType}
                       </dd>
-                      <dt className="text-[var(--color-mute)]">상태</dt>
-                      <dd className="text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">상태</dt>
+                      <dd className="font-mono text-[var(--line-mute)]">
                         {resource.status ?? '—'}
                       </dd>
-                      <dt className="text-[var(--color-mute)]">상세</dt>
-                      <dd className="min-w-0 break-words text-[var(--color-body)]">
+                      <dt className="text-[var(--annotation)]">상세</dt>
+                      <dd className="min-w-0 break-words font-mono text-[var(--line-mute)]">
                         {details.lastCommit ? (
                           <div className="text-xs">
-                            <p className="font-mono text-[var(--color-ink)]">
+                            <p className="font-mono text-[var(--line)]">
                               commit {details.lastCommit.sha.slice(0, 7)}
                             </p>
-                            <p className="mt-1 text-[var(--color-mute)]">
+                            <p className="mt-1 font-mono text-[var(--annotation)]">
                               {displayDate(details.lastCommit.committedAt)}
                               {details.lastWorkflowRun?.conclusion
                                 ? ` · ${details.lastWorkflowRun.conclusion}`
@@ -313,8 +313,8 @@ export default async function ResourcesPage({
                       </dd>
                     </dl>
 
-                    <div className="border-t border-[var(--color-hairline)] pt-3">
-                      <p className="mb-2 text-xs font-medium text-[var(--color-mute)]">
+                    <div className="border-t border-[var(--rule)] pt-3">
+                      <p className="mb-2 text-xs font-medium text-[var(--annotation)]">
                         연결
                       </p>
                       {resource.links.length > 0 ? (
@@ -326,7 +326,7 @@ export default async function ResourcesPage({
                             >
                               <Link
                                 href={`/projects/${link.projectSlug}`}
-                                className="text-sm text-[var(--color-info)] hover:underline"
+                                className="text-sm text-[var(--accent)] hover:underline"
                               >
                                 {link.projectName} / {link.componentName}
                               </Link>
@@ -352,8 +352,8 @@ export default async function ResourcesPage({
                       )}
                     </div>
 
-                    <div className="border-t border-[var(--color-hairline)] pt-3">
-                      <p className="mb-2 text-xs font-medium text-[var(--color-mute)]">
+                    <div className="border-t border-[var(--rule)] pt-3">
+                      <p className="mb-2 text-xs font-medium text-[var(--annotation)]">
                         연결 추가
                       </p>
                       <SuggestionForm
@@ -366,7 +366,7 @@ export default async function ResourcesPage({
               </div>
             </>
           ) : (
-            <p className="mt-4 text-sm text-[var(--color-mute)]">
+            <p className="mt-4 text-sm text-[var(--annotation)]">
               조건에 맞는 자원이 없습니다.
             </p>
           )}
@@ -374,10 +374,10 @@ export default async function ResourcesPage({
 
         <Card>
           <div className="flex items-center gap-3">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               연결 제안
             </h3>
-            <span className="text-xs text-[var(--color-mute)]">
+            <span className="text-xs text-[var(--annotation)]">
               {suggestions.length}개
             </span>
           </div>
@@ -389,12 +389,12 @@ export default async function ResourcesPage({
               return (
                 <div
                   key={suggestion.resourceId}
-                  className="flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-hairline)] p-4"
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--rule)] p-4"
                 >
                   <div>
-                    <p className="font-medium text-[var(--color-ink)]">
+                    <p className="font-mono font-medium text-[var(--line)]">
                       {suggestion.externalId}
-                      <span className="mx-2 text-[var(--color-ash)]">→</span>
+                      <span className="mx-2 text-[var(--absent)]">→</span>
                       {suggestion.projectSlug}
                     </p>
                     <div className="mt-2">
@@ -412,7 +412,7 @@ export default async function ResourcesPage({
               );
             })}
             {suggestions.length === 0 ? (
-              <p className="text-sm text-[var(--color-mute)]">
+              <p className="text-sm text-[var(--annotation)]">
                 확인할 연결 제안이 없습니다.
               </p>
             ) : null}
@@ -421,18 +421,18 @@ export default async function ResourcesPage({
 
         <Card>
           <div className="flex items-center gap-3">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               미연결 자원
             </h3>
             <Badge>{unlinkedResources.length} Unlinked</Badge>
           </div>
-          <ul className="mt-4 divide-y divide-[var(--color-hairline)]">
+          <ul className="mt-4 divide-y divide-[var(--rule)]">
             {unlinkedResources.map((resource) => (
               <li
                 key={resource.id}
                 className="flex items-center justify-between gap-3 py-3 text-sm"
               >
-                <span className="text-[var(--color-ink)]">
+                <span className="font-mono text-[var(--line)]">
                   {resource.name}
                 </span>
                 <Badge>Unlinked</Badge>
@@ -440,7 +440,7 @@ export default async function ResourcesPage({
             ))}
           </ul>
           {unlinkedResources.length === 0 ? (
-            <p className="mt-4 text-sm text-[var(--color-mute)]">
+            <p className="mt-4 text-sm text-[var(--annotation)]">
               모든 자원이 연결되어 있습니다.
             </p>
           ) : null}

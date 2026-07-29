@@ -37,4 +37,27 @@ describe('Draft review screens', () => {
     expect(detail).toContain('승인');
     expect(detail).toContain('거부');
   });
+
+  it('uses measured typography for draft identifiers and submission times', () => {
+    const list = source('../settings/drafts/page.tsx');
+
+    expect(list).toContain(
+      'className="font-mono font-medium text-[var(--line)] hover:underline"',
+    );
+    expect(list).toContain(
+      '<TableCell className="font-mono">{DATE_FORMAT.format(draft.createdAt)}</TableCell>',
+    );
+  });
+
+  it('uses measured typography only for technical project diff fields', () => {
+    const detail = source('../settings/drafts/[id]/page.tsx');
+
+    expect(detail).toMatch(
+      /const MONO_PROJECT_FIELDS = new Set\(\[\s*'slug',\s*'lifecycle',\s*'importance',\s*'repository',\s*\]\)/,
+    );
+    expect(detail).toContain('MONO_PROJECT_FIELDS.has(change.field)');
+    expect(detail).not.toContain(
+      '<li key={change.field} className="font-mono">',
+    );
+  });
 });

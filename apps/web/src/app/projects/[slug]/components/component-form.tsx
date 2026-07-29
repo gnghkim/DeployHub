@@ -13,11 +13,11 @@ import { COMPONENT_TYPES } from '../../../../lib/schemas';
 
 const INITIAL_STATE: ComponentActionState = { status: 'idle' };
 const CONTROL_CLASS =
-  'h-9 w-full rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-info)]';
+  'h-9 w-full rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm text-[var(--line)] outline-none focus:border-[var(--accent)]';
 
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages?.length) return null;
-  return <p className="mt-1 text-xs text-[var(--color-error)]">{messages[0]}</p>;
+  return <p className="mt-1 text-xs text-[var(--fault)]">{messages[0]}</p>;
 }
 
 export function ComponentForm({
@@ -35,7 +35,7 @@ export function ComponentForm({
   return (
     <form action={formAction} className="space-y-5">
       <div className="grid gap-5 md:grid-cols-2">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           이름
           <Input
             className="mt-2"
@@ -47,7 +47,7 @@ export function ComponentForm({
           <FieldError messages={state.fieldErrors?.name} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Slug
           <Input
             className="mt-2"
@@ -61,7 +61,7 @@ export function ComponentForm({
       </div>
 
       <div className="grid gap-5 md:grid-cols-2">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           타입
           <select
             className={`${CONTROL_CLASS} mt-2`}
@@ -75,7 +75,7 @@ export function ComponentForm({
           <FieldError messages={state.fieldErrors?.componentType} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           중요도
           <Input
             className="mt-2"
@@ -91,7 +91,7 @@ export function ComponentForm({
       </div>
 
       <div className="grid gap-5 md:grid-cols-3">
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Framework
           <Input
             className="mt-2"
@@ -102,7 +102,7 @@ export function ComponentForm({
           <FieldError messages={state.fieldErrors?.framework} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Runtime
           <Input
             className="mt-2"
@@ -113,7 +113,7 @@ export function ComponentForm({
           <FieldError messages={state.fieldErrors?.runtime} />
         </label>
 
-        <label className="block text-sm text-[var(--color-body)]">
+        <label className="block text-sm text-[var(--line-mute)]">
           Language
           <Input
             className="mt-2"
@@ -129,7 +129,7 @@ export function ComponentForm({
         <p
           role="status"
           className={`text-sm ${
-            state.status === 'success' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'
+            state.status === 'success' ? 'text-[var(--confirm)]' : 'text-[var(--fault)]'
           }`}
         >
           {state.message}

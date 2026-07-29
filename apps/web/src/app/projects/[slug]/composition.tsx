@@ -38,11 +38,11 @@ export function ArchitectureComposition({
     <div className="mt-5">
       {repository ? (
         <>
-          <div className="inline-flex items-baseline gap-3 rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-4 py-3">
-            <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-ash)]">
+          <div className="inline-flex items-baseline gap-3 rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] px-4 py-3">
+            <span className="text-xs font-medium uppercase tracking-wide text-[var(--absent)]">
               GitHub
             </span>
-            <span className="font-mono text-sm text-[var(--color-ink)]">
+            <span className="font-mono text-sm text-[var(--line)]">
               {repository}
             </span>
           </div>
@@ -50,61 +50,61 @@ export function ArchitectureComposition({
         </>
       ) : null}
 
-      <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)]">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--color-hairline)] px-4 py-3">
-          <p className="font-medium text-[var(--color-ink)]">{deployment}</p>
-          <p className="text-xs text-[var(--color-mute)]">
+      <div className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)]">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--rule)] px-4 py-3">
+          <p className="font-mono font-medium text-[var(--line)]">{deployment}</p>
+          <p className="text-xs text-[var(--annotation)]">
             {providers.length > 0
               ? `선언: ${providers.join(' · ')}`
               : '배포 기반 선언 없음'}
           </p>
         </div>
 
-        <div className="hidden grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] border-b border-[var(--color-hairline)] px-4 py-2 text-xs text-[var(--color-ash)] md:grid">
+        <div className="hidden grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] border-b border-[var(--rule)] px-4 py-2 text-xs text-[var(--absent)] md:grid">
           <span>선언</span>
           <span aria-hidden="true" />
           <span>관측</span>
         </div>
 
         {composition.rows.length > 0 ? (
-          <ul className="divide-y divide-[var(--color-hairline)]">
+          <ul className="divide-y divide-[var(--rule)]">
             {composition.rows.map((row) => (
               <li
                 key={row.key}
                 className="grid grid-cols-1 items-start gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] md:gap-0"
               >
                 <div className="min-w-0">
-                  <p className="mb-1 text-xs font-medium text-[var(--color-ash)] md:hidden">
+                  <p className="mb-1 text-xs font-medium text-[var(--absent)] md:hidden">
                     선언
                   </p>
-                  <p className="truncate text-sm font-medium text-[var(--color-ink)]">
+                  <p className="truncate text-sm font-medium text-[var(--line)]">
                     {row.declaration.name}
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-[var(--color-mute)]">
+                  <p className="mt-0.5 truncate font-mono text-xs text-[var(--annotation)]">
                     {row.declaration.technology}
                   </p>
                 </div>
                 <span
                   aria-hidden="true"
-                  className="hidden pt-1 text-center text-[var(--color-stone)] md:block"
+                  className="hidden pt-1 text-center text-[var(--absent)] md:block"
                 >
                   →
                 </span>
-                <div className="min-w-0 space-y-2 border-l border-[var(--color-hairline)] pl-3 md:border-l-0 md:pl-0">
-                  <p className="text-xs font-medium text-[var(--color-ash)] md:hidden">
+                <div className="min-w-0 space-y-2 border-l border-[var(--rule)] pl-3 md:border-l-0 md:pl-0">
+                  <p className="text-xs font-medium text-[var(--absent)] md:hidden">
                     관측
                   </p>
                   {row.observations.map((observation) => (
                     <div key={observation.key}>
                       <p className={
                         observation.missing
-                          ? 'text-sm text-[var(--color-ash)]'
-                          : 'truncate font-mono text-sm text-[var(--color-body)]'
+                          ? 'text-sm text-[var(--absent)]'
+                          : 'truncate font-mono text-sm text-[var(--line-mute)]'
                       }>
                         {observation.name}
                       </p>
                       {!observation.missing ? (
-                        <p className="mt-0.5 text-xs text-[var(--color-mute)]">
+                        <p className="mt-0.5 font-mono text-xs text-[var(--annotation)]">
                           {[
                             observation.provider,
                             observation.status ?? '상태 미확인',
@@ -118,7 +118,7 @@ export function ArchitectureComposition({
             ))}
           </ul>
         ) : (
-          <p className="px-4 py-6 text-sm text-[var(--color-mute)]">
+          <p className="px-4 py-6 text-sm text-[var(--annotation)]">
             등록된 구성요소가 없습니다.
           </p>
         )}
@@ -131,12 +131,12 @@ export function ArchitectureComposition({
             {sortedDomains.map((domain) => (
               <div
                 key={domain.id}
-                className="rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-4 py-3"
+                className="rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] px-4 py-3"
               >
-                <p className="font-mono text-sm text-[var(--color-ink)]">
+                <p className="font-mono text-sm text-[var(--line)]">
                   {domain.domain}
                 </p>
-                <p className="mt-0.5 text-xs text-[var(--color-mute)]">
+                <p className="mt-0.5 font-mono text-xs text-[var(--annotation)]">
                   {domain.environment}
                 </p>
               </div>
@@ -152,9 +152,9 @@ function TreeConnector() {
   return (
     <div
       aria-hidden="true"
-      className="ml-6 flex h-10 w-4 flex-col items-center text-[var(--color-stone)]"
+      className="ml-6 flex h-10 w-4 flex-col items-center text-[var(--absent)]"
     >
-      <span className="h-6 border-l border-[var(--color-stone)]" />
+      <span className="h-6 border-l border-[var(--absent)]" />
       <span className="-mt-1">▼</span>
     </div>
   );

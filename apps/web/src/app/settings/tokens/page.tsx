@@ -54,17 +54,17 @@ export default async function RegistrationTokensPage() {
       <Topbar title="Registration tokens" />
       <main className="space-y-6 p-4 md:p-8">
         <Card>
-          <h2 className="text-lg font-medium text-[var(--color-ink)]">
+          <h2 className="text-lg font-medium text-[var(--line)]">
             CLI 등록 토큰 발급
           </h2>
-          <p className="mb-5 mt-1 text-sm text-[var(--color-mute)]">
+          <p className="mb-5 mt-1 text-sm text-[var(--annotation)]">
             토큰 원문은 발급 직후 한 번만 표시되며 이후에는 조회할 수 없습니다.
           </p>
           <TokenForm />
         </Card>
 
         <Card>
-          <h2 className="mb-4 text-lg font-medium text-[var(--color-ink)]">
+          <h2 className="mb-4 text-lg font-medium text-[var(--line)]">
             발급 내역
           </h2>
           <Table>
@@ -99,18 +99,18 @@ export default async function RegistrationTokensPage() {
                         {status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono">
                       {token.repositoryConstraint
                         ?? token.projectSlugConstraint
                         ?? '제한 없음'}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono">
                       {token.usedCount}/{token.maxUses}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono">
                       {DATE_FORMAT.format(token.expiresAt)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono">
                       {DATE_FORMAT.format(token.createdAt)}
                     </TableCell>
                     <TableCell>
@@ -128,7 +128,7 @@ export default async function RegistrationTokensPage() {
             </TableBody>
           </Table>
           {tokens.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[var(--color-mute)]">
+            <p className="py-8 text-center text-sm text-[var(--annotation)]">
               발급된 토큰이 없습니다.
             </p>
           ) : null}

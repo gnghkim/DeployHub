@@ -59,7 +59,7 @@ describe('project overview routes', () => {
 
     expect(judgementHead).toBeGreaterThanOrEqual(0);
     expect(judgementHead).toBeLessThan(projectHead);
-    expect(home).toContain('<dt className="text-[var(--color-mute)]">판정</dt>');
+    expect(home).toContain('<dt className="text-[var(--annotation)]">판정</dt>');
     expect(home.match(/\{project\.judgement\}/g)).toHaveLength(2);
   });
 
@@ -78,5 +78,20 @@ describe('project overview routes', () => {
     expect(home.match(/formatRelativeTime\(/g)).toHaveLength(1);
     expect(home.match(/\{project\.latestDeploymentRelative\}/g))
       .toHaveLength(2);
+  });
+
+  it('uses measured typography for project slugs and deployment times', () => {
+    const home = source('./page.tsx');
+
+    expect(home).toContain(
+      'className="mt-0.5 truncate font-mono text-xs text-[var(--annotation)]"',
+    );
+    expect(home).toContain(
+      'className="mt-0.5 font-mono text-xs text-[var(--annotation)]"',
+    );
+    expect(home).toContain(
+      'className="shrink-0 font-mono text-xs text-[var(--annotation)]"',
+    );
+    expect(home).toContain('className="font-mono"');
   });
 });

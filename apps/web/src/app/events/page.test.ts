@@ -37,6 +37,9 @@ describe('global events timeline', () => {
     expect(timeline).toContain('formatRelativeTime(');
     expect(timeline).toContain('renderedAt');
     expect(timeline).toContain('<time');
+    expect(timeline).toContain(
+      'className="block font-mono text-xs text-[var(--annotation)] sm:mt-1"',
+    );
     expect(timeline).toContain('dateTime={event.occurredAt.toISOString()}');
     expect(timeline).toContain('title={DATE_FORMAT.format(event.occurredAt)}');
   });
@@ -58,14 +61,14 @@ describe('global events timeline', () => {
   });
 
   it('keeps info quiet and uses only existing warning and error tokens for elevated severities', () => {
-    expect(timeline).toContain("info: 'text-[var(--color-mute)]'");
+    expect(timeline).toContain("info: 'text-[var(--annotation)]'");
     expect(timeline).toContain(
-      "warning: 'text-[var(--color-warning)]'",
+      "warning: 'text-[var(--caution)]'",
     );
     expect(timeline).toContain(
-      "critical: 'text-[var(--color-error)]'",
+      "critical: 'text-[var(--fault)]'",
     );
-    expect(timeline).not.toContain('--color-info');
-    expect(timeline).not.toMatch(/bg-\[var\(--color-(warning|error)\)\]/);
+    expect(timeline).not.toContain('--accent');
+    expect(timeline).not.toMatch(/bg-\[var\(--(caution|fault)\)\]/);
   });
 });

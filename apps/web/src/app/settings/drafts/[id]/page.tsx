@@ -30,6 +30,13 @@ const emptyDiff: ManifestDiff = {
   domainsRemoved: [],
 };
 
+const MONO_PROJECT_FIELDS = new Set([
+  'slug',
+  'lifecycle',
+  'importance',
+  'repository',
+]);
+
 function storedDiff(value: unknown): ManifestDiff {
   return typeof value === 'object' && value !== null
     ? value as ManifestDiff
@@ -95,12 +102,12 @@ export default async function DraftDetailPage({
         <div>
           <Link
             href="/settings/drafts"
-            className="text-sm text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+            className="text-sm text-[var(--annotation)] hover:text-[var(--line)]"
           >
             ← Draft 목록
           </Link>
           <div className="mt-4 flex items-center gap-3">
-            <h2 className="text-xl font-medium text-[var(--color-ink)]">
+            <h2 className="text-xl font-medium text-[var(--line)]">
               {title}
             </h2>
             <Badge
@@ -112,17 +119,24 @@ export default async function DraftDetailPage({
         </div>
 
         <Card>
-          <h3 className="text-base font-medium text-[var(--color-ink)]">
+          <h3 className="text-base font-medium text-[var(--line)]">
             변경 요약
           </h3>
           <div className="mt-4 grid gap-5 md:grid-cols-2">
             <section>
-              <h4 className="text-sm font-medium text-[var(--color-mute)]">
+              <h4 className="text-sm font-medium text-[var(--annotation)]">
                 프로젝트 필드
               </h4>
               <ul className="mt-2 space-y-1 text-sm">
                 {diff.project.map((change) => (
-                  <li key={change.field}>
+                  <li
+                    key={change.field}
+                    className={
+                      MONO_PROJECT_FIELDS.has(change.field)
+                        ? 'font-mono'
+                        : undefined
+                    }
+                  >
                     {change.field}: {change.from ?? '—'} → {change.to ?? '—'}
                   </li>
                 ))}
@@ -130,12 +144,12 @@ export default async function DraftDetailPage({
               </ul>
             </section>
             <section>
-              <h4 className="text-sm font-medium text-[var(--color-mute)]">
+              <h4 className="text-sm font-medium text-[var(--annotation)]">
                 구성요소
               </h4>
               <ul className="mt-2 space-y-1 text-sm">
                 {diff.componentsAdded.map((name) => (
-                  <li key={`added-${name}`} className="text-[var(--color-success)]">
+                  <li key={`added-${name}`} className="text-[var(--confirm)]">
                     추가: {name}
                   </li>
                 ))}
@@ -146,14 +160,14 @@ export default async function DraftDetailPage({
                   </li>
                 ))}
                 {diff.componentsRemoved.map((name) => (
-                  <li key={`removed-${name}`} className="text-[var(--color-warning)]">
+                  <li key={`removed-${name}`} className="text-[var(--caution)]">
                     {name}: manifest에 없음 — 자동 삭제하지 않음
                   </li>
                 ))}
               </ul>
             </section>
             <section>
-              <h4 className="text-sm font-medium text-[var(--color-mute)]">
+              <h4 className="text-sm font-medium text-[var(--annotation)]">
                 도메인
               </h4>
               <ul className="mt-2 space-y-1 text-sm">
@@ -169,7 +183,7 @@ export default async function DraftDetailPage({
         </Card>
 
         <Card>
-          <h3 className="text-base font-medium text-[var(--color-ink)]">
+          <h3 className="text-base font-medium text-[var(--line)]">
             배포 선언
           </h3>
           <div className="mt-3 space-y-4 text-sm">
@@ -182,7 +196,7 @@ export default async function DraftDetailPage({
               ] as const;
               return (
                 <section key={component.name}>
-                  <h4 className="font-medium text-[var(--color-body)]">
+                  <h4 className="font-mono font-medium text-[var(--line-mute)]">
                     {component.name}
                   </h4>
                   <ul className="mt-1 space-y-1">
@@ -196,8 +210,8 @@ export default async function DraftDetailPage({
                           key={field}
                           className={
                             source?.value.origin === 'inferred'
-                              ? 'text-[var(--color-warning)]'
-                              : 'text-[var(--color-body)]'
+                              ? 'font-mono text-[var(--caution)]'
+                              : 'font-mono text-[var(--line-mute)]'
                           }
                         >
                           {field}: {value ?? '—'}
@@ -216,7 +230,7 @@ export default async function DraftDetailPage({
         </Card>
 
         <Card>
-          <h3 className="text-base font-medium text-[var(--color-ink)]">
+          <h3 className="text-base font-medium text-[var(--line)]">
             검증 결과
           </h3>
           {issues.length > 0 ? (
@@ -226,8 +240,8 @@ export default async function DraftDetailPage({
                   key={`${issue.path}-${index}`}
                   className={
                     issue.severity === 'error'
-                      ? 'text-[var(--color-error)]'
-                      : 'text-[var(--color-warning)]'
+                      ? 'text-[var(--fault)]'
+                      : 'text-[var(--caution)]'
                   }
                 >
                   {issue.path || 'manifest'}: {issue.message}
@@ -235,14 +249,14 @@ export default async function DraftDetailPage({
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-[var(--color-success)]">
+            <p className="mt-2 text-sm text-[var(--confirm)]">
               오류나 경고가 없습니다.
             </p>
           )}
         </Card>
 
         <Card>
-          <h3 className="text-base font-medium text-[var(--color-ink)]">
+          <h3 className="text-base font-medium text-[var(--line)]">
             필드 출처
           </h3>
           <ul className="mt-3 space-y-2 text-sm">
@@ -254,8 +268,8 @@ export default async function DraftDetailPage({
                   key={`${component}-${field}`}
                   className={
                     uncertain
-                      ? 'text-[var(--color-warning)]'
-                      : 'text-[var(--color-body)]'
+                      ? 'text-[var(--caution)]'
+                      : 'text-[var(--line-mute)]'
                   }
                 >
                   {component}.{field}: {value.origin ?? 'unknown'}

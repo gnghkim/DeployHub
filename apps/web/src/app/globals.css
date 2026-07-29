@@ -1,37 +1,46 @@
 @import "tailwindcss";
 
-@theme {
-  --color-canvas: #07080a;
-  --color-surface: #0d0d0d;
-  --color-surface-elevated: #101111;
-  --color-surface-card: #121212;
+:root {
+  color-scheme: dark;
 
-  --color-ink: #f4f4f6;
-  --color-body: #cdcdcd;
-  --color-mute: #9c9c9d;
-  --color-ash: #6a6b6c;
+  /* 제도면 */
+  --canvas:      #07080a;
+  --paper:       #0d0d0d;
+  --grid:        #16181a;
+  --rule:        #242728;
 
-  --color-hairline: #242728;
+  /* 선언과 관측 */
+  --line:        #f4f4f6;
+  --line-mute:   #cdcdcd;
+  --annotation:  #9c9c9d;
+  --absent:      #6a6b6c;
 
-  --color-success: #59d499;
-  --color-warning: #ffc533;
-  --color-error: #ff6161;
-  --color-info: #57c1ff;
+  /* 상태 */
+  --fault:       #ff6161;
+  --caution:     #ffc533;
 
-  --radius-badge: 4px;
-  --radius-row: 6px;
+  /* 상호작용 — 상태가 아니다 */
+  --confirm:     #59d499;
+  --accent:      #57c1ff;
+
+  --radius-card:   10px;
   --radius-button: 8px;
-  --radius-card: 10px;
-  --radius-modal: 16px;
 
   --font-sans: Inter, "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-:root { color-scheme: dark; }
-
 html, body {
-  background-color: var(--color-canvas);
-  color: var(--color-body);
+  background-color: var(--canvas);
+  color: var(--line-mute);
   font-family: var(--font-sans);
   font-feature-settings: "calt", "kern", "liga";
+}
+
+/* 도면 블록에만 격자를 깐다. 페이지 바탕은 민무늬다. */
+.sheet {
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(to right,  var(--grid) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(to bottom, var(--grid) 0 1px, transparent 1px 32px);
 }

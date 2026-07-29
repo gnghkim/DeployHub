@@ -151,26 +151,26 @@ export default async function ProjectDetailPage({
           <div>
             <Link
               href="/"
-              className="text-sm text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+              className="text-sm text-[var(--annotation)] hover:text-[var(--line)]"
             >
               ← 프로젝트 목록
             </Link>
-            <h2 className="mt-4 text-xl font-medium text-[var(--color-ink)]">
+            <h2 className="mt-4 text-xl font-medium text-[var(--line)]">
               {project.name}
             </h2>
-            <p className="mt-1 text-sm text-[var(--color-mute)]">
+            <p className="mt-1 text-sm text-[var(--annotation)]">
               {project.description ?? '설명이 없습니다.'}
             </p>
           </div>
           <Link
             href={`/projects/${project.slug}/edit`}
-            className="inline-flex h-9 items-center rounded-[var(--radius-button)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] px-3 text-sm font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-surface-card)]"
+            className="inline-flex h-9 items-center rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm font-medium text-[var(--line)] transition-colors hover:bg-white/[0.02]"
           >
             편집
           </Link>
         </div>
 
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--color-body)]">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--line-mute)]">
           <span>{project.lifecycle}</span>
           <MetadataDot />
           <Badge tone={STATUS_TONES[status.status]}>
@@ -186,10 +186,10 @@ export default async function ProjectDetailPage({
 
         <Card>
           <div>
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               구성도
             </h3>
-            <p className="mt-1 text-xs text-[var(--color-mute)]">
+            <p className="mt-1 text-xs text-[var(--annotation)]">
               왼쪽은 manifest 선언, 오른쪽은 연결된 관측 결과입니다.
             </p>
           </div>
@@ -206,10 +206,10 @@ export default async function ProjectDetailPage({
 
         <Card>
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               판정 근거
             </h3>
-            <span className="text-xs text-[var(--color-mute)]">
+            <span className="text-xs text-[var(--annotation)]">
               최신 주의·장애 이벤트 {evidenceEvents.length}건
             </span>
           </div>
@@ -225,27 +225,27 @@ export default async function ProjectDetailPage({
                 return (
                   <li
                     key={event.id}
-                    className="rounded-[var(--radius-card)] border border-[var(--color-hairline)] bg-[var(--color-surface-elevated)] p-4"
+                    className="rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] p-4"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={event.severity === 'critical' ? 'error' : 'warning'}>
                         {event.severity === 'critical' ? '장애' : '주의'}
                       </Badge>
-                      <span className="text-sm font-medium text-[var(--color-ink)]">
+                      <span className="text-sm font-medium text-[var(--line)]">
                         {resource?.name ?? component?.name ?? project.name}
                       </span>
-                      <span className="font-mono text-xs text-[var(--color-mute)]">
+                      <span className="font-mono text-xs text-[var(--annotation)]">
                         {event.kind}
                       </span>
                       <time
-                        className="text-xs text-[var(--color-mute)]"
+                        className="font-mono text-xs text-[var(--annotation)]"
                         dateTime={event.occurredAt.toISOString()}
                         title={DATE_FORMAT.format(event.occurredAt)}
                       >
                         {formatRelativeTime(event.occurredAt, renderedAt)}
                       </time>
                     </div>
-                    <p className="mt-2 text-sm text-[var(--color-body)]">
+                    <p className="mt-2 text-sm text-[var(--line-mute)]">
                       <span className="font-mono">{event.currentValue}</span>
                       <span aria-hidden="true"> · </span>
                       {event.detail}
@@ -255,7 +255,7 @@ export default async function ProjectDetailPage({
               })}
             </ul>
           ) : (
-            <p className="mt-4 text-sm text-[var(--color-mute)]">
+            <p className="mt-4 text-sm text-[var(--annotation)]">
               최신 주의 또는 장애 이벤트가 없습니다.
             </p>
           )}
@@ -263,10 +263,10 @@ export default async function ProjectDetailPage({
 
         <Card>
           <div className="flex items-center gap-3">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               최종 배포
             </h3>
-            <span className="text-xs text-[var(--color-mute)]">
+            <span className="text-xs text-[var(--annotation)]">
               {latestDeployments.length}개 구성요소
             </span>
           </div>
@@ -291,27 +291,31 @@ export default async function ProjectDetailPage({
                   const iso = occurredAt.toISOString();
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium text-[var(--color-ink)]">
+                      <TableCell className="font-medium text-[var(--line)]">
                         {component?.name ?? '프로젝트'}
                         {item.provider === 'docker' ? (
                           <span
-                            className="ml-2 font-mono text-xs text-[var(--color-mute)]"
+                            className="ml-2 font-mono text-xs text-[var(--annotation)]"
                             title={item.externalDeploymentId}
                           >
                             {shortContainerId(item.externalDeploymentId)}
                           </span>
                         ) : null}
                       </TableCell>
-                      <TableCell>{item.provider}</TableCell>
-                      <TableCell>
+                      <TableCell className="font-mono">{item.provider}</TableCell>
+                      <TableCell className="font-mono">
                         {item.imageName ?? item.version ?? '—'}
                       </TableCell>
                       <TableCell className="font-mono text-xs">
                         {item.commitSha?.slice(0, 7) ?? '—'}
                       </TableCell>
-                      <TableCell>{item.status}</TableCell>
+                      <TableCell className="font-mono">{item.status}</TableCell>
                       <TableCell>
-                        <time dateTime={iso} title={DATE_FORMAT.format(occurredAt)}>
+                        <time
+                          className="font-mono"
+                          dateTime={iso}
+                          title={DATE_FORMAT.format(occurredAt)}
+                        >
                           {formatRelativeTime(occurredAt, renderedAt)}
                         </time>
                       </TableCell>
@@ -321,7 +325,7 @@ export default async function ProjectDetailPage({
               </TableBody>
             </Table>
           ) : (
-            <p className="mt-4 text-sm text-[var(--color-mute)]">
+            <p className="mt-4 text-sm text-[var(--annotation)]">
               관측된 배포가 없습니다.
             </p>
           )}
@@ -329,14 +333,14 @@ export default async function ProjectDetailPage({
 
         <Card>
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-base font-medium text-[var(--color-ink)]">
+            <h3 className="text-base font-medium text-[var(--line)]">
               변경 이력
             </h3>
-            <span className="text-xs text-[var(--color-mute)]">
+            <span className="text-xs text-[var(--annotation)]">
               최근 {historyEvents.length}건
             </span>
           </div>
-          <div className="mt-4 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-hairline)]">
+          <div className="mt-4 overflow-hidden rounded-[var(--radius-card)] border border-[var(--rule)]">
             <TimelineList
               events={historyEvents}
               renderedAt={renderedAt}
@@ -347,14 +351,14 @@ export default async function ProjectDetailPage({
 
         <Card>
           {drift.length === 0 ? (
-            <p className="text-sm text-[var(--color-mute)]">Drift 없음</p>
+            <p className="text-sm text-[var(--annotation)]">Drift 없음</p>
           ) : (
             <>
               <div className="flex items-center gap-3">
-                <h3 className="text-base font-medium text-[var(--color-ink)]">
+                <h3 className="text-base font-medium text-[var(--line)]">
                   Drift
                 </h3>
-                <span className="text-xs text-[var(--color-mute)]">
+                <span className="text-xs text-[var(--annotation)]">
                   {drift.length}건
                 </span>
               </div>
@@ -366,26 +370,26 @@ export default async function ProjectDetailPage({
                       key={`${item.kind}:${item.componentId ?? 'project'}:${index}`}
                       className={
                         conflict
-                          ? 'rounded-[var(--radius-card)] border-2 border-[var(--color-error)] bg-[var(--color-surface-elevated)] p-3'
-                          : 'rounded-[var(--radius-card)] border border-[var(--color-hairline)] p-3'
+                          ? 'rounded-[var(--radius-card)] border-2 border-[var(--fault)] bg-[var(--paper)] p-3'
+                          : 'rounded-[var(--radius-card)] border border-[var(--rule)] p-3'
                       }
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={conflict ? 'error' : 'warning'}>
+                        <Badge tone={conflict ? 'error' : 'neutral'}>
                           {DRIFT_LABELS[item.kind]}
                         </Badge>
                         {item.declared ? (
-                          <span className="text-xs text-[var(--color-mute)]">
+                          <span className="font-mono text-xs text-[var(--annotation)]">
                             선언: {item.declared}
                           </span>
                         ) : null}
                         {item.observed ? (
-                          <span className="text-xs text-[var(--color-mute)]">
+                          <span className="font-mono text-xs text-[var(--annotation)]">
                             관측: {item.observed}
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-2 text-sm text-[var(--color-body)]">
+                      <p className="mt-2 text-sm text-[var(--line-mute)]">
                         {item.detail}
                       </p>
                     </li>
@@ -401,5 +405,5 @@ export default async function ProjectDetailPage({
 }
 
 function MetadataDot() {
-  return <span aria-hidden="true" className="text-[var(--color-stone)]">·</span>;
+  return <span aria-hidden="true" className="text-[var(--absent)]">·</span>;
 }

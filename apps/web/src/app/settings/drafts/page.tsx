@@ -37,10 +37,10 @@ export default async function DraftsPage() {
       <Topbar title="Drafts" />
       <main className="p-4 md:p-8">
         <Card>
-          <h2 className="text-lg font-medium text-[var(--color-ink)]">
+          <h2 className="text-lg font-medium text-[var(--line)]">
             프로젝트 등록 검토
           </h2>
-          <p className="mb-4 mt-1 text-sm text-[var(--color-mute)]">
+          <p className="mb-4 mt-1 text-sm text-[var(--annotation)]">
             CLI가 제출한 manifest는 승인 전까지 운영 프로젝트를 변경하지 않습니다.
           </p>
           <Table>
@@ -58,7 +58,7 @@ export default async function DraftsPage() {
                   <TableCell>
                     <Link
                       href={`/settings/drafts/${draft.id}`}
-                      className="font-medium text-[var(--color-ink)] hover:underline"
+                      className="font-mono font-medium text-[var(--line)] hover:underline"
                     >
                       {draft.id}
                     </Link>
@@ -69,13 +69,13 @@ export default async function DraftsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>{draft.sourceType}</TableCell>
-                  <TableCell>{DATE_FORMAT.format(draft.createdAt)}</TableCell>
+                  <TableCell className="font-mono">{DATE_FORMAT.format(draft.createdAt)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           {drafts.length === 0 ? (
-            <p className="py-10 text-center text-sm text-[var(--color-mute)]">
+            <p className="py-10 text-center text-sm text-[var(--annotation)]">
               검토할 Draft가 없습니다.
             </p>
           ) : null}
