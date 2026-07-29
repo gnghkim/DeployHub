@@ -36,6 +36,45 @@ function compareText(left: string, right: string): number {
   return 0;
 }
 
+export async function countDiscoveredStacks(db: Db): Promise<number> {
+  const result = await db.execute<{ discovered_count: number }>(sql`
+    WITH containers AS (
+      SELECT
+        r.id,
+        nullif(btrim(r.metadata->>'composeProject'), '') AS stack,
+        EXISTS (
+          SELECT 1
+          FROM component_resources cr
+          WHERE cr.resource_id = r.id
+        ) AS linked
+      FROM resources r
+      WHERE r.resource_type = 'docker_container'
+        AND r.deleted_at IS NULL
+    ),
+    linked_stacks AS (
+      SELECT DISTINCT stack
+      FROM containers
+      WHERE linked
+        AND stack IS NOT NULL
+    )
+    SELECT count(
+      DISTINCT coalesce(containers.stack, ${UNGROUPED_STACK})
+    )::int AS discovered_count
+    FROM containers
+    WHERE NOT containers.linked
+      AND (
+        containers.stack IS NULL
+        OR NOT EXISTS (
+          SELECT 1
+          FROM linked_stacks
+          WHERE linked_stacks.stack = containers.stack
+        )
+      )
+  `);
+
+  return result.rows[0]?.discovered_count ?? 0;
+}
+
 export async function listDiscoveredStacks(db: Db): Promise<DiscoveredStack[]> {
   const composeProject = sql<string | null>`${resources.metadata}->>'composeProject'`;
   const image = sql<string | null>`${resources.metadata}->>'image'`;
