@@ -8,15 +8,38 @@ const page = readFileSync(
 );
 
 describe('발견 화면', () => {
+  it('선언이 없는 관측으로 그린다', () => {
+    expect(page).toContain('<Annotation');
+  });
+
+  it('경고색을 쓰지 않는다', () => {
+    expect(page).not.toContain('var(--' + 'fault)');
+    expect(page).not.toContain('var(--' + 'caution)');
+    expect(page).not.toContain('tone="' + 'fault"');
+    expect(page).not.toContain('tone="' + 'caution"');
+  });
+
+  it('등록 버튼을 만들지 않는다', () => {
+    expect(page).not.toContain('등록' + '하기');
+    expect(page).not.toContain('register' + 'Stack');
+  });
+
   it('미등록 Docker 스택과 컨테이너 관측값을 표시한다', () => {
     expect(page).not.toContain("'use client'");
     expect(page).toContain('listDiscoveredStacks');
     expect(page).toContain('발견됨 {stacks.length}');
     expect(page).toContain('관측됐지만 아직 등록되지 않은 스택입니다');
     expect(page).toContain('컨테이너 {stack.containers.length}');
-    expect(page).toContain('{container.name}');
-    expect(page).toContain("{container.status ?? '—'}");
-    expect(page).toContain('{container.image ?? \'\'}');
+    expect(page).toContain('container.name,');
+    expect(page).toContain("container.status ?? '—',");
+    expect(page).toContain("container.image ?? '',");
+    expect(page).toContain(".join(' · ')");
+  });
+
+  it('스택을 격자 도면으로 감싸고 선언 부재를 표시한다', () => {
+    expect(page).toContain('<Sheet');
+    expect(page).toContain('(선언 없음)');
+    expect(page).toContain('var(--absent)');
   });
 
   it('AI와 등록 초안 승인으로 이어지는 기존 등록 방식을 한 번 안내한다', () => {
@@ -34,8 +57,8 @@ describe('발견 화면', () => {
   it('등록 동작이나 경고 판정을 만들지 않는다', () => {
     expect(page).not.toContain('등록' + '하기');
     expect(page).not.toContain('register' + 'Stack');
-    expect(page).not.toContain('tone="caution"');
-    expect(page).not.toContain('tone="fault"');
+    expect(page).not.toContain('tone="' + 'caution"');
+    expect(page).not.toContain('tone="' + 'fault"');
   });
 
   it('발견된 스택이 없으면 좋은 상태임을 명확히 표시한다', () => {
