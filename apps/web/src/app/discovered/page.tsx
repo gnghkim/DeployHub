@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { listDiscoveredStacks } from '@deployhub/db';
+import { Annotation } from '@/components/schematic/annotation';
+import { Sheet } from '@/components/schematic/sheet';
 import { Topbar } from '@/components/shell/topbar';
 import { db } from '@/lib/db';
 
@@ -41,11 +43,10 @@ export default async function DiscoveredPage() {
         {stacks.length > 0 ? (
           <div className="space-y-4">
             {stacks.map((stack) => (
-              <section
+              <Sheet
                 key={stack.stack}
-                className="overflow-hidden rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)]"
               >
-                <header className="flex items-center justify-between gap-4 border-b border-[var(--rule)] px-5 py-4">
+                <header className="flex items-center justify-between gap-4 border-b border-[var(--rule)] pb-4">
                   <h3 className="font-mono font-medium text-[var(--line)]">
                     {stack.stack}
                   </h3>
@@ -57,21 +58,24 @@ export default async function DiscoveredPage() {
                   {stack.containers.map((container) => (
                     <li
                       key={container.name}
-                      className="grid gap-1 px-5 py-3 text-sm sm:grid-cols-[minmax(12rem,1fr)_8rem_minmax(12rem,1fr)] sm:gap-4"
+                      className="grid grid-cols-[minmax(0,6rem)_minmax(0,1fr)] gap-2 py-3 text-sm first:pt-4 last:pb-0 sm:grid-cols-[minmax(0,8rem)_minmax(0,1fr)] sm:gap-4"
                     >
-                      <span className="font-mono font-medium text-[var(--line)]">
-                        {container.name}
+                      <span className="font-mono text-xs text-[var(--absent)]">
+                        (선언 없음)
                       </span>
-                      <span className="font-mono text-[var(--line-mute)]">
-                        {container.status ?? '—'}
-                      </span>
-                      <span className="font-mono text-xs text-[var(--annotation)]">
-                        {container.image ?? ''}
+                      <span className="min-w-0 break-all">
+                        <Annotation
+                          value={[
+                            container.name,
+                            container.status ?? '—',
+                            container.image ?? '',
+                          ].filter(Boolean).join(' · ')}
+                        />
                       </span>
                     </li>
                   ))}
                 </ul>
-              </section>
+              </Sheet>
             ))}
           </div>
         ) : (

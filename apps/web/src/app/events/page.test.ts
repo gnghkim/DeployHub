@@ -14,6 +14,16 @@ const page = source('./page.tsx');
 const timeline = source('../../components/events/timeline-list.tsx');
 
 describe('global events timeline', () => {
+  it('info 에 색을 주지 않는다', () => {
+    expect(timeline).toMatch(
+      /info:\s*'text-\[var\(--annotation\)\]'/,
+    );
+  });
+
+  it('값을 모노로 렌더한다', () => {
+    expect(timeline).toContain('font-mono');
+  });
+
   it('is a dynamic server page backed by the global timeline query', () => {
     expect(page).not.toContain("'use client'");
     expect(page).toContain("export const dynamic = 'force-dynamic'");
