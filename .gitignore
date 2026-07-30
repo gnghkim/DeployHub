@@ -15,6 +15,15 @@ build/
 *.pem
 *.key
 
+# 저장소는 공개다. 자격증명 파일이 작업 디렉터리에 잠깐 놓이는 일은
+# 실제로 일어난다 — npm 2FA 복구 코드를 여기에 저장한 적이 있다.
+# git add -A 한 번이면 영구히 공개되고 히스토리에서 지워도 남는다.
+*recovery*code*
+*recovery*codes*
+.npmrc
+*.otp
+*token*.txt
+
 # Local CLI credentials
 .deployhub/
 
