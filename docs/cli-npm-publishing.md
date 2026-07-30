@@ -12,6 +12,25 @@
 1. https://www.npmjs.com/org/create 에서 조직 이름을 `deployhub`로 만든다
 2. Free 플랜을 고른다 — 공개 패키지에 제한이 없다
 3. `npm login`
+4. **2단계 인증(2FA)을 켠다.** npm은 게시에 2FA를 요구한다.
+   https://www.npmjs.com/settings/~/profile 의 Two-Factor Authentication에서
+   인증 앱을 등록한다.
+
+**2FA 없이 게시하면 `E403`이 난다.** 메시지는 이렇게 나온다.
+
+```
+npm error 403 Two-factor authentication or granular access token with
+bypass 2fa enabled is required to publish packages.
+```
+
+`404`가 아니라 `403`이라는 점이 중요하다. `404`는 스코프(org)가 없다는 뜻이고
+`403`은 org는 찾았으나 인증이 부족하다는 뜻이다. 둘을 섞으면 없는 org를 다시
+만들려 시간을 쓴다.
+
+자동화할 계획이면 OTP 대신 **Granular Access Token**을 쓴다.
+https://www.npmjs.com/settings/~/tokens 에서 `@deployhub` 스코프에 Read and
+write 권한을 주고 **Bypass 2FA를 켠다.** 토큰은 `NPM_TOKEN` 환경변수나
+`~/.npmrc`에 둔다. **저장소의 `.npmrc`에 넣지 마라 — 공개 저장소다.**
 
 **이 단계를 건너뛰면 게시가 404로 실패한다.** 메시지가 인증 문제처럼 보여
 원인을 찾기 어렵다. 스코프가 없으면 레지스트리는 그 경로를 아예 모른다.
@@ -119,8 +138,12 @@
 
 ```bash
 cd packages/cli
-pnpm publish
+pnpm publish --otp=<인증앱 6자리>
 ```
+
+OTP는 30초마다 바뀐다. 명령을 먼저 준비해 두고 코드를 읽는 순간 실행한다.
+Granular Access Token에 Bypass 2FA를 켜 두었다면 `--otp` 없이 `pnpm publish`로
+끝난다.
 
 **`npm publish`가 아니라 `pnpm publish`다.** 둘이 다르게 동작한다.
 
