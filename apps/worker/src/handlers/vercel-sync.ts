@@ -23,7 +23,7 @@ import type { JobHandler } from '../runner';
 
 const SYNC_ERROR = 'Vercel 동기화에 실패했습니다.';
 const ZERO_PROJECTS_WARNING =
-  '프로젝트 0건. 팀 계정 토큰이면 teamId 지정이 필요한데 아직 지원하지 않습니다.';
+  '프로젝트 0건. 팀 계정이면 teamId와 토큰 권한을 확인해 주세요.';
 
 type VercelSyncDependencies = {
   createCollector?: (

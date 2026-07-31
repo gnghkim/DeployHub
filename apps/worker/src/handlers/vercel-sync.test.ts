@@ -281,7 +281,7 @@ describe('Vercel sync handler', () => {
       .where(eq(schema.providerAccounts.id, accountId));
     expect(account?.lastSyncAt).toBeInstanceOf(Date);
     expect(account?.lastError).toBe(
-      '프로젝트 0건. 팀 계정 토큰이면 teamId 지정이 필요한데 아직 지원하지 않습니다.',
+      '프로젝트 0건. 팀 계정이면 teamId와 토큰 권한을 확인해 주세요.',
     );
     expect(account?.lastError).not.toContain(token);
   });
