@@ -21,7 +21,18 @@ describe.each(['UTC', 'America/Los_Angeles'])('formatDateTime in %s', (runtimeTi
 
     expect(DISPLAY_TIME_ZONE).toBe('Asia/Seoul');
     expect(formatDateTime(new Date('2026-07-31T01:00:00Z'))).toBe(
-      '2026. 7. 31. AM 10:00',
+      '2026. 7. 31. 10:00',
+    );
+  });
+
+  it('renders midnight as 00:00 rather than 24:00', async () => {
+    process.env.TZ = runtimeTimeZone;
+    vi.resetModules();
+
+    const { formatDateTime } = await import('./datetime');
+
+    expect(formatDateTime(new Date('2026-07-30T15:00:00Z'))).toBe(
+      '2026. 7. 31. 00:00',
     );
   });
 });
