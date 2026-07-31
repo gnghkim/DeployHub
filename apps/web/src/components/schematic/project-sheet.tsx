@@ -4,11 +4,7 @@ import { Annotation } from './annotation';
 import { Sheet } from './sheet';
 import { StatusDot } from '../ui/status-dot';
 import { Badge, type Tone } from '../ui/badge';
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+import { formatDateTime } from '../../lib/datetime';
 
 export type ProjectSheetProject = {
   id: string;
@@ -104,7 +100,7 @@ export function ProjectSheet({
           <time
             className="shrink-0 text-xs text-[var(--absent)]"
             dateTime={project.latestDeploymentAt.toISOString()}
-            title={DATE_FORMAT.format(project.latestDeploymentAt)}
+            title={formatDateTime(project.latestDeploymentAt)}
           >
             {project.latestDeploymentRelative}
           </time>

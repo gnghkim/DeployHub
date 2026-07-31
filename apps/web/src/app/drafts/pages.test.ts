@@ -45,7 +45,10 @@ describe('Draft review screens', () => {
       'className="font-mono font-medium text-[var(--line)] hover:underline"',
     );
     expect(list).toContain(
-      '<TableCell className="font-mono">{DATE_FORMAT.format(draft.createdAt)}</TableCell>',
+      "import { formatDateTime } from '../../../lib/datetime';",
+    );
+    expect(list).toContain(
+      '<TableCell className="font-mono">{formatDateTime(draft.createdAt)}</TableCell>',
     );
   });
 

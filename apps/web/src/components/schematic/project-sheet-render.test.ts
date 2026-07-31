@@ -18,7 +18,7 @@ const nodeModule = require('node:module') as {
     (module: CompilableModule, filename: string) => void
   >;
 };
-nodeModule._extensions['.tsx'] = (module, filename) => {
+const compileTypeScript = (module: CompilableModule, filename: string) => {
   const source = readFileSync(filename, 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: {
@@ -31,6 +31,8 @@ nodeModule._extensions['.tsx'] = (module, filename) => {
   });
   module._compile(output.outputText, filename);
 };
+nodeModule._extensions['.ts'] = compileTypeScript;
+nodeModule._extensions['.tsx'] = compileTypeScript;
 
 const { ProjectSheet } = require('./project-sheet.tsx') as {
   ProjectSheet: ProjectSheetComponent;

@@ -19,21 +19,17 @@ import { removeResourceLink } from '../../../actions/links';
 import { Button } from '../../../components/ui/button';
 import { db } from '../../../lib/db';
 import { shortContainerId } from '../../../lib/backend-view';
+import { formatDateTime } from '../../../lib/datetime';
 import { suggestMatches } from '../../../lib/matcher';
 import { githubResourceDetails } from '../../../lib/resource-view';
 import { SuggestionForm } from './suggestion-form';
 
 export const dynamic = 'force-dynamic';
 
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
-
 function displayDate(value: string | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : DATE_FORMAT.format(date);
+  return Number.isNaN(date.getTime()) ? '—' : formatDateTime(date);
 }
 
 function metadataString(metadata: unknown, key: string): string | null {

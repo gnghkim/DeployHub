@@ -1,10 +1,6 @@
 import type { TimelineEvent } from '@deployhub/db';
 import { formatRelativeTime } from '@/lib/backend-view';
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+import { formatDateTime } from '../../lib/datetime';
 
 const SEVERITY_TEXT = {
   info: 'text-[var(--annotation)]',
@@ -50,7 +46,7 @@ export function TimelineList({
             <time
               className="block font-mono text-xs text-[var(--annotation)] sm:mt-1"
               dateTime={event.occurredAt.toISOString()}
-              title={DATE_FORMAT.format(event.occurredAt)}
+              title={formatDateTime(event.occurredAt)}
             >
               {relativeTime}
             </time>

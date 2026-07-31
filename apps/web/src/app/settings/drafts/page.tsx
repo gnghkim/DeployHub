@@ -12,6 +12,7 @@ import {
   TableRow,
 } from '../../../components/ui/table';
 import { db } from '../../../lib/db';
+import { formatDateTime } from '../../../lib/datetime';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +24,6 @@ const STATUS_TONES: Record<string, Tone> = {
   superseded: 'neutral',
   draft: 'accent',
 };
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
 
 export default async function DraftsPage() {
   const drafts = await listDrafts(db);
@@ -69,7 +65,7 @@ export default async function DraftsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>{draft.sourceType}</TableCell>
-                  <TableCell className="font-mono">{DATE_FORMAT.format(draft.createdAt)}</TableCell>
+                  <TableCell className="font-mono">{formatDateTime(draft.createdAt)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

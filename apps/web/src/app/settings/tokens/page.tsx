@@ -15,14 +15,10 @@ import {
   TableRow,
 } from '../../../components/ui/table';
 import { db } from '../../../lib/db';
+import { formatDateTime } from '../../../lib/datetime';
 import { TokenForm } from './token-form';
 
 export const dynamic = 'force-dynamic';
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
 
 export default async function RegistrationTokensPage() {
   const session = await auth();
@@ -108,10 +104,10 @@ export default async function RegistrationTokensPage() {
                       {token.usedCount}/{token.maxUses}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {DATE_FORMAT.format(token.expiresAt)}
+                      {formatDateTime(token.expiresAt)}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {DATE_FORMAT.format(token.createdAt)}
+                      {formatDateTime(token.createdAt)}
                     </TableCell>
                     <TableCell>
                       {status === 'active' ? (

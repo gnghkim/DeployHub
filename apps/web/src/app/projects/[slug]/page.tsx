@@ -29,6 +29,7 @@ import {
   formatRelativeTime,
   shortContainerId,
 } from '../../../lib/backend-view';
+import { formatDateTime } from '../../../lib/datetime';
 import { summarizeProject } from '../../../lib/project-summary';
 import {
   ArchitectureComposition,
@@ -45,11 +46,6 @@ const DRIFT_LABELS: Record<DriftKind, string> = {
   provider_mismatch: 'Provider 불일치',
   link_conflict: '연결 충돌 · 사람 확인 필요',
 };
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
 
 const STATUS_TONES: Record<ProjectStatus, Tone> = {
   정상: 'neutral',
@@ -240,7 +236,7 @@ export default async function ProjectDetailPage({
                       <time
                         className="font-mono text-xs text-[var(--annotation)]"
                         dateTime={event.occurredAt.toISOString()}
-                        title={DATE_FORMAT.format(event.occurredAt)}
+                        title={formatDateTime(event.occurredAt)}
                       >
                         {formatRelativeTime(event.occurredAt, renderedAt)}
                       </time>
@@ -314,7 +310,7 @@ export default async function ProjectDetailPage({
                         <time
                           className="font-mono"
                           dateTime={iso}
-                          title={DATE_FORMAT.format(occurredAt)}
+                          title={formatDateTime(occurredAt)}
                         >
                           {formatRelativeTime(occurredAt, renderedAt)}
                         </time>

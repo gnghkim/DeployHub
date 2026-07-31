@@ -51,7 +51,10 @@ describe('global events timeline', () => {
       'className="block font-mono text-xs text-[var(--annotation)] sm:mt-1"',
     );
     expect(timeline).toContain('dateTime={event.occurredAt.toISOString()}');
-    expect(timeline).toContain('title={DATE_FORMAT.format(event.occurredAt)}');
+    expect(timeline).toContain(
+      "import { formatDateTime } from '../../lib/datetime';",
+    );
+    expect(timeline).toContain('title={formatDateTime(event.occurredAt)}');
   });
 
   it('shows transitions, marks first observations, and puts detail below', () => {
