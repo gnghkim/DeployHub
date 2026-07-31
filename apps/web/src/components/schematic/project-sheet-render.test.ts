@@ -1,40 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-
-type CompilableModule = {
-  _compile(source: string, filename: string): void;
-};
-
-type ProjectSheetComponent = typeof import('./project-sheet').ProjectSheet;
-
-const require = createRequire(import.meta.url);
-const nodeModule = require('node:module') as {
-  _extensions: Record<
-    string,
-    (module: CompilableModule, filename: string) => void
-  >;
-};
-nodeModule._extensions['.tsx'] = (module, filename) => {
-  const source = readFileSync(filename, 'utf8');
-  const output = ts.transpileModule(source, {
-    compilerOptions: {
-      esModuleInterop: true,
-      jsx: ts.JsxEmit.ReactJSX,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2023,
-    },
-    fileName: filename,
-  });
-  module._compile(output.outputText, filename);
-};
-
-const { ProjectSheet } = require('./project-sheet.tsx') as {
-  ProjectSheet: ProjectSheetComponent;
-};
+import { ProjectSheet } from './project-sheet';
 
 const baseProject = {
   id: 'project-1',

@@ -1,10 +1,6 @@
 import { Button } from '../../../../components/ui/button';
 import { Card } from '../../../../components/ui/card';
-
-const DATE_FORMAT = new Intl.DateTimeFormat('ko-KR', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+import { formatDateTime } from '../../../../lib/datetime';
 
 export type ProviderAccountCardProps = {
   id: string;
@@ -40,7 +36,7 @@ export function ProviderAccountCard({
             <dt className="text-xs text-[var(--annotation)]">마지막 확인</dt>
             <dd className="font-mono text-[var(--line-mute)]">
               {lastVerifiedAt
-                ? DATE_FORMAT.format(lastVerifiedAt)
+                ? formatDateTime(lastVerifiedAt)
                 : '—'}
             </dd>
           </div>
@@ -49,7 +45,7 @@ export function ProviderAccountCard({
               마지막 동기화
             </dt>
             <dd className="font-mono text-[var(--line-mute)]">
-              {lastSyncAt ? DATE_FORMAT.format(lastSyncAt) : '—'}
+              {lastSyncAt ? formatDateTime(lastSyncAt) : '—'}
             </dd>
           </div>
         </dl>
