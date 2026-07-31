@@ -380,20 +380,41 @@ DeployHub 화면 → **Providers** → GitHub 계정 추가 → 토큰 입력 �
 
 ### 재배포
 
+**먼저 배포 경로와 저장소 소유자를 확인한다.** 4장은 `/opt` 에 clone 하지만 실제 서버가
+거기 있다는 보장이 없다. 돌고 있는 컨테이너에게 직접 물어본다.
+
 ```bash
-cd ~/DeployHub
-git pull --ff-only
+docker inspect deployhub-web \
+  --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}'
+# 출력은 compose 파일이 있는 docker/ 디렉터리다. 저장소 루트는 그 상위.
+stat -c %U <저장소-루트>
+```
+
+**소유자가 root 가 아니면 git 명령을 root 로 실행하지 마라.** git 이
+`detected dubious ownership` 로 거부한다. `safe.directory` 를 root 에 추가하는 대신
+소유자로 실행한다 — 파일 소유권이 섞이면 이후 배포가 더 꼬인다.
+
+```bash
+cd <저장소-루트>
+sudo -u <소유자> git -C <저장소-루트> pull --ff-only
 docker compose --env-file .env -f docker/compose.yml build
 docker compose --env-file .env -f docker/compose.yml --profile tools build migrate   # 빠뜨리면 마이그레이션이 거짓 성공한다
 docker compose --env-file .env -f docker/compose.yml --profile tools run --rm migrate
 docker compose --env-file .env -f docker/compose.yml up -d
 ```
 
-마이그레이션이 있는 갱신이라면 테이블이 실제로 생겼는지 확인한다:
+마이그레이션이 있는 갱신이라면 **적용 메시지를 믿지 말고 스키마를 직접 확인한다.**
+테이블이 새로 생기는 변경이라면:
 
 ```bash
 docker exec deployhub-postgres psql -U deployhub -d deployhub -tAc \
   "select table_name from information_schema.tables where table_schema='public' order by 1"
+```
+
+컬럼만 늘어나는 변경이라면 테이블 목록은 그대로이므로 해당 테이블을 본다:
+
+```bash
+docker exec deployhub-postgres psql -U deployhub -d deployhub -c "\d <테이블>"
 ```
 
 ### 로그
