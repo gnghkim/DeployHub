@@ -123,7 +123,10 @@ export default async function ProvidersPage() {
           </div>
 
           <Card>
-            <form action={connectVercel} className="flex items-end gap-3">
+            <form
+              action={connectVercel}
+              className="flex flex-col gap-3 md:flex-row md:items-start"
+            >
               <label className="min-w-0 flex-1 text-sm text-[var(--line-mute)]">
                 Access token
                 <Input
@@ -150,7 +153,7 @@ export default async function ProvidersPage() {
                   개인 계정이면 비워둡니다
                 </span>
               </label>
-              <Button variant="primary" type="submit">
+              <Button className="md:mt-6" variant="primary" type="submit">
                 연결 테스트 및 저장
               </Button>
             </form>

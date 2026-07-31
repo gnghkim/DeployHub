@@ -76,6 +76,21 @@ describe('provider settings page', () => {
     );
   });
 
+  it('stacks the Vercel form by default and aligns it horizontally at md', () => {
+    const vercelForm = matchingPageSource(
+      /<form\b[^>]*\baction=\{connectVercel\}[^>]*>[\s\S]*?<\/form>/,
+    );
+    const formOpeningTag = vercelForm.match(/<form\b[^>]*>/)?.[0] ?? '';
+    const submitButton = vercelForm.match(
+      /<Button\b[^>]*\btype="submit"[^>]*>/,
+    )?.[0] ?? '';
+
+    expect(formOpeningTag).toContain(
+      'className="flex flex-col gap-3 md:flex-row md:items-start"',
+    );
+    expect(submitButton).toContain('className="md:mt-6"');
+  });
+
   it('shows each empty-state message only through its provider condition', () => {
     const githubEmptyState = matchingPageSource(
       /\{\s*githubAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
