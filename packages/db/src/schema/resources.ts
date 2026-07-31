@@ -10,6 +10,7 @@ export const providerAccounts = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     provider: providerType('provider').notNull(),
     name: text('name').notNull(),
+    externalAccountId: text('external_account_id'),
     encryptedToken: text('encrypted_token').notNull(),
     scopes: jsonb('scopes').notNull().default([]),
     lastVerifiedAt: timestamp('last_verified_at', { withTimezone: true }),

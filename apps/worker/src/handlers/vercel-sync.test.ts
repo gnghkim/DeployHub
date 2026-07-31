@@ -51,12 +51,16 @@ beforeEach(async () => {
   await db.delete(schema.jobs);
 });
 
-async function insertAccount(lastError?: string): Promise<string> {
+async function insertAccount(
+  lastError?: string,
+  externalAccountId?: string,
+): Promise<string> {
   const [account] = await db
     .insert(schema.providerAccounts)
     .values({
       provider: 'vercel',
       name: 'deployhub-team',
+      externalAccountId,
       encryptedToken: encrypt(token, encryptionKey),
       lastError,
     })
@@ -87,6 +91,17 @@ function collector(
 }
 
 describe('Vercel sync handler', () => {
+  it('passes the stored external account ID to the collector', async () => {
+    const accountId = await insertAccount(undefined, 'team_123');
+    const createCollector = vi.fn(() => collector([], []));
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector,
+    })(job(accountId));
+
+    expect(createCollector).toHaveBeenCalledWith(token, 'team_123');
+  });
+
   it('links a Vercel project only on an exact declared externalRef', async () => {
     const accountId = await insertAccount();
     const [project] = await db.insert(schema.projects).values({
@@ -217,7 +232,7 @@ describe('Vercel sync handler', () => {
       createCollector,
     })(job(accountId));
 
-    expect(createCollector).toHaveBeenCalledWith(token);
+    expect(createCollector).toHaveBeenCalledWith(token, undefined);
     const resourceRows = await db
       .select()
       .from(schema.resources)
@@ -266,7 +281,7 @@ describe('Vercel sync handler', () => {
       .where(eq(schema.providerAccounts.id, accountId));
     expect(account?.lastSyncAt).toBeInstanceOf(Date);
     expect(account?.lastError).toBe(
-      '프로젝트 0건. 팀 계정 토큰이면 teamId 지정이 필요한데 아직 지원하지 않습니다.',
+      '프로젝트 0건. 팀 계정이면 teamId와 토큰 권한을 확인해 주세요.',
     );
     expect(account?.lastError).not.toContain(token);
   });
