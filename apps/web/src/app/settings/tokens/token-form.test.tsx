@@ -10,9 +10,23 @@ vi.mock('../../../actions/tokens', () => ({
 }));
 
 const RAW_TOKEN = 'dhreg_super-secret-token';
+const NEXT_RAW_TOKEN = 'dhreg_next-super-secret-token';
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, reject, resolve };
+}
 
 describe('RawTokenNotice', () => {
   let container: HTMLDivElement;
+  let initialClipboardDescriptor: PropertyDescriptor | undefined;
+  let mounted: boolean;
   let root: Root;
 
   beforeEach(() => {
@@ -24,11 +38,27 @@ describe('RawTokenNotice', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
+    mounted = true;
+    initialClipboardDescriptor = Object.getOwnPropertyDescriptor(
+      navigator,
+      'clipboard',
+    );
   });
 
   afterEach(async () => {
-    await act(async () => root.unmount());
+    if (mounted) {
+      await act(async () => root.unmount());
+    }
     container.remove();
+    if (initialClipboardDescriptor) {
+      Object.defineProperty(
+        navigator,
+        'clipboard',
+        initialClipboardDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -105,6 +135,98 @@ describe('RawTokenNotice', () => {
       '복사',
     );
     expect(container.querySelector('code')?.textContent).toBe(RAW_TOKEN);
+  });
+
+  it('resets a copied state when a new raw token is displayed', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    await renderNotice(RAW_TOKEN);
+    await act(async () => {
+      copyButton()?.click();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사됨',
+    );
+
+    await renderNotice(NEXT_RAW_TOKEN);
+
+    expect(container.querySelector('code')?.textContent).toBe(NEXT_RAW_TOKEN);
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사',
+    );
+  });
+
+  it('ignores a previous token copy that settles after a new token is displayed', async () => {
+    const copyRequest = deferred<void>();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockReturnValue(copyRequest.promise) },
+    });
+    await renderNotice(RAW_TOKEN);
+    await act(async () => copyButton()?.click());
+
+    await renderNotice(NEXT_RAW_TOKEN);
+    expect(container.querySelector('code')?.textContent).toBe(NEXT_RAW_TOKEN);
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사',
+    );
+
+    await act(async () => copyRequest.resolve());
+
+    expect(container.querySelector('code')?.textContent).toBe(NEXT_RAW_TOKEN);
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사',
+    );
+  });
+
+  it('ignores a previous token copy rejection after a new token is displayed', async () => {
+    const previousCopyRequest = deferred<void>();
+    const currentCopyRequest = deferred<void>();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi
+          .fn()
+          .mockReturnValueOnce(previousCopyRequest.promise)
+          .mockReturnValueOnce(currentCopyRequest.promise),
+      },
+    });
+    await renderNotice(RAW_TOKEN);
+    await act(async () => copyButton()?.click());
+
+    await renderNotice(NEXT_RAW_TOKEN);
+    await act(async () => copyButton()?.click());
+    await act(async () => currentCopyRequest.resolve());
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사됨',
+    );
+
+    await act(async () => previousCopyRequest.reject(new Error('denied')));
+
+    expect(container.querySelector('code')?.textContent).toBe(NEXT_RAW_TOKEN);
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      '복사됨',
+    );
+  });
+
+  it('ignores a pending clipboard result after unmount', async () => {
+    vi.useFakeTimers();
+    const copyRequest = deferred<void>();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockReturnValue(copyRequest.promise) },
+    });
+    await renderNotice(RAW_TOKEN);
+    await act(async () => copyButton()?.click());
+
+    await act(async () => root.unmount());
+    mounted = false;
+    await act(async () => copyRequest.resolve());
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('shows failure and retains the raw token when clipboard writing rejects', async () => {

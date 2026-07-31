@@ -12,6 +12,11 @@ const INITIAL_STATE: TokenActionState = { status: 'idle' };
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 
+type CopyState = {
+  rawToken?: string;
+  status: CopyStatus;
+};
+
 const COPY_LABELS: Record<CopyStatus, string> = {
   idle: '복사',
   copied: '복사됨',
@@ -26,45 +31,72 @@ async function issueTokenAction(
 }
 
 export function RawTokenNotice({ rawToken }: { rawToken?: string }) {
-  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+  const [copyState, setCopyState] = useState<CopyState>({
+    rawToken,
+    status: 'idle',
+  });
+  const copyAttempt = useRef(0);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    copyAttempt.current += 1;
+    if (resetTimer.current !== undefined) {
+      clearTimeout(resetTimer.current);
+      resetTimer.current = undefined;
+    }
+    setCopyState((currentState) =>
+      currentState.rawToken === rawToken && currentState.status === 'idle'
+        ? currentState
+        : { rawToken, status: 'idle' },
+    );
+
+    return () => {
+      copyAttempt.current += 1;
       if (resetTimer.current !== undefined) {
         clearTimeout(resetTimer.current);
+        resetTimer.current = undefined;
       }
-    },
-    [],
-  );
+    };
+  }, [rawToken]);
 
   if (!rawToken) {
     return null;
   }
   const token = rawToken;
+  const copyStatus =
+    copyState.rawToken === token ? copyState.status : 'idle';
 
   async function copyRawToken() {
     if (resetTimer.current !== undefined) {
       clearTimeout(resetTimer.current);
       resetTimer.current = undefined;
     }
+    const attempt = ++copyAttempt.current;
 
     if (!navigator.clipboard) {
-      setCopyStatus('error');
+      setCopyState({ rawToken: token, status: 'error' });
       return;
     }
 
     try {
       await navigator.clipboard.writeText(token);
-      setCopyStatus('copied');
+      if (attempt !== copyAttempt.current) {
+        return;
+      }
+      setCopyState({ rawToken: token, status: 'copied' });
       resetTimer.current = setTimeout(() => {
-        setCopyStatus('idle');
+        if (attempt !== copyAttempt.current) {
+          return;
+        }
+        setCopyState({ rawToken: token, status: 'idle' });
         resetTimer.current = undefined;
       }, 2_000);
     } catch {
-      setCopyStatus('error');
+      if (attempt === copyAttempt.current) {
+        setCopyState({ rawToken: token, status: 'error' });
+      }
     }
   }
 
