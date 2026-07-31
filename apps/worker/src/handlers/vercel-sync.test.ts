@@ -51,12 +51,16 @@ beforeEach(async () => {
   await db.delete(schema.jobs);
 });
 
-async function insertAccount(lastError?: string): Promise<string> {
+async function insertAccount(
+  lastError?: string,
+  externalAccountId?: string,
+): Promise<string> {
   const [account] = await db
     .insert(schema.providerAccounts)
     .values({
       provider: 'vercel',
       name: 'deployhub-team',
+      externalAccountId,
       encryptedToken: encrypt(token, encryptionKey),
       lastError,
     })
@@ -87,6 +91,17 @@ function collector(
 }
 
 describe('Vercel sync handler', () => {
+  it('passes the stored external account ID to the collector', async () => {
+    const accountId = await insertAccount(undefined, 'team_123');
+    const createCollector = vi.fn(() => collector([], []));
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector,
+    })(job(accountId));
+
+    expect(createCollector).toHaveBeenCalledWith(token, 'team_123');
+  });
+
   it('links a Vercel project only on an exact declared externalRef', async () => {
     const accountId = await insertAccount();
     const [project] = await db.insert(schema.projects).values({
@@ -217,7 +232,7 @@ describe('Vercel sync handler', () => {
       createCollector,
     })(job(accountId));
 
-    expect(createCollector).toHaveBeenCalledWith(token);
+    expect(createCollector).toHaveBeenCalledWith(token, undefined);
     const resourceRows = await db
       .select()
       .from(schema.resources)
