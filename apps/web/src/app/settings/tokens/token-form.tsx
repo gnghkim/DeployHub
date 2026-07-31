@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import {
   issueRegistrationToken,
   type TokenActionState,
@@ -10,11 +10,79 @@ import { Input } from '../../../components/ui/input';
 
 const INITIAL_STATE: TokenActionState = { status: 'idle' };
 
+type CopyStatus = 'idle' | 'copied' | 'error';
+
+const COPY_LABELS: Record<CopyStatus, string> = {
+  idle: '복사',
+  copied: '복사됨',
+  error: '복사 실패',
+};
+
 async function issueTokenAction(
   _previousState: TokenActionState,
   formData: FormData,
 ): Promise<TokenActionState> {
   return issueRegistrationToken(formData);
+}
+
+export function RawTokenNotice({ rawToken }: { rawToken?: string }) {
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle');
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  useEffect(
+    () => () => {
+      if (resetTimer.current !== undefined) {
+        clearTimeout(resetTimer.current);
+      }
+    },
+    [],
+  );
+
+  if (!rawToken) {
+    return null;
+  }
+  const token = rawToken;
+
+  async function copyRawToken() {
+    if (resetTimer.current !== undefined) {
+      clearTimeout(resetTimer.current);
+      resetTimer.current = undefined;
+    }
+
+    if (!navigator.clipboard) {
+      setCopyStatus('error');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(token);
+      setCopyStatus('copied');
+      resetTimer.current = setTimeout(() => {
+        setCopyStatus('idle');
+        resetTimer.current = undefined;
+      }, 2_000);
+    } catch {
+      setCopyStatus('error');
+    }
+  }
+
+  return (
+    <div className="rounded-[var(--radius-card)] border border-[var(--caution)] bg-[var(--paper)] p-4">
+      <p className="text-sm font-medium text-[var(--caution)]">
+        원문은 지금 한 번만 표시됩니다. 안전한 곳에 보관하세요.
+      </p>
+      <div className="mt-3 flex items-start gap-2">
+        <code className="min-w-0 flex-1 break-all font-mono text-sm text-[var(--line)]">
+          {rawToken}
+        </code>
+        <Button onClick={copyRawToken}>
+          <span aria-live="polite">{COPY_LABELS[copyStatus]}</span>
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function TokenForm() {
@@ -74,16 +142,7 @@ export function TokenForm() {
           {state.message}
         </p>
       ) : null}
-      {state.rawToken ? (
-        <div className="rounded-[var(--radius-card)] border border-[var(--caution)] bg-[var(--paper)] p-4">
-          <p className="text-sm font-medium text-[var(--caution)]">
-            원문은 지금 한 번만 표시됩니다. 안전한 곳에 보관하세요.
-          </p>
-          <code className="mt-3 block break-all font-mono text-sm text-[var(--line)]">
-            {state.rawToken}
-          </code>
-        </div>
-      ) : null}
+      <RawTokenNotice rawToken={state.rawToken} />
     </form>
   );
 }
