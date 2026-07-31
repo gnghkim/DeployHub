@@ -10,6 +10,10 @@ function source(relativePath: string): string {
 const page = source('./page.tsx');
 const accountCard = source('./components/provider-account-card.tsx');
 
+function matchingPageSource(pattern: RegExp): string {
+  return page.match(pattern)?.[0] ?? '';
+}
+
 describe('provider settings page', () => {
   it('keeps the page server-rendered and loads accounts for both providers', () => {
     expect(page).not.toContain("'use client'");
@@ -21,21 +25,67 @@ describe('provider settings page', () => {
     expect(page).toContain("account.provider === 'vercel'");
   });
 
-  it('shows GitHub and Vercel sections with their empty states', () => {
-    expect(page).toContain('GitHub 연결');
-    expect(page).toContain('Vercel 연결');
-    expect(page).toContain('연결된 GitHub 계정이 없습니다.');
-    expect(page).toContain('연결된 Vercel 계정이 없습니다.');
+  it('preserves the GitHub connection form and sync behavior', () => {
+    const connectGithub = matchingPageSource(
+      /async function connectGithub\([\s\S]*?\n\}/,
+    );
+    const githubForm = matchingPageSource(
+      /<form\b[^>]*\baction=\{connectGithub\}[^>]*>[\s\S]*?<\/form>/,
+    );
+    const githubSection = matchingPageSource(
+      /<section\b[^>]*>[\s\S]*?<form\b[^>]*\baction=\{connectGithub\}[\s\S]*?<\/section>/,
+    );
+    const githubTokenInput = githubForm.match(
+      /<Input\b[\s\S]*?name="token"[\s\S]*?\/>/,
+    )?.[0] ?? '';
+    const githubCards = matchingPageSource(
+      /\{githubAccounts\.map\([\s\S]*?\)\)\}/,
+    );
+
+    expect(githubSection).toContain('GitHub 연결');
+    expect(githubSection).toContain(
+      '토큰은 연결 확인 후 암호화해 저장하며 다시 표시하지 않습니다.',
+    );
+    expect(connectGithub).toMatch(
+      /await saveGithubProvider\(\s*\{ status: 'idle' \},\s*formData,?\s*\)/,
+    );
+    expect(githubForm).not.toBe('');
+    expect(githubTokenInput).toContain('type="password"');
+    expect(githubTokenInput).toMatch(/\srequired(?:\s|\/>)/);
+    expect(githubCards).toContain('<ProviderAccountCard');
+    expect(githubCards).toContain('syncAction={enqueueGithubSync}');
   });
 
   it('routes the Vercel connection form and sync cards to Vercel actions', () => {
-    expect(page).toContain('saveVercelProvider');
-    expect(page).toMatch(/<form action=\{connectVercel\}/);
-    expect(page).toContain('name="teamId"');
-    expect(page).toContain('개인 계정이면 비워둡니다');
+    const connectVercel = matchingPageSource(
+      /async function connectVercel\([\s\S]*?\n\}/,
+    );
+    const vercelForm = matchingPageSource(
+      /<form\b[^>]*\baction=\{connectVercel\}[^>]*>[\s\S]*?<\/form>/,
+    );
+
+    expect(page).toContain('Vercel 연결');
+    expect(connectVercel).toMatch(
+      /await saveVercelProvider\(\s*\{ status: 'idle' \},\s*formData,?\s*\)/,
+    );
+    expect(vercelForm).not.toBe('');
+    expect(vercelForm).toContain('name="teamId"');
+    expect(vercelForm).toContain('개인 계정이면 비워둡니다');
     expect(page).toMatch(
       /vercelAccounts\.map[\s\S]*?<ProviderAccountCard[\s\S]*?syncAction=\{enqueueVercelSync\}/,
     );
+  });
+
+  it('shows each empty-state message only through its provider condition', () => {
+    const githubEmptyState = matchingPageSource(
+      /\{\s*githubAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
+    );
+    const vercelEmptyState = matchingPageSource(
+      /\{\s*vercelAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
+    );
+
+    expect(githubEmptyState).toContain('연결된 GitHub 계정이 없습니다.');
+    expect(vercelEmptyState).toContain('연결된 Vercel 계정이 없습니다.');
   });
 
   it('uses the shared server card for both providers without passing encrypted tokens', () => {
