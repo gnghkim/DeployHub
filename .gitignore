@@ -39,6 +39,7 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+.worktrees/
 
 # Test and coverage
 coverage/
