@@ -45,7 +45,9 @@ function isCanonicalSearchParams(
   const expectedKeys = Object.keys(expected);
   const rawKeys = Object.keys(raw);
   return rawKeys.length === expectedKeys.length
-    && expectedKeys.every((key) => raw[key] === expected[key]);
+    && expectedKeys.every((key, index) => (
+      rawKeys[index] === key && raw[key] === expected[key]
+    ));
 }
 
 export default async function EventsPage({

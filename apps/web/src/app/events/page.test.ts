@@ -111,6 +111,21 @@ describe('events page behavior', () => {
     expect(selectedValue(container, 'project')).toBe('deployhub');
     expect(selectedValue(container, 'severity')).toBe('warning');
     expect(selectedValue(container, 'kind')).toBe('deployment');
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it('redirects valid parameters in noncanonical order before querying', async () => {
+    await expect(renderPage({
+      cursor: '42',
+      kind: 'deployment',
+      project: 'deployhub',
+      severity: 'warning',
+    })).rejects.toThrow(
+      'REDIRECT:/events?project=deployhub&severity=warning&kind=deployment&cursor=42',
+    );
+
+    expect(mocks.redirect).toHaveBeenCalledTimes(1);
+    expect(mocks.listTimelineEvents).not.toHaveBeenCalled();
   });
 
   it('renders global project context but omits it in a project view', async () => {
