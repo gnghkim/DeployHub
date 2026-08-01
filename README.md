@@ -35,7 +35,8 @@ PostgreSQL과 Socket Proxy를 실행하고 Caddy가 HTTPS 요청을 웹 컨테�
 
 - Node.js 22 이상
 - pnpm 9.15.0
-- 전체 서비스나 PostgreSQL을 컨테이너로 실행할 경우 Docker와 Docker Compose
+- Docker 데몬: `pnpm test`의 PostgreSQL 통합 테스트(Testcontainers)와 컨테이너 실행에 필요
+- Docker Compose: PostgreSQL 또는 전체 서비스 스택 실행에 필요
 
 운영용 Compose 구성은 PostgreSQL 포트를 호스트에 공개하지 않고 공용 Caddy
 네트워크를 전제로 한다. 실제 서비스를 실행하려면 먼저
@@ -75,14 +76,15 @@ PostgreSQL 마이그레이션과 전체 Compose 실행 절차는 운영 환경�
 
 ## DeployHub CLI
 
-Node.js 22 이상에서 공개 npm 패키지를 설치하지 않고 바로 실행할 수 있다.
+Node.js 22 이상에서 전역 설치 없이 `npx`로 바로 실행할 수 있다.
+먼저 현재 터미널에 관리자가 제공한 서버 URL이 `DEPLOYHUB_URL`로 설정되어 있어야 한다.
 
 ```bash
 npx @deployhub/cli init --detect
 ```
 
-CLI는 서버 URL이나 등록 토큰에 기본값을 사용하지 않는다. 서버 URL은
-`DEPLOYHUB_URL`, Draft 제출용 토큰은 `DEPLOYHUB_TOKEN` 환경변수로 전달한다.
+CLI는 서버 URL이나 인증 토큰에 기본값을 사용하지 않는다. 서버 URL은
+`DEPLOYHUB_URL`, 상태·차이 조회와 Draft 제출에 쓰는 인증 토큰은 `DEPLOYHUB_TOKEN` 환경변수로 전달한다.
 토큰은 명령 인자로 전달하거나 파일에 저장하지 않는다.
 
 DeployHub 저장소 안에서 CLI를 수정하거나 검증할 때는 먼저 빌드한다.
