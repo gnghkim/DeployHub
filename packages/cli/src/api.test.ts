@@ -1,5 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateRemoteManifest } from './api';
+import { getCurrentProject, validateRemoteManifest } from './api';
+
+const currentProjectPayload = (
+  componentOverrides: Record<string, unknown> = {},
+) => ({
+  project: {
+    name: 'DeployHub',
+    slug: 'deployhub',
+    description: null,
+    lifecycle: 'production',
+    importance: 5,
+    owner: null,
+    repository: null,
+    components: [
+      {
+        name: 'Web',
+        componentType: 'frontend',
+        framework: 'nextjs',
+        runtime: 'node',
+        language: 'typescript',
+        criticality: 5,
+        ...componentOverrides,
+      },
+    ],
+  },
+});
 
 describe('validateRemoteManifest', () => {
   it('posts YAML to the public validation endpoint', async () => {
@@ -78,6 +103,42 @@ describe('validateRemoteManifest', () => {
       }),
     ).rejects.toThrow(
       'Remote manifest validation returned an invalid response',
+    );
+  });
+});
+
+describe('getCurrentProject', () => {
+  it.each([
+    ['string', { healthUrl: 'https://hub.nolzza.net/api/health/ready' }],
+    ['null', { healthUrl: null }],
+    ['omitted', {}],
+  ])('accepts a %s healthUrl', async (_label, componentOverrides) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(currentProjectPayload(componentOverrides)),
+    );
+
+    const project = await getCurrentProject({
+      baseUrl: 'https://hub.example',
+      slug: 'deployhub',
+      token: 'test-token',
+      fetchImpl,
+    });
+
+    expect(project.components[0]).toMatchObject(componentOverrides);
+  });
+
+  it('rejects a non-string healthUrl', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(currentProjectPayload({ healthUrl: 42 })),
+    );
+
+    await expect(getCurrentProject({
+      baseUrl: 'https://hub.example',
+      slug: 'deployhub',
+      token: 'test-token',
+      fetchImpl,
+    })).rejects.toThrow(
+      'DeployHub project lookup returned an invalid response',
     );
   });
 });

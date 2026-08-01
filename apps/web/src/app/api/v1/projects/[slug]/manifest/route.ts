@@ -47,6 +47,7 @@ export function createProjectManifestHandler(database: Db) {
             externalRef: component.externalRef,
             containerName: component.containerName,
             url: component.url,
+            healthUrl: component.healthUrl,
           })),
           domains: project.domains.map((domain) => ({
             domain: domain.domain,

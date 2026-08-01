@@ -27,6 +27,7 @@ describe('Draft review screens', () => {
     expect(detail).toContain('component.provider');
     expect(detail).toContain('component.externalRef');
     expect(detail).toContain('component.container');
+    expect(detail).toContain('component.healthUrl');
   });
 
   it('provides approve and reject forms', () => {

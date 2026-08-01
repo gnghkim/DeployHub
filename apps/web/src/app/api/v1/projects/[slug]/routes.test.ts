@@ -115,6 +115,7 @@ async function seedProject() {
         externalRef: 'deployhub-web-service',
         containerName: 'deployhub-web',
         url: 'https://hub.nolzza.net',
+        healthUrl: 'https://hub.nolzza.net/api/health/ready',
       },
       {
         projectId: project.id,
@@ -378,6 +379,7 @@ describe('GET project read APIs', () => {
             externalRef: 'deployhub-web-service',
             containerName: 'deployhub-web',
             url: 'https://hub.nolzza.net',
+            healthUrl: 'https://hub.nolzza.net/api/health/ready',
           },
           {
             name: 'Worker',
@@ -390,6 +392,7 @@ describe('GET project read APIs', () => {
             externalRef: null,
             containerName: null,
             url: null,
+            healthUrl: null,
           },
         ],
         domains: [
@@ -418,6 +421,7 @@ describe('GET project read APIs', () => {
       externalRef: 'deployhub-web-service',
       containerName: 'deployhub-web',
       url: 'https://hub.nolzza.net',
+      healthUrl: 'https://hub.nolzza.net/api/health/ready',
     });
   });
 

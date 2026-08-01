@@ -193,6 +193,7 @@ export default async function DraftDetailPage({
                 ['externalRef', component.externalRef],
                 ['container', component.container],
                 ['url', component.url],
+                ['healthUrl', component.healthUrl],
               ] as const;
               return (
                 <section key={component.name}>

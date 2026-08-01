@@ -97,6 +97,7 @@ export async function approveDraft(id: string): Promise<void> {
         externalRef: component.externalRef ?? null,
         containerName: component.container ?? null,
         url: component.url ?? null,
+        healthUrl: component.healthUrl ?? null,
         fieldSources: componentFieldSources(
           draft.fieldSources,
           component.name,
@@ -122,6 +123,7 @@ export async function approveDraft(id: string): Promise<void> {
             externalRef: values.externalRef,
             containerName: values.containerName,
             url: values.url,
+            healthUrl: values.healthUrl,
             fieldSources: values.fieldSources,
             updatedAt: values.updatedAt,
           },

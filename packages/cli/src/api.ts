@@ -218,6 +218,10 @@ function isCurrentProject(value: unknown): value is CurrentProject {
           item.url === undefined
           || isNullableString(item.url)
         )
+        && (
+          item.healthUrl === undefined
+          || isNullableString(item.healthUrl)
+        )
       );
     })
     && (

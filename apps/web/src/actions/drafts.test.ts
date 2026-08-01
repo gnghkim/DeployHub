@@ -63,6 +63,7 @@ spec:
       externalRef: deployhub-web-service
       container: deployhub-web
       url: https://hub.nolzza.net
+      healthUrl: https://hub.nolzza.net/api/health/ready
     - name: worker
       type: worker
       runtime: nodejs
@@ -171,12 +172,14 @@ describe('approveDraft', () => {
         externalRef,
         containerName,
         url,
+        healthUrl,
       }) => ({
         name,
         provider,
         externalRef,
         containerName,
         url,
+        healthUrl,
       }),
     )).toEqual([
       {
@@ -185,6 +188,7 @@ describe('approveDraft', () => {
         externalRef: 'deployhub-web-service',
         containerName: 'deployhub-web',
         url: 'https://hub.nolzza.net',
+        healthUrl: 'https://hub.nolzza.net/api/health/ready',
       },
       {
         name: 'worker',
@@ -192,6 +196,7 @@ describe('approveDraft', () => {
         externalRef: null,
         containerName: null,
         url: null,
+        healthUrl: null,
       },
     ]);
     expect(await db.select().from(schema.domains)).toMatchObject([
@@ -247,6 +252,7 @@ describe('approveDraft', () => {
       externalRef: 'deployhub-web-service',
       containerName: 'deployhub-web',
       url: 'https://hub.nolzza.net',
+      healthUrl: 'https://hub.nolzza.net/api/health/ready',
     });
   });
 
