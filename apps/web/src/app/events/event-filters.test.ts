@@ -45,6 +45,23 @@ describe('event filters', () => {
     },
   );
 
+  it.each([
+    ['1', 1n],
+    ['9223372036854775807', 9_223_372_036_854_775_807n],
+  ])('accepts cursor boundary %s', (cursor, expected) => {
+    expect(parseEventFilters({ cursor }, projects).cursor).toBe(expected);
+  });
+
+  it('returns empty filters for empty input', () => {
+    expect(parseEventFilters({}, projects)).toEqual({
+      projectSlug: '',
+      projectId: null,
+      severity: undefined,
+      kind: undefined,
+      cursor: undefined,
+    });
+  });
+
   it('builds a stable, encoded events URL', () => {
     expect(buildEventsHref({
       projectSlug: 'deploy hub',
