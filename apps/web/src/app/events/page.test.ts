@@ -1,9 +1,30 @@
+// @vitest-environment happy-dom
+
+import type { ProjectRow, TimelineEvent } from '@deployhub/db';
 import {
   existsSync,
   readFileSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  listProjects: vi.fn(),
+  listTimelineEvents: vi.fn(),
+  redirect: vi.fn(),
+}));
+
+vi.mock('@deployhub/db', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@deployhub/db')>(),
+  listProjects: mocks.listProjects,
+  listTimelineEvents: mocks.listTimelineEvents,
+}));
+vi.mock('../../lib/db', () => ({ db: {} }));
+vi.mock('next/navigation', () => ({ redirect: mocks.redirect }));
+
+import EventsPage from './page';
+import type { RawEventSearchParams } from './event-filters';
 
 function source(relativePath: string): string {
   const path = fileURLToPath(new URL(relativePath, import.meta.url));
@@ -12,6 +33,205 @@ function source(relativePath: string): string {
 
 const page = source('./page.tsx');
 const timeline = source('../../components/events/timeline-list.tsx');
+
+const now = new Date('2026-08-01T00:00:00.000Z');
+const projects: ProjectRow[] = [{
+  id: 'project-1',
+  name: 'DeployHub',
+  slug: 'deployhub',
+  description: null,
+  status: 'active',
+  lifecycle: 'production',
+  importance: 3,
+  owner: null,
+  repository: null,
+  createdAt: now,
+  updatedAt: now,
+  archivedAt: null,
+}];
+const timelineEvent: TimelineEvent = {
+  id: 'event-1',
+  seq: 20n,
+  projectId: 'project-1',
+  componentId: null,
+  resourceId: null,
+  kind: 'deployment',
+  severity: 'warning',
+  previousValue: 'building',
+  currentValue: 'ready',
+  detail: '배포가 완료되었습니다.',
+  notifiedAt: null,
+  occurredAt: now,
+};
+
+async function renderPage(searchParams: RawEventSearchParams) {
+  const tree = await EventsPage({ searchParams: Promise.resolve(searchParams) });
+  const markup = renderToStaticMarkup(tree);
+  const container = document.createElement('div');
+  container.innerHTML = markup;
+  return { container, markup };
+}
+
+function selectedValue(container: HTMLElement, name: string): string | undefined {
+  return container
+    .querySelector(`select[name="${name}"] option[selected]`)
+    ?.getAttribute('value') ?? undefined;
+}
+
+beforeEach(() => {
+  mocks.listProjects.mockReset();
+  mocks.listProjects.mockResolvedValue(projects);
+  mocks.listTimelineEvents.mockReset();
+  mocks.listTimelineEvents.mockResolvedValue({
+    events: [timelineEvent],
+    nextCursor: null,
+  });
+  mocks.redirect.mockReset();
+  mocks.redirect.mockImplementation((href: string) => {
+    throw new Error(`REDIRECT:${href}`);
+  });
+});
+
+describe('events page behavior', () => {
+  it('queries with normalized filters and preserves selected options', async () => {
+    const { container } = await renderPage({
+      project: 'deployhub',
+      severity: 'warning',
+      kind: 'deployment',
+      cursor: '42',
+    });
+
+    expect(mocks.listTimelineEvents).toHaveBeenCalledWith({}, {
+      projectId: 'project-1',
+      severity: 'warning',
+      kind: 'deployment',
+      cursor: 42n,
+      limit: 50,
+    });
+    expect(selectedValue(container, 'project')).toBe('deployhub');
+    expect(selectedValue(container, 'severity')).toBe('warning');
+    expect(selectedValue(container, 'kind')).toBe('deployment');
+  });
+
+  it('renders global project context but omits it in a project view', async () => {
+    const global = await renderPage({});
+    const globalEvent = Array.from(global.container.querySelectorAll('li')).find(
+      (item) => item.textContent?.includes('배포가 완료되었습니다.'),
+    );
+    expect(globalEvent?.textContent).toContain('DeployHub');
+
+    const scoped = await renderPage({ project: 'deployhub' });
+    const scopedEvent = Array.from(scoped.container.querySelectorAll('li')).find(
+      (item) => item.textContent?.includes('배포가 완료되었습니다.'),
+    );
+    expect(scopedEvent?.textContent).not.toContain('DeployHub');
+  });
+
+  it('renders an exact stable next-page link with active filters', async () => {
+    mocks.listTimelineEvents.mockResolvedValue({
+      events: [timelineEvent],
+      nextCursor: 19n,
+    });
+
+    const { container } = await renderPage({
+      project: 'deployhub',
+      severity: 'warning',
+      kind: 'deployment',
+      cursor: '42',
+    });
+
+    const next = Array.from(container.querySelectorAll('a')).find(
+      (link) => link.textContent?.includes('다음 기록 보기'),
+    );
+    expect(next?.getAttribute('href')).toBe(
+      '/events?project=deployhub&severity=warning&kind=deployment&cursor=19',
+    );
+  });
+
+  it.each([
+    { events: [timelineEvent], name: 'last page' },
+    { events: [], name: 'empty page' },
+  ])('omits the next link on the $name', async ({ events }) => {
+    mocks.listTimelineEvents.mockResolvedValue({ events, nextCursor: null });
+
+    const { markup } = await renderPage({});
+
+    expect(markup).not.toContain('다음 기록 보기');
+  });
+
+  it('canonicalizes form-style empty parameters without querying events', async () => {
+    await expect(renderPage({
+      project: '',
+      severity: '',
+      kind: '',
+    })).rejects.toThrow('REDIRECT:/events');
+
+    expect(mocks.listTimelineEvents).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'invalid scalar',
+      searchParams: {
+        project: 'deployhub',
+        severity: 'urgent',
+        kind: 'deployment',
+        cursor: '42',
+      },
+    },
+    {
+      name: 'repeated value',
+      searchParams: {
+        project: 'deployhub',
+        severity: ['warning', 'critical'],
+        kind: 'deployment',
+        cursor: '42',
+      },
+    },
+  ])('canonicalizes mixed valid and $name parameters', async ({ searchParams }) => {
+    await expect(renderPage(searchParams)).rejects.toThrow(
+      'REDIRECT:/events?project=deployhub&kind=deployment&cursor=42',
+    );
+
+    expect(mocks.listTimelineEvents).not.toHaveBeenCalled();
+  });
+
+  it('does not redirect an already canonical empty request', async () => {
+    await renderPage({});
+
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it('renders exact approved labels and enum tokens for every option', async () => {
+    const { container } = await renderPage({});
+    const severity = container.querySelector<HTMLSelectElement>(
+      'select[name="severity"]',
+    );
+    const kind = container.querySelector<HTMLSelectElement>('select[name="kind"]');
+
+    expect(severity?.labels[0]?.textContent).toContain('심각도');
+    expect(Array.from(severity?.options ?? [], ({ value, text }) => [value, text]))
+      .toEqual([
+        ['', '전체 심각도'],
+        ['info', '정보 (info)'],
+        ['warning', '주의 (warning)'],
+        ['critical', '장애 (critical)'],
+      ]);
+    expect(kind?.labels[0]?.textContent).toContain('변경 종류');
+    expect(Array.from(kind?.options ?? [], ({ value, text }) => [value, text]))
+      .toEqual([
+        ['', '전체 변경 종류'],
+        ['health_status', 'HTTP 상태 (health_status)'],
+        ['container_status', '컨테이너 상태 (container_status)'],
+        ['container_health', '컨테이너 헬스 (container_health)'],
+        ['deployment', '배포 (deployment)'],
+        ['ssl_expiry', 'SSL 만료 (ssl_expiry)'],
+        ['sync_failure', '동기화 실패 (sync_failure)'],
+      ]);
+    expect(container.textContent).toContain('필터 초기화');
+    expect(container.querySelector('[name="cursor"]')).toBeNull();
+  });
+});
 
 describe('global events timeline', () => {
   it('info 에 색을 주지 않는다', () => {
@@ -54,23 +274,16 @@ describe('global events timeline', () => {
     expect(page).toMatch(/<form\s+method="get"/);
     expect(page).toMatch(/프로젝트[\s\S]*<select[\s\S]*name="project"/);
     expect(page).toMatch(/심각도[\s\S]*<select[\s\S]*name="severity"/);
-    expect(page).toMatch(/종류[\s\S]*<select[\s\S]*name="kind"/);
+    expect(page).toMatch(/변경 종류[\s\S]*<select[\s\S]*name="kind"/);
     expect(page).toContain('defaultValue={filters.projectSlug}');
     expect(page).toContain('defaultValue={filters.severity ?? \'\'}');
     expect(page).toContain('defaultValue={filters.kind ?? \'\'}');
-    expect(page).toContain('<option value="info">정보</option>');
-    expect(page).toContain('<option value="warning">주의</option>');
-    expect(page).toContain('<option value="critical">장애</option>');
-    expect(page).toContain('<option value="health_status">HTTP 상태</option>');
-    expect(page).toContain('<option value="container_status">컨테이너 상태</option>');
-    expect(page).toContain('<option value="container_health">컨테이너 헬스</option>');
-    expect(page).toContain('<option value="deployment">배포</option>');
-    expect(page).toContain('<option value="ssl_expiry">SSL 만료</option>');
-    expect(page).toContain('<option value="sync_failure">동기화 실패</option>');
+    expect(page).toContain('schema.eventSeverity.enumValues.map');
+    expect(page).toContain('schema.changeEventKind.enumValues.map');
     expect(page).toContain('type="submit"');
     expect(page).toContain('필터 적용');
     expect(page).toContain('href="/events"');
-    expect(page).toContain('초기화');
+    expect(page).toContain('필터 초기화');
     expect(page).not.toMatch(/name=["']cursor["']/);
   });
 

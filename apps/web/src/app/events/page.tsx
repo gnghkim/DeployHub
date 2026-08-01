@@ -1,17 +1,52 @@
 import Link from 'next/link';
-import { listProjects, listTimelineEvents } from '@deployhub/db';
-import { TimelineList } from '@/components/events/timeline-list';
-import { Topbar } from '@/components/shell/topbar';
-import { db } from '@/lib/db';
+import { redirect } from 'next/navigation';
+import { listProjects, listTimelineEvents, schema } from '@deployhub/db';
+import { TimelineList } from '../../components/events/timeline-list';
+import { Topbar } from '../../components/shell/topbar';
+import { db } from '../../lib/db';
 import {
   buildEventsHref,
   parseEventFilters,
+  type EventFilters,
+  type EventKind,
+  type EventSeverity,
   type RawEventSearchParams,
 } from './event-filters';
 
 export const dynamic = 'force-dynamic';
 
 const SELECT_CLASS = 'mt-1 block h-9 w-full rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm text-[var(--line)]';
+
+const SEVERITY_LABELS = {
+  info: '정보',
+  warning: '주의',
+  critical: '장애',
+} satisfies Record<EventSeverity, string>;
+
+const KIND_LABELS = {
+  health_status: 'HTTP 상태',
+  container_status: '컨테이너 상태',
+  container_health: '컨테이너 헬스',
+  deployment: '배포',
+  ssl_expiry: 'SSL 만료',
+  sync_failure: '동기화 실패',
+} satisfies Record<EventKind, string>;
+
+function isCanonicalSearchParams(
+  raw: RawEventSearchParams,
+  filters: EventFilters,
+): boolean {
+  const expected: RawEventSearchParams = {};
+  if (filters.projectSlug) expected.project = filters.projectSlug;
+  if (filters.severity) expected.severity = filters.severity;
+  if (filters.kind) expected.kind = filters.kind;
+  if (filters.cursor !== undefined) expected.cursor = filters.cursor.toString();
+
+  const expectedKeys = Object.keys(expected);
+  const rawKeys = Object.keys(raw);
+  return rawKeys.length === expectedKeys.length
+    && expectedKeys.every((key) => raw[key] === expected[key]);
+}
 
 export default async function EventsPage({
   searchParams,
@@ -24,6 +59,9 @@ export default async function EventsPage({
     searchParams,
   ]);
   const filters = parseEventFilters(rawSearchParams, projects);
+  if (!isCanonicalSearchParams(rawSearchParams, filters)) {
+    redirect(buildEventsHref(filters, filters.cursor));
+  }
   const { events, nextCursor } = await listTimelineEvents(db, {
     projectId: filters.projectId,
     severity: filters.severity,
@@ -75,25 +113,26 @@ export default async function EventsPage({
               className={SELECT_CLASS}
             >
               <option value="">전체 심각도</option>
-              <option value="info">정보</option>
-              <option value="warning">주의</option>
-              <option value="critical">장애</option>
+              {schema.eventSeverity.enumValues.map((severity) => (
+                <option key={severity} value={severity}>
+                  {SEVERITY_LABELS[severity]} ({severity})
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-xs text-[var(--annotation)]">
-            종류
+            변경 종류
             <select
               name="kind"
               defaultValue={filters.kind ?? ''}
               className={SELECT_CLASS}
             >
-              <option value="">전체 종류</option>
-              <option value="health_status">HTTP 상태</option>
-              <option value="container_status">컨테이너 상태</option>
-              <option value="container_health">컨테이너 헬스</option>
-              <option value="deployment">배포</option>
-              <option value="ssl_expiry">SSL 만료</option>
-              <option value="sync_failure">동기화 실패</option>
+              <option value="">전체 변경 종류</option>
+              {schema.changeEventKind.enumValues.map((kind) => (
+                <option key={kind} value={kind}>
+                  {KIND_LABELS[kind]} ({kind})
+                </option>
+              ))}
             </select>
           </label>
           <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
@@ -107,7 +146,7 @@ export default async function EventsPage({
               href="/events"
               className="inline-flex h-9 items-center rounded-[var(--radius-button)] border border-[var(--rule)] px-3 text-sm font-medium text-[var(--line)] hover:bg-white/[0.02]"
             >
-              초기화
+              필터 초기화
             </Link>
           </div>
         </form>
