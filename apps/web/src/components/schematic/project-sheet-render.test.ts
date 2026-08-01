@@ -17,6 +17,28 @@ const baseProject = {
 };
 
 describe('ProjectSheet rendering', () => {
+  it('renders an expanded collapsible card with its header and details', () => {
+    const markup = renderToStaticMarkup(createElement(ProjectSheet, {
+      project: {
+        ...baseProject,
+        repository: 'gnghkim/DeployHub',
+        judgement: '장애',
+        latestDeploymentAt: new Date('2026-08-01T00:00:00.000Z'),
+        latestDeploymentRelative: '1일 전',
+      },
+      tone: 'fault',
+    }));
+
+    expect(markup).toContain('aria-label="DeployHub 접기"');
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-controls="project-card-details-project-1"');
+    expect(markup).toContain('id="project-card-details-project-1"');
+    expect(markup).toContain('href="/projects/deployhub"');
+    expect(markup).toContain('장애');
+    expect(markup).toContain('1일 전');
+    expect(markup).toContain('gnghkim/DeployHub');
+  });
+
   it('판정을 색 점뿐 아니라 읽을 수 있는 텍스트로 렌더한다', () => {
     const markup = renderToStaticMarkup(createElement(ProjectSheet, {
       project: baseProject,
