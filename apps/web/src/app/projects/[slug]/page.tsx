@@ -31,6 +31,7 @@ import {
 } from '../../../lib/backend-view';
 import { formatDateTime } from '../../../lib/datetime';
 import { summarizeProject } from '../../../lib/project-summary';
+import { buildEventsHref } from '../../events/event-filters';
 import {
   ArchitectureComposition,
   buildComposition,
@@ -96,10 +97,13 @@ export default async function ProjectDetailPage({
   const evidenceEventIds = new Set(evidenceEvents.map(
     (event) => event.id,
   ));
-  const { events: historyEvents } = await listTimelineEvents(db, {
+  const {
+    events: historyEvents,
+    nextCursor: historyNextCursor,
+  } = await listTimelineEvents(db, {
     projectId: project.id,
     excludeIds: [...evidenceEventIds],
-    limit: 20,
+    limit: 5,
   });
   const deployment = summarizeProject({
     components: project.components.map((component) => ({
@@ -330,7 +334,7 @@ export default async function ProjectDetailPage({
         <Card>
           <div className="flex flex-wrap items-center gap-3">
             <h3 className="text-base font-medium text-[var(--line)]">
-              변경 이력
+              최근 변경
             </h3>
             <span className="text-xs text-[var(--annotation)]">
               최근 {historyEvents.length}건
@@ -343,6 +347,18 @@ export default async function ProjectDetailPage({
               emptyMessage="현재 판정 근거 외에 기록된 변경이 없습니다"
             />
           </div>
+          {historyNextCursor !== null ? (
+            <Link
+              href={buildEventsHref({
+                projectSlug: project.slug,
+                severity: undefined,
+                kind: undefined,
+              })}
+              className="mt-4 inline-flex text-sm font-medium text-[var(--line-mute)] hover:text-[var(--line)]"
+            >
+              전체 변경 이력 보기
+            </Link>
+          ) : null}
         </Card>
 
         {drift.length > 0 ? (
