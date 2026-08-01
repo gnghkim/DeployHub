@@ -369,9 +369,9 @@ Node 컴포넌트는 루트 이하의 모든 `package.json`을 훑어 찾는다(
 비워 둔다.
 
 `healthUrl`에는 비밀값을 포함하지 않으며 인증이나 요청 본문을 요구하지 않는
-엔드포인트만 선언한다. `healthUrl`이 구성요소의 `url`과 동일한 origin이면 해당
-구성요소와 도메인 origin의 루트 HTTP 검사는 `healthUrl` 검사로 대체된다. TLS
-검사는 그대로 유지된다.
+엔드포인트만 선언한다. `healthUrl`이 선언되면 구성요소 HTTP 검사는 `url` 대신
+`healthUrl`을 사용한다. 구성요소 `url`과 동일한 origin인 도메인의 루트 HTTP
+검사는 `healthUrl`의 origin과 관계없이 생략한다. TLS 검사는 그대로 유지된다.
 
 ---
 
