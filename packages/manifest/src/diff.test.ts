@@ -68,6 +68,7 @@ const currentProject = (
       externalRef: 'abcdefghijklmnop',
       containerName: null,
       url: null,
+      healthUrl: null,
     },
     {
       name: 'worker',
@@ -138,6 +139,23 @@ describe('diffManifest', () => {
           field: 'provider',
           from: 'supabase',
           to: 'neon',
+        },
+      ],
+    });
+  });
+
+  it('reports health URL changes in componentsChanged', () => {
+    const changedHealthUrl = manifest();
+    changedHealthUrl.spec.components[0]!.healthUrl =
+      'https://api.example.com/health/ready';
+
+    expect(diffManifest(changedHealthUrl, currentProject())).toMatchObject({
+      componentsChanged: [
+        {
+          name: 'web',
+          field: 'healthUrl',
+          from: null,
+          to: 'https://api.example.com/health/ready',
         },
       ],
     });

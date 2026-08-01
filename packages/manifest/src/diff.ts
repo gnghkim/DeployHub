@@ -33,6 +33,7 @@ export type CurrentProject = {
     externalRef?: string | null;
     containerName?: string | null;
     url?: string | null;
+    healthUrl?: string | null;
   }[];
   domains?: { domain: string; environment: string }[];
 };
@@ -104,6 +105,7 @@ export function diffManifest(
       ['externalRef', existing.externalRef, component.externalRef],
       ['container', existing.containerName, component.container],
       ['url', existing.url, component.url],
+      ['healthUrl', existing.healthUrl, component.healthUrl],
     ] as const;
 
     for (const [field, from, to] of componentFields) {
