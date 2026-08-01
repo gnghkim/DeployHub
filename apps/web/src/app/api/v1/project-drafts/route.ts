@@ -141,6 +141,13 @@ export function createProjectDraftHandler(database: Db) {
       return Response.json({ error: 'Repository not allowed' }, { status: 403 });
     }
 
+    if (
+      consumed.projectSlugConstraint
+      && consumed.projectSlugConstraint !== parsed.manifest.metadata.slug
+    ) {
+      return Response.json({ error: 'Project not allowed' }, { status: 403 });
+    }
+
     const current = await getProjectBySlug(
       database,
       parsed.manifest.metadata.slug,

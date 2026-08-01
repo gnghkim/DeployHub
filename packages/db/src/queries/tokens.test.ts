@@ -87,11 +87,23 @@ describe('registration tokens', () => {
     await expect(consumeToken(db, issued.raw)).resolves.toEqual(expected);
   });
 
+  it('verifies a token that already spent its last use', async () => {
+    const issued = await issue({ maxUses: 1 });
+    expect((await consumeToken(db, issued.raw)).ok).toBe(true);
+
+    await expect(verifyToken(db, issued.raw)).resolves.toEqual({
+      ok: true,
+      tokenId: issued.id,
+      scope: 'project:draft:create',
+      repositoryConstraint: 'ktgo/deployhub',
+      projectSlugConstraint: null,
+    });
+  });
+
   it.each([
     ['unknown', 'dh_reg_not-a-real-token', 'not_found'],
     ['expired', undefined, 'expired'],
     ['revoked', undefined, 'revoked'],
-    ['exhausted', undefined, 'exhausted'],
   ] as const)(
     'reports a %s token while verifying',
     async (kind, rawOverride, reason) => {
@@ -109,9 +121,6 @@ describe('registration tokens', () => {
           : {}),
       });
       if (kind === 'revoked') await revokeToken(db, issued.id);
-      if (kind === 'exhausted') {
-        expect((await consumeToken(db, issued.raw)).ok).toBe(true);
-      }
 
       await expect(verifyToken(db, issued.raw)).resolves.toEqual({
         ok: false,
