@@ -43,6 +43,7 @@ export const components = pgTable(
     externalRef: text('external_ref'),
     containerName: text('container_name'),
     url: text('url'),
+    healthUrl: text('health_url'),
     fieldSources: jsonb('field_sources').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
