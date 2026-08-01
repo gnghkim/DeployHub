@@ -65,11 +65,44 @@ export default async function ProjectDetailPage({
   if (!project) notFound();
 
   const renderedAt = new Date();
+  const statusPromise = listProjectStatusData(db, [project.id]);
+  const historyPromise = statusPromise.then(async (statusByProject) => {
+    const status = statusByProject.get(project.id) ?? {
+      status: '미확인' as const,
+      hasObservation: false,
+      latestEvents: [],
+    };
+    const evidenceEvents = status.latestEvents.filter((event) => (
+      event.severity === 'warning' || event.severity === 'critical'
+    ));
+    const evidenceEventIds = new Set(evidenceEvents.map(
+      (event) => event.id,
+    ));
+    const {
+      events: historyEvents,
+      nextCursor: historyNextCursor,
+    } = await listTimelineEvents(db, {
+      projectId: project.id,
+      excludeIds: [...evidenceEventIds],
+      limit: 5,
+    });
+    return {
+      status,
+      evidenceEvents,
+      historyEvents,
+      historyNextCursor,
+    };
+  });
   const [
     linkedResources,
     drift,
     deployments,
-    statusByProject,
+    {
+      status,
+      evidenceEvents,
+      historyEvents,
+      historyNextCursor,
+    },
   ] = await Promise.all([
     listProjectResources(db, project.id),
     computeDrift(db, project.id),
@@ -84,27 +117,8 @@ export default async function ProjectDetailPage({
         )`),
         desc(schema.deployments.createdAt),
       ),
-    listProjectStatusData(db, [project.id]),
+    historyPromise,
   ]);
-  const status = statusByProject.get(project.id) ?? {
-    status: '미확인' as const,
-    hasObservation: false,
-    latestEvents: [],
-  };
-  const evidenceEvents = status.latestEvents.filter((event) => (
-    event.severity === 'warning' || event.severity === 'critical'
-  ));
-  const evidenceEventIds = new Set(evidenceEvents.map(
-    (event) => event.id,
-  ));
-  const {
-    events: historyEvents,
-    nextCursor: historyNextCursor,
-  } = await listTimelineEvents(db, {
-    projectId: project.id,
-    excludeIds: [...evidenceEventIds],
-    limit: 5,
-  });
   const deployment = summarizeProject({
     components: project.components.map((component) => ({
       type: component.componentType,

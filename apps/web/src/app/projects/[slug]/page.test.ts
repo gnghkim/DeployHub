@@ -2,7 +2,7 @@
 
 import type { TimelineEvent } from '@deployhub/db';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,8 +31,13 @@ vi.mock('next/navigation', () => ({ notFound: mocks.notFound }));
 
 import ProjectDetailPage from './page';
 
+const testFileUrl = import.meta.url.startsWith('file:')
+  ? import.meta.url
+  : pathToFileURL(import.meta.filename).href;
+const pagePath = fileURLToPath(new URL('./page.tsx', testFileUrl));
+const compositionPath = fileURLToPath(new URL('./composition.tsx', testFileUrl));
 const page = readFileSync(
-  resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/page.tsx'),
+  pagePath,
   'utf8',
 );
 
@@ -107,6 +112,22 @@ function sectionHeadings(container: HTMLElement): string[] {
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function statusData() {
+  return new Map([[project.id, {
+    status: '주의' as const,
+    hasObservation: true,
+    latestEvents: [evidenceEvent],
+  }]]);
+}
+
 beforeEach(() => {
   mocks.computeDrift.mockReset();
   mocks.computeDrift.mockResolvedValue([]);
@@ -115,11 +136,7 @@ beforeEach(() => {
   mocks.listProjectResources.mockReset();
   mocks.listProjectResources.mockResolvedValue([]);
   mocks.listProjectStatusData.mockReset();
-  mocks.listProjectStatusData.mockResolvedValue(new Map([[project.id, {
-    status: '주의',
-    hasObservation: true,
-    latestEvents: [evidenceEvent],
-  }]]));
+  mocks.listProjectStatusData.mockResolvedValue(statusData());
   mocks.listTimelineEvents.mockReset();
   mocks.listTimelineEvents.mockResolvedValue({
     events: historyEvents,
@@ -142,7 +159,7 @@ beforeEach(() => {
 describe('project detail status', () => {
   it('구성도가 Annotation 으로 관측을 그린다', () => {
     const composition = readFileSync(
-      resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/composition.tsx'),
+      compositionPath,
       'utf8',
     );
     expect(composition).toContain('<Annotation');
@@ -150,7 +167,7 @@ describe('project detail status', () => {
 
   it('구성도만 Sheet 안에 그린다', () => {
     const composition = readFileSync(
-      resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/composition.tsx'),
+      compositionPath,
       'utf8',
     );
     expect(composition).toContain('<Sheet');
@@ -159,7 +176,7 @@ describe('project detail status', () => {
 
   it('구성도의 관측 자리를 판정이 덮지 않는다', () => {
     const composition = readFileSync(
-      resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/composition.tsx'),
+      compositionPath,
       'utf8',
     );
     expect(composition).not.toContain('judgeStatus');
@@ -168,7 +185,7 @@ describe('project detail status', () => {
 
   it('Drift 에 경고색을 쓰지 않는다', () => {
     const page = readFileSync(
-      resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/page.tsx'),
+      pagePath,
       'utf8',
     );
     const driftBlock = page.slice(page.indexOf('DRIFT_LABELS'));
@@ -179,7 +196,7 @@ describe('project detail status', () => {
 
   it('관측 상태 부재를 프로젝트 판정 문구로 표시하지 않는다', () => {
     const composition = readFileSync(
-      resolve(process.cwd(), 'apps/web/src/app/projects/[slug]/composition.tsx'),
+      compositionPath,
       'utf8',
     );
     expect(composition).not.toContain('상태 미확인');
@@ -228,6 +245,27 @@ describe('project detail status', () => {
       expect.anything(),
       expect.objectContaining({ limit: 20 }),
     );
+  });
+
+  it('starts history after status resolves without waiting for unrelated data', async () => {
+    const resources = deferred<[]>();
+    const status = deferred<ReturnType<typeof statusData>>();
+    mocks.listProjectResources.mockReturnValue(resources.promise);
+    mocks.listProjectStatusData.mockReturnValue(status.promise);
+
+    const rendering = renderPage();
+    await vi.waitFor(() => {
+      expect(mocks.listProjectStatusData).toHaveBeenCalledOnce();
+    });
+    status.resolve(statusData());
+    await status.promise;
+    await Promise.resolve();
+    const historyCallsBeforeResources = mocks.listTimelineEvents.mock.calls.length;
+
+    resources.resolve([]);
+    await rendering;
+
+    expect(historyCallsBeforeResources).toBe(1);
   });
 
   it('renders returned history count and preserves evidence, deployment, and history order', async () => {
