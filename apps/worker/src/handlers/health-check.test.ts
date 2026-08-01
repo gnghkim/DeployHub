@@ -68,6 +68,7 @@ async function insertComponent(
   projectId: string,
   slug: string,
   url: string | null,
+  healthUrl: string | null = null,
 ): Promise<string> {
   const [component] = await db.insert(schema.components).values({
     projectId,
@@ -75,6 +76,7 @@ async function insertComponent(
     slug,
     componentType: 'frontend',
     url,
+    healthUrl,
   }).returning({ id: schema.components.id });
   return component!.id;
 }
@@ -269,6 +271,112 @@ describe('HTTP health check handler', () => {
         currentValue: 'up',
       },
     ]);
+  });
+
+  it('checks an explicit component health URL without also checking its same-origin domain root', async () => {
+    const projectId = await insertProject('yield');
+    const componentId = await insertComponent(
+      projectId,
+      'api',
+      'https://api.yield.ktgobiz.co.kr',
+      'https://api.yield.ktgobiz.co.kr/health/ready',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: null,
+      domain: 'api.yield.ktgobiz.co.kr',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://api.yield.ktgobiz.co.kr/health/ready',
+      1_234,
+    );
+    expect(await db.select().from(schema.changeEvents)).toMatchObject([
+      {
+        projectId,
+        componentId,
+        resourceId: null,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'up',
+      },
+    ]);
+  });
+
+  it('checks the component URL when no explicit health URL is configured', async () => {
+    const projectId = await insertProject('legacy-health-project');
+    await insertComponent(
+      projectId,
+      'legacy-health-component',
+      'https://legacy-health.example.com',
+    );
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://legacy-health.example.com',
+      1_234,
+    );
+  });
+
+  it('suppresses a component URL origin when its explicit health URL uses another origin', async () => {
+    const projectId = await insertProject('cross-origin-health-project');
+    await insertComponent(
+      projectId,
+      'cross-origin-health-component',
+      'https://api.example.com',
+      'https://status.example.net/api/ready',
+    );
+    await db.insert(schema.domains).values([
+      {
+        projectId,
+        componentId: null,
+        domain: 'api.example.com',
+        environment: 'production',
+      },
+      {
+        projectId,
+        componentId: null,
+        domain: 'www.example.com',
+        environment: 'production',
+      },
+    ]);
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://status.example.net/api/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://www.example.com',
+      1_234,
+    );
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://api.example.com',
+      1_234,
+    );
   });
 
   it('records one event when a component domain and its URL are identical', async () => {

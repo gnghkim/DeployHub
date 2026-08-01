@@ -76,6 +76,7 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
         projectId: schema.components.projectId,
         componentId: schema.components.id,
         url: schema.components.url,
+        healthUrl: schema.components.healthUrl,
       })
       .from(schema.components)
       .innerJoin(
@@ -85,6 +86,13 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
       .where(isNull(schema.projects.archivedAt)),
   ]);
   const targetsByUrl = new Map<string, HealthTargetCandidate>();
+  const componentOriginsWithHealthUrl = new Set(
+    components
+      .filter((component) => (
+        component.url !== null && component.healthUrl !== null
+      ))
+      .map((component) => new URL(component.url!).origin),
+  );
 
   function addTarget(
     url: string,
@@ -111,6 +119,9 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
 
   for (const domain of domains) {
     const url = `https://${domain.domain}`;
+    if (componentOriginsWithHealthUrl.has(new URL(url).origin)) {
+      continue;
+    }
     addTarget(url, 'domain', {
       projectId: domain.projectId,
       componentId: domain.componentId,
@@ -118,8 +129,9 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     });
   }
   for (const component of components) {
-    if (component.url !== null) {
-      addTarget(component.url, 'component', {
+    const url = component.healthUrl ?? component.url;
+    if (url !== null) {
+      addTarget(url, 'component', {
         projectId: component.projectId,
         componentId: component.componentId,
         resourceId: null,
