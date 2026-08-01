@@ -194,6 +194,28 @@ describe('POST /api/v1/project-drafts', () => {
     expect(response.status).toBe(403);
   });
 
+  it('returns 403 when project_slug_constraint does not match the manifest', async () => {
+    const token = await issue({
+      projectSlugConstraint: 'other-project',
+    });
+
+    const response = await createProjectDraftHandler(db)(request(token.raw));
+
+    expect(response.status).toBe(403);
+    expect(await db.select().from(schema.projectDrafts)).toHaveLength(0);
+  });
+
+  it('accepts a manifest whose slug matches project_slug_constraint', async () => {
+    const token = await issue({
+      projectSlugConstraint: 'deployhub',
+    });
+
+    const response = await createProjectDraftHandler(db)(request(token.raw));
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ status: 'pending_review' });
+  });
+
   it('returns 413 when the request body exceeds 256KB', async () => {
     const token = await issue();
 
