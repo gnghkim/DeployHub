@@ -208,7 +208,7 @@ describe('approveDraft', () => {
     ]);
   });
 
-  it('updates an existing project and its declared components', async () => {
+  it('updates an existing project and clears an omitted health URL', async () => {
     const [project] = await db
       .insert(schema.projects)
       .values({
@@ -224,8 +224,15 @@ describe('approveDraft', () => {
       slug: 'web',
       componentType: 'backend',
       framework: 'express',
+      healthUrl: 'https://old.example.com/health',
     });
-    const draft = await pendingDraft({ projectId: project.id });
+    const draft = await pendingDraft({
+      projectId: project.id,
+      manifestYaml: MANIFEST.replace(
+        '      healthUrl: https://hub.nolzza.net/api/health/ready\n',
+        '',
+      ),
+    });
 
     await approveDraft(draft.id);
 
@@ -252,7 +259,7 @@ describe('approveDraft', () => {
       externalRef: 'deployhub-web-service',
       containerName: 'deployhub-web',
       url: 'https://hub.nolzza.net',
-      healthUrl: 'https://hub.nolzza.net/api/health/ready',
+      healthUrl: null,
     });
   });
 
