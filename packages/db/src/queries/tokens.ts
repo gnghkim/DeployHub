@@ -111,7 +111,9 @@ export async function verifyToken(db: Db, raw: string): Promise<VerifyResult> {
     .from(registrationTokens)
     .where(and(
       eq(registrationTokens.tokenHash, tokenHash),
-      lt(registrationTokens.usedCount, registrationTokens.maxUses),
+      // Read-only checks (status, diff) do not consume a use, so a token that
+      // spent its last use on a Draft submission must still verify. Otherwise
+      // the default single-use token breaks the register -> status -> diff flow.
       gt(registrationTokens.expiresAt, now),
       isNull(registrationTokens.revokedAt),
     ));
