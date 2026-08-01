@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSheetCollapse } from './project-sheet-collapse';
@@ -69,6 +69,8 @@ describe('ProjectSheetCollapse', () => {
     await act(async () => toggleButton()?.click());
 
     expect(details('project-1')?.hidden).toBe(true);
+    expect(toggleButton()?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggleButton()?.getAttribute('aria-label')).toBe('DeployHub 펼치기');
     expect(container.querySelector('[data-testid="header"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="trailing"]')).not.toBeNull();
     expect(localStorage.getItem(storageKey('project-1'))).toBe('1');
@@ -76,29 +78,72 @@ describe('ProjectSheetCollapse', () => {
     await act(async () => toggleButton()?.click());
 
     expect(details('project-1')?.hidden).toBe(false);
+    expect(toggleButton()?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggleButton()?.getAttribute('aria-label')).toBe('DeployHub 접기');
     expect(localStorage.getItem(storageKey('project-1'))).toBeNull();
   });
 
   it('restores a stored collapse for one project without affecting another', async () => {
     localStorage.setItem(storageKey('project-1'), '1');
-    await render('project-1');
+    await act(async () => {
+      root.render(
+        <>
+          <ProjectSheetCollapse
+            projectId="project-1"
+            projectName="DeployHub"
+            header={<span>First project</span>}
+          >
+            First details
+          </ProjectSheetCollapse>
+          <ProjectSheetCollapse
+            projectId="project-2"
+            projectName="Other project"
+            header={<span>Second project</span>}
+          >
+            Second details
+          </ProjectSheetCollapse>
+        </>,
+      );
+    });
     expect(details('project-1')?.hidden).toBe(true);
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await render('project-2', 'Other project');
-
     expect(details('project-2')?.hidden).toBe(false);
   });
 
+  it('persists each click once when StrictMode replays rendering', async () => {
+    const setItem = vi.spyOn(localStorage, 'setItem');
+    const removeItem = vi.spyOn(localStorage, 'removeItem');
+
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <ProjectSheetCollapse
+            projectId="project-1"
+            projectName="DeployHub"
+            header={<span>Project header</span>}
+          >
+            Project details
+          </ProjectSheetCollapse>
+        </StrictMode>,
+      );
+    });
+
+    await act(async () => toggleButton()?.click());
+    expect(setItem).toHaveBeenCalledOnce();
+    expect(setItem).toHaveBeenCalledWith(storageKey('project-1'), '1');
+
+    await act(async () => toggleButton()?.click());
+    expect(removeItem).toHaveBeenCalledOnce();
+    expect(removeItem).toHaveBeenCalledWith(storageKey('project-1'));
+  });
+
   it('keeps toggling in memory when storage operations fail', async () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
       throw new Error('unavailable');
     });
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new Error('unavailable');
     });
-    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'removeItem').mockImplementation(() => {
       throw new Error('unavailable');
     });
     await render();

@@ -33,21 +33,19 @@ export function ProjectSheetCollapse({
   }, [projectId]);
 
   function toggle() {
-    setCollapsed((wasCollapsed) => {
-      const nextCollapsed = !wasCollapsed;
+    const nextCollapsed = !collapsed;
 
-      try {
-        if (nextCollapsed) {
-          window.localStorage.setItem(storageKey(projectId), '1');
-        } else {
-          window.localStorage.removeItem(storageKey(projectId));
-        }
-      } catch {
-        // Local storage can be unavailable, but the control should still work.
+    try {
+      if (nextCollapsed) {
+        window.localStorage.setItem(storageKey(projectId), '1');
+      } else {
+        window.localStorage.removeItem(storageKey(projectId));
       }
+    } catch {
+      // Local storage can be unavailable, but the control should still work.
+    }
 
-      return nextCollapsed;
-    });
+    setCollapsed(nextCollapsed);
   }
 
   return (
@@ -58,22 +56,20 @@ export function ProjectSheetCollapse({
             aria-controls={detailsId}
             aria-expanded={!collapsed}
             aria-label={`${projectName} ${collapsed ? '펼치기' : '접기'}`}
-            className="mt-0.5 shrink-0 text-[var(--absent)] hover:text-[var(--line)]"
+            className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded text-[var(--absent)] hover:bg-[var(--rule)] hover:text-[var(--line)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
             onClick={toggle}
             type="button"
           >
             {collapsed ? '▸' : '▾'}
           </button>
-          <div className="min-w-0">{header}</div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+            {header}
+          </div>
         </div>
         {trailing}
       </header>
 
-      <div
-        className="mt-4 min-w-0 border-t border-[var(--rule)] pt-4"
-        hidden={collapsed}
-        id={detailsId}
-      >
+      <div hidden={collapsed} id={detailsId}>
         {children}
       </div>
     </>
