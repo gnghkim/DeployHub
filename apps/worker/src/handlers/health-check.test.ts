@@ -10,6 +10,7 @@ import {
 import { asc, eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
+  listProjectStatusData,
   schema,
   type Db,
   type JobRecord,
@@ -300,16 +301,173 @@ describe('HTTP health check handler', () => {
       'https://api.yield.ktgobiz.co.kr/health/ready',
       1_234,
     );
-    expect(await db.select().from(schema.changeEvents)).toMatchObject([
-      {
+    const events = await db.select().from(schema.changeEvents);
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
         projectId,
         componentId,
         resourceId: null,
         kind: 'health_status',
         severity: 'info',
         currentValue: 'up',
+      }),
+      expect.objectContaining({
+        projectId,
+        componentId: null,
+        resourceId: null,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'up',
+      }),
+    ]));
+  });
+
+  it('reconciles prior domain failures through replacement health checks', async () => {
+    const projectId = await insertProject('replaced-domain-scopes');
+    const projectReplacementId = await insertComponent(
+      projectId,
+      'project-replacement',
+      null,
+    );
+    const componentReplacementId = await insertComponent(
+      projectId,
+      'component-replacement',
+      'https://component-scope.example.com',
+    );
+    const priorDomainComponentId = await insertComponent(
+      projectId,
+      'prior-domain-scope',
+      null,
+    );
+    await db.insert(schema.domains).values([
+      {
+        projectId,
+        componentId: null,
+        domain: 'project-scope.example.com',
+        environment: 'production',
+      },
+      {
+        projectId,
+        componentId: priorDomainComponentId,
+        domain: 'component-scope.example.com',
+        environment: 'production',
       },
     ]);
+    let readinessResult: HealthResult = {
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    };
+    const checkHttp = vi.fn(async (url: string): Promise<HealthResult> => (
+      url.endsWith('/ready')
+        ? readinessResult
+        : { kind: 'down', status: 404, latencyMs: 2 }
+    ));
+    const handler = createHealthCheckHandler(db, 1_234, { checkHttp });
+
+    await handler(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://project-scope.example.com',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://component-scope.example.com',
+      1_234,
+    );
+    expect(
+      (await listProjectStatusData(db, [projectId])).get(projectId)?.status,
+    ).toBe('장애');
+
+    await db
+      .update(schema.components)
+      .set({
+        url: 'https://project-scope.example.com',
+        healthUrl: 'https://project-scope.example.com/ready',
+      })
+      .where(eq(schema.components.id, projectReplacementId));
+    await db
+      .update(schema.components)
+      .set({ healthUrl: 'https://component-scope.example.com/ready' })
+      .where(eq(schema.components.id, componentReplacementId));
+    checkHttp.mockClear();
+
+    await handler(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://project-scope.example.com/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://component-scope.example.com/ready',
+      1_234,
+    );
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://project-scope.example.com',
+      1_234,
+    );
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://component-scope.example.com',
+      1_234,
+    );
+
+    const status = (await listProjectStatusData(db, [projectId])).get(
+      projectId,
+    );
+    expect(status?.status).toBe('정상');
+    expect(status?.latestEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        componentId: null,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'up',
+      }),
+      expect.objectContaining({
+        componentId: priorDomainComponentId,
+        kind: 'health_status',
+        severity: 'info',
+        currentValue: 'up',
+      }),
+    ]));
+    const history = await db.select().from(schema.changeEvents);
+    expect(history.filter(({ severity }) => severity === 'critical'))
+      .toHaveLength(2);
+
+    readinessResult = { kind: 'down', status: 503, latencyMs: 2 };
+    checkHttp.mockClear();
+
+    await handler(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://project-scope.example.com',
+      1_234,
+    );
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://component-scope.example.com',
+      1_234,
+    );
+    const failingStatus = (
+      await listProjectStatusData(db, [projectId])
+    ).get(projectId);
+    expect(failingStatus?.status).toBe('장애');
+    expect(failingStatus?.latestEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        componentId: null,
+        kind: 'health_status',
+        severity: 'critical',
+        currentValue: 'down (503)',
+      }),
+      expect.objectContaining({
+        componentId: priorDomainComponentId,
+        kind: 'health_status',
+        severity: 'critical',
+        currentValue: 'down (503)',
+      }),
+    ]));
   });
 
   it('checks the component URL when no explicit health URL is configured', async () => {

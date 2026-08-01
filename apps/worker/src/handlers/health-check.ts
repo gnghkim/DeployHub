@@ -26,7 +26,7 @@ type HealthTarget = {
 
 type HealthCheck = {
   url: string;
-  target: HealthTarget;
+  targets: HealthTarget[];
 };
 
 type HealthTargetCandidate = {
@@ -65,6 +65,12 @@ function normalizedOrigin(url: string): string | null {
   }
 }
 
+function healthTargetScopeKey(target: HealthTarget): string {
+  return target.componentId !== null
+    ? `component:${target.componentId}`
+    : `project:${target.projectId}`;
+}
+
 async function healthTargets(db: Db): Promise<HealthCheck[]> {
   const [domains, components] = await Promise.all([
     db
@@ -97,7 +103,14 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     string,
     Map<string, HealthTargetCandidate>
   >();
-  const componentOriginsWithHealthUrl = new Map<string, Set<string>>();
+  const replacementComponentsByProjectAndOrigin = new Map<
+    string,
+    Map<string, Map<string, string>>
+  >();
+  const replacementTargetsByProjectAndUrl = new Map<
+    string,
+    Map<string, Map<string, HealthTarget>>
+  >();
 
   for (const component of components) {
     if (component.url === null || component.healthUrl === null) {
@@ -107,11 +120,17 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     if (origin === null) {
       continue;
     }
-    const projectOrigins = componentOriginsWithHealthUrl.get(
+    const projectOrigins = replacementComponentsByProjectAndOrigin.get(
       component.projectId,
-    ) ?? new Set<string>();
-    projectOrigins.add(origin);
-    componentOriginsWithHealthUrl.set(component.projectId, projectOrigins);
+    ) ?? new Map<string, Map<string, string>>();
+    const replacementComponents = projectOrigins.get(origin)
+      ?? new Map<string, string>();
+    replacementComponents.set(component.componentId, component.healthUrl);
+    projectOrigins.set(origin, replacementComponents);
+    replacementComponentsByProjectAndOrigin.set(
+      component.projectId,
+      projectOrigins,
+    );
   }
 
   function addTarget(
@@ -140,20 +159,43 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     targetsByProjectAndUrl.set(target.projectId, targetsByUrl);
   }
 
+  function addReplacementTarget(url: string, target: HealthTarget): void {
+    const targetsByUrl = replacementTargetsByProjectAndUrl.get(
+      target.projectId,
+    ) ?? new Map<string, Map<string, HealthTarget>>();
+    const targetsByScope = targetsByUrl.get(url)
+      ?? new Map<string, HealthTarget>();
+    targetsByScope.set(healthTargetScopeKey(target), target);
+    targetsByUrl.set(url, targetsByScope);
+    replacementTargetsByProjectAndUrl.set(target.projectId, targetsByUrl);
+  }
+
   for (const domain of domains) {
     const url = `https://${domain.domain}`;
     const origin = normalizedOrigin(url);
-    if (
-      origin !== null
-      && componentOriginsWithHealthUrl.get(domain.projectId)?.has(origin)
-    ) {
-      continue;
-    }
-    addTarget(url, 'domain', {
+    const replacementComponents = origin === null
+      ? undefined
+      : replacementComponentsByProjectAndOrigin
+        .get(domain.projectId)
+        ?.get(origin);
+    const replacementUrl = domain.componentId === null
+      ? undefined
+      : replacementComponents?.get(domain.componentId);
+    const fallbackReplacementUrl = replacementComponents === undefined
+      ? undefined
+      : [...replacementComponents]
+        .sort(([firstId], [secondId]) => firstId.localeCompare(secondId))[0]?.[1];
+    const selectedReplacementUrl = replacementUrl ?? fallbackReplacementUrl;
+    const target: HealthTarget = {
       projectId: domain.projectId,
       componentId: domain.componentId,
       resourceId: null,
-    });
+    };
+    if (selectedReplacementUrl !== undefined) {
+      addReplacementTarget(selectedReplacementUrl, target);
+      continue;
+    }
+    addTarget(url, 'domain', target);
   }
   for (const component of components) {
     const url = component.healthUrl ?? component.url;
@@ -166,11 +208,22 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     }
   }
 
-  return [...targetsByProjectAndUrl.values()].flatMap((targetsByUrl) => (
-    [...targetsByUrl].map(([url, candidate]) => ({
-      url,
-      target: candidate.target,
-    }))
+  return [...targetsByProjectAndUrl].flatMap(([projectId, targetsByUrl]) => (
+    [...targetsByUrl].map(([url, candidate]) => {
+      const targetsByScope = new Map<string, HealthTarget>([
+        [healthTargetScopeKey(candidate.target), candidate.target],
+      ]);
+      const replacementTargets = replacementTargetsByProjectAndUrl
+        .get(projectId)
+        ?.get(url);
+      for (const [scope, target] of replacementTargets ?? []) {
+        targetsByScope.set(scope, target);
+      }
+      return {
+        url,
+        targets: [...targetsByScope.values()],
+      };
+    })
   ));
 }
 
@@ -193,15 +246,17 @@ export function createHealthCheckHandler(
       await Promise.all(batch.map(async (healthCheck) => {
         const result = await check(healthCheck.url, timeoutMs);
         const value = eventValue(result);
-        await recordChangeIfChanged(db, {
-          projectId: healthCheck.target.projectId,
-          componentId: healthCheck.target.componentId,
-          resourceId: healthCheck.target.resourceId,
-          kind: 'health_status',
-          severity: value.severity,
-          currentValue: value.currentValue,
-          detail: `Health check for ${healthCheck.url}`,
-        });
+        await Promise.all(healthCheck.targets.map(async (target) => {
+          await recordChangeIfChanged(db, {
+            projectId: target.projectId,
+            componentId: target.componentId,
+            resourceId: target.resourceId,
+            kind: 'health_status',
+            severity: value.severity,
+            currentValue: value.currentValue,
+            detail: `Health check for ${healthCheck.url}`,
+          });
+        }));
       }));
     }
   };
