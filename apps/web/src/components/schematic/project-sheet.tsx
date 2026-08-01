@@ -119,32 +119,32 @@ export function ProjectSheet({
               </li>
             ) : null}
 
-          {project.deploymentLabel ? (
-            <li className="min-w-0">
-              <div className="flex min-w-0 items-baseline gap-2 text-[var(--line-mute)]">
-                <span
-                  aria-hidden="true"
-                  className="shrink-0 text-[var(--absent)]"
-                >
-                  └─┬
-                </span>
-                <span className="min-w-0 break-words">
-                  {project.deploymentLabel}
-                </span>
-              </div>
-              {componentItems.length > 0 ? (
-                <ul className="ml-2 mt-2 min-w-0 space-y-2 sm:ml-4">
+            {project.deploymentLabel ? (
+              <li className="min-w-0">
+                <div className="flex min-w-0 items-baseline gap-2 text-[var(--line-mute)]">
+                  <span
+                    aria-hidden="true"
+                    className="shrink-0 text-[var(--absent)]"
+                  >
+                    └─┬
+                  </span>
+                  <span className="min-w-0 break-words">
+                    {project.deploymentLabel}
+                  </span>
+                </div>
+                {componentItems.length > 0 ? (
+                  <ul className="ml-2 mt-2 min-w-0 space-y-2 sm:ml-4">
+                    {componentItems}
+                  </ul>
+                ) : null}
+              </li>
+            ) : componentItems.length > 0 ? (
+              <li className="min-w-0">
+                <ul className="min-w-0 space-y-2">
                   {componentItems}
                 </ul>
-              ) : null}
-            </li>
-          ) : componentItems.length > 0 ? (
-            <li className="min-w-0">
-              <ul className="min-w-0 space-y-2">
-                {componentItems}
-              </ul>
-            </li>
-          ) : null}
+              </li>
+            ) : null}
           </ul>
         </div>
       </ProjectSheetCollapse>
