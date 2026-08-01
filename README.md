@@ -54,6 +54,9 @@ node packages/cli/dist/index.js sync --draft
 `diff`에서 manifest에 없는 기존 구성요소는 표시만 하며 자동 삭제하지
 않는다. 자세한 AI 작업 절차는 [AGENTS.md](./AGENTS.md)를 따른다.
 
+토큰 발급부터 Draft 승인까지 등록 절차 전체는
+[프로젝트 등록 가이드](./docs/project-registration.md)에 정리되어 있다.
+
 다른 저장소에서 AI 에이전트가 같은 절차를 따르게 하려면
 [DeployHub AGENTS 템플릿](./templates/AGENTS.deployhub.md)을 그 저장소의
 기존 지침에 합쳐 사용한다. 기존 `AGENTS.md`를 덮어쓰지 않는다.
