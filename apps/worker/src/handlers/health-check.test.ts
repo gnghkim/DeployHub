@@ -379,6 +379,266 @@ describe('HTTP health check handler', () => {
     );
   });
 
+  it('does not let one project suppress another project domain', async () => {
+    const componentProjectId = await insertProject(
+      'component-origin-project',
+    );
+    const domainProjectId = await insertProject('domain-origin-project');
+    await insertComponent(
+      componentProjectId,
+      'component-origin',
+      'https://shared-origin.example.com',
+      'https://health.example.net/ready',
+    );
+    await db.insert(schema.domains).values({
+      projectId: domainProjectId,
+      componentId: null,
+      domain: 'shared-origin.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://health.example.net/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://shared-origin.example.com',
+      1_234,
+    );
+    const events = await db
+      .select({ projectId: schema.changeEvents.projectId })
+      .from(schema.changeEvents);
+    expect(events.map(({ projectId }) => projectId).sort()).toEqual(
+      [componentProjectId, domainProjectId].sort(),
+    );
+  });
+
+  it('retains targets for two projects sharing an explicit health URL', async () => {
+    const firstProjectId = await insertProject('first-shared-health-project');
+    const secondProjectId = await insertProject(
+      'second-shared-health-project',
+    );
+    await insertComponent(
+      firstProjectId,
+      'first-shared-health-component',
+      'https://first-api.example.com',
+      'https://shared-health.example.net/ready',
+    );
+    await insertComponent(
+      secondProjectId,
+      'second-shared-health-component',
+      'https://second-api.example.com',
+      'https://shared-health.example.net/ready',
+    );
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenNthCalledWith(
+      1,
+      'https://shared-health.example.net/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenNthCalledWith(
+      2,
+      'https://shared-health.example.net/ready',
+      1_234,
+    );
+    const events = await db
+      .select({ projectId: schema.changeEvents.projectId })
+      .from(schema.changeEvents);
+    expect(events.map(({ projectId }) => projectId).sort()).toEqual(
+      [firstProjectId, secondProjectId].sort(),
+    );
+  });
+
+  it('continues checking malformed stored targets and valid targets', async () => {
+    const projectId = await insertProject('malformed-target-project');
+    await insertComponent(
+      projectId,
+      'malformed-origin-with-health',
+      'not a valid URL',
+      'https://malformed-origin-health.example.com/ready',
+    );
+    await insertComponent(
+      projectId,
+      'malformed-url-target',
+      'also not a valid URL',
+    );
+    await insertComponent(
+      projectId,
+      'valid-target',
+      'https://valid-target.example.com',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: null,
+      domain: '%',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn(async (url: string): Promise<HealthResult> => {
+      if (url === 'https://%' || url === 'also not a valid URL') {
+        return {
+          kind: 'unreachable',
+          reason: 'network',
+          latencyMs: 1,
+        };
+      }
+      return { kind: 'up', status: 200, latencyMs: 2 };
+    });
+
+    await expect(
+      createHealthCheckHandler(db, 1_234, { checkHttp })(job()),
+    ).resolves.toBeUndefined();
+
+    expect(checkHttp).toHaveBeenCalledTimes(4);
+    expect(checkHttp).toHaveBeenCalledWith('https://%', 1_234);
+    expect(checkHttp).toHaveBeenCalledWith('also not a valid URL', 1_234);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://malformed-origin-health.example.com/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://valid-target.example.com',
+      1_234,
+    );
+    const events = await db
+      .select({ currentValue: schema.changeEvents.currentValue })
+      .from(schema.changeEvents);
+    expect(events.map(({ currentValue }) => currentValue).sort()).toEqual([
+      'unreachable (network)',
+      'unreachable (network)',
+      'up',
+      'up',
+    ]);
+  });
+
+  it('normalizes default ports but keeps non-default ports distinct', async () => {
+    const projectId = await insertProject('port-normalization-project');
+    await insertComponent(
+      projectId,
+      'default-port-component',
+      'https://default-port.example.com:443',
+      'https://health.example.net/default-port',
+    );
+    await insertComponent(
+      projectId,
+      'non-default-port-component',
+      'https://non-default-port.example.com:8443',
+      'https://health.example.net/non-default-port',
+    );
+    await db.insert(schema.domains).values([
+      {
+        projectId,
+        componentId: null,
+        domain: 'default-port.example.com',
+        environment: 'production',
+      },
+      {
+        projectId,
+        componentId: null,
+        domain: 'non-default-port.example.com',
+        environment: 'production',
+      },
+    ]);
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(3);
+    expect(checkHttp).not.toHaveBeenCalledWith(
+      'https://default-port.example.com',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://non-default-port.example.com',
+      1_234,
+    );
+  });
+
+  it('checks a health URL and domain root when the component URL is null', async () => {
+    const projectId = await insertProject('health-only-component-project');
+    await insertComponent(
+      projectId,
+      'health-only-component',
+      null,
+      'https://health-only.example.com/ready',
+    );
+    await db.insert(schema.domains).values({
+      projectId,
+      componentId: null,
+      domain: 'health-only.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledTimes(2);
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://health-only.example.com/ready',
+      1_234,
+    );
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://health-only.example.com',
+      1_234,
+    );
+  });
+
+  it('does not let an archived project component suppress an active project domain', async () => {
+    const archivedProjectId = await insertProject(
+      'archived-suppressor-project',
+      new Date(),
+    );
+    const activeProjectId = await insertProject('active-domain-project');
+    await insertComponent(
+      archivedProjectId,
+      'archived-suppressor',
+      'https://active-shared.example.com',
+      'https://archived-health.example.net/ready',
+    );
+    await db.insert(schema.domains).values({
+      projectId: activeProjectId,
+      componentId: null,
+      domain: 'active-shared.example.com',
+      environment: 'production',
+    });
+    const checkHttp = vi.fn().mockResolvedValue({
+      kind: 'up',
+      status: 200,
+      latencyMs: 2,
+    } satisfies HealthResult);
+
+    await createHealthCheckHandler(db, 1_234, { checkHttp })(job());
+
+    expect(checkHttp).toHaveBeenCalledOnce();
+    expect(checkHttp).toHaveBeenCalledWith(
+      'https://active-shared.example.com',
+      1_234,
+    );
+  });
+
   it('records one event when a component domain and its URL are identical', async () => {
     const projectId = await insertProject('linked-domain-project');
     const componentId = await insertComponent(

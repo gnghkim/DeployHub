@@ -57,6 +57,14 @@ function eventValue(result: HealthResult): {
   };
 }
 
+function normalizedOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
 async function healthTargets(db: Db): Promise<HealthCheck[]> {
   const [domains, components] = await Promise.all([
     db
@@ -85,20 +93,34 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
       )
       .where(isNull(schema.projects.archivedAt)),
   ]);
-  const targetsByUrl = new Map<string, HealthTargetCandidate>();
-  const componentOriginsWithHealthUrl = new Set(
-    components
-      .filter((component) => (
-        component.url !== null && component.healthUrl !== null
-      ))
-      .map((component) => new URL(component.url!).origin),
-  );
+  const targetsByProjectAndUrl = new Map<
+    string,
+    Map<string, HealthTargetCandidate>
+  >();
+  const componentOriginsWithHealthUrl = new Map<string, Set<string>>();
+
+  for (const component of components) {
+    if (component.url === null || component.healthUrl === null) {
+      continue;
+    }
+    const origin = normalizedOrigin(component.url);
+    if (origin === null) {
+      continue;
+    }
+    const projectOrigins = componentOriginsWithHealthUrl.get(
+      component.projectId,
+    ) ?? new Set<string>();
+    projectOrigins.add(origin);
+    componentOriginsWithHealthUrl.set(component.projectId, projectOrigins);
+  }
 
   function addTarget(
     url: string,
     source: HealthTargetCandidate['source'],
     target: HealthTarget,
   ): void {
+    const targetsByUrl = targetsByProjectAndUrl.get(target.projectId)
+      ?? new Map<string, HealthTargetCandidate>();
     const current = targetsByUrl.get(url);
     const candidateIsMoreSpecific = target.componentId !== null
       && current?.target.componentId === null;
@@ -115,11 +137,16 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     ) {
       targetsByUrl.set(url, { source, target });
     }
+    targetsByProjectAndUrl.set(target.projectId, targetsByUrl);
   }
 
   for (const domain of domains) {
     const url = `https://${domain.domain}`;
-    if (componentOriginsWithHealthUrl.has(new URL(url).origin)) {
+    const origin = normalizedOrigin(url);
+    if (
+      origin !== null
+      && componentOriginsWithHealthUrl.get(domain.projectId)?.has(origin)
+    ) {
       continue;
     }
     addTarget(url, 'domain', {
@@ -139,10 +166,12 @@ async function healthTargets(db: Db): Promise<HealthCheck[]> {
     }
   }
 
-  return [...targetsByUrl].map(([url, candidate]) => ({
-    url,
-    target: candidate.target,
-  }));
+  return [...targetsByProjectAndUrl.values()].flatMap((targetsByUrl) => (
+    [...targetsByUrl].map(([url, candidate]) => ({
+      url,
+      target: candidate.target,
+    }))
+  ));
 }
 
 export function createHealthCheckHandler(
