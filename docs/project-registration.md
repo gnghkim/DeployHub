@@ -258,7 +258,7 @@ Draft submitted: https://hub.nolzza.net/settings/drafts/0f3c...e21
 1. **변경 요약** — 프로젝트 필드/구성요소/도메인의 추가·변경·삭제.
    신규 등록이면 모든 구성요소가 `추가`로 표시된다.
 2. **배포 선언** — 구성요소별 `provider` / `externalRef` / `container` /
-   `url`. `inferred`로 표시된 값은 주의색으로 강조된다.
+   `url` / `healthUrl`. `inferred`로 표시된 값은 주의색으로 강조된다.
 3. **검증 결과** — 서버 파싱 시점의 오류와 경고.
 4. **필드 출처** — 각 필드를 어떻게 알아냈는지(`detected` / `inferred` /
    `unknown`)와 근거 파일.
@@ -362,10 +362,16 @@ Node 컴포넌트는 루트 이하의 모든 `package.json`을 훑어 찾는다(
 | `externalRef` | | Supabase project ref, Vercel project id 등 제공자 내부 식별자 |
 | `container` | | `^[a-zA-Z0-9][a-zA-Z0-9_.-]*$` — 운영 배포에서 확인한 컨테이너 이름 |
 | `url` | | `http://` 또는 `https://`로 시작하는 확인된 운영 URL |
+| `healthUrl` | | 인증이나 요청 본문 없이 `GET`으로 실제 준비 상태를 검증하는, 확인된 readiness/health endpoint의 전체 HTTP(S) URL |
 
 **`provider`는 위 목록에만 있는 값을 쓴다.** 목록에 없는 제공자를 쓰고 있다면
 값을 지어내지 말고 생략한다. `url`도 마찬가지로 파일에서 확인할 근거가 없으면
 비워 둔다.
+
+`healthUrl`에는 비밀값을 포함하지 않으며 인증이나 요청 본문을 요구하지 않는
+엔드포인트만 선언한다. `healthUrl`이 구성요소의 `url`과 동일한 origin이면 해당
+구성요소와 도메인 origin의 루트 HTTP 검사는 `healthUrl` 검사로 대체된다. TLS
+검사는 그대로 유지된다.
 
 ---
 
