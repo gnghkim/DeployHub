@@ -48,6 +48,14 @@ export function manifestJsonSchema(): Record<string, unknown> {
       ) {
         jsonSchema.type = 'string';
       }
+      if (
+        path.join('.') ===
+        'properties.spec.properties.components.items.properties.healthUrl'
+      ) {
+        jsonSchema.type = 'string';
+        jsonSchema.format = 'uri';
+        jsonSchema.pattern = '^https?://';
+      }
     },
   });
 }

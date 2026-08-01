@@ -192,13 +192,14 @@ describe('manifest component deployment declarations', () => {
     }
   });
 
-  it('keeps all four deployment declaration fields optional', () => {
+  it('keeps all five deployment declaration fields optional', () => {
     const component = parseComponent({});
 
     expect(component.provider).toBeUndefined();
     expect(component.externalRef).toBeUndefined();
     expect(component.container).toBeUndefined();
     expect(component.url).toBeUndefined();
+    expect(component.healthUrl).toBeUndefined();
   });
 
   it('trims every deployment declaration string', () => {
@@ -238,6 +239,27 @@ describe('manifest component deployment declarations', () => {
     );
     expect(() => parseComponent({ url: 'ftp://hub.nolzza.net' })).toThrow();
     expect(() => parseComponent({ url: 'hub.nolzza.net' })).toThrow();
+  });
+
+  it('requires an absolute HTTP(S) health URL', () => {
+    expect(
+      parseComponent({ healthUrl: '  https://api.example.com/health/ready  ' })
+        .healthUrl,
+    ).toBe('https://api.example.com/health/ready');
+    expect(parseComponent({ healthUrl: 'http://localhost:3000/health' }).healthUrl).toBe(
+      'http://localhost:3000/health',
+    );
+
+    for (const healthUrl of [
+      '/health',
+      'api.example.com/health',
+      'ftp://api.example.com/health',
+      'https://',
+    ]) {
+      expect(() => parseComponent({ healthUrl })).toThrow(
+        'Expected an absolute HTTP(S) URL',
+      );
+    }
   });
 
   it('continues to reject unknown component keys', () => {

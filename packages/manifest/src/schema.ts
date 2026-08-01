@@ -53,6 +53,22 @@ const optionalTrimmedString = z
   .transform((value) => value || undefined)
   .optional();
 const oneToFive = z.number().int().min(1).max(5);
+const absoluteHttpUrl = z.string().trim().superRefine((value, context) => {
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      !url.hostname
+    ) {
+      throw new Error();
+    }
+  } catch {
+    context.addIssue({
+      code: 'custom',
+      message: 'Expected an absolute HTTP(S) URL',
+    });
+  }
+});
 
 const metadataSchema = z
   .object({
@@ -89,6 +105,7 @@ const componentSchema = z
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/)
       .optional(),
     url: z.string().trim().regex(/^https?:\/\//).optional(),
+    healthUrl: absoluteHttpUrl.optional(),
   })
   .strict();
 

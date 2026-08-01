@@ -8,6 +8,8 @@ type JsonSchema = {
   items?: JsonSchema;
   enum?: unknown[];
   type?: string;
+  format?: string;
+  pattern?: string;
 };
 
 const property = (schema: JsonSchema, name: string): JsonSchema => {
@@ -54,6 +56,18 @@ describe('manifestJsonSchema', () => {
     expect(component.enum).toContain('self-hosted');
     expect(component.enum).not.toContain('other');
     expect(externalRef.type).toBe('string');
+  });
+
+  it('exposes healthUrl as an absolute HTTP(S) URL', () => {
+    const schema = manifestJsonSchema() as JsonSchema;
+    const healthUrl = property(
+      property(property(schema, 'spec'), 'components').items!,
+      'healthUrl',
+    );
+
+    expect(healthUrl.type).toBe('string');
+    expect(healthUrl.format).toBe('uri');
+    expect(healthUrl.pattern).toBe('^https?://');
   });
 
   it('returns the same schema on repeated calls', () => {
