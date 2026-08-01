@@ -1,5 +1,5 @@
 import type { TimelineEvent } from '@deployhub/db';
-import { formatRelativeTime } from '@/lib/backend-view';
+import { formatRelativeTime } from '../../lib/backend-view';
 import { formatDateTime } from '../../lib/datetime';
 
 const SEVERITY_TEXT = {
@@ -11,10 +11,12 @@ const SEVERITY_TEXT = {
 export function TimelineList({
   events,
   renderedAt,
+  projectNames,
   emptyMessage = '아직 기록된 변경이 없습니다',
 }: {
   events: TimelineEvent[];
   renderedAt: Date;
+  projectNames?: ReadonlyMap<string, string>;
   emptyMessage?: string;
 }) {
   const rows = events.map((event) => ({
@@ -53,6 +55,13 @@ export function TimelineList({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+              {projectNames ? (
+                <span className="text-xs font-medium text-[var(--line-mute)]">
+                  {event.projectId === null
+                    ? '전역'
+                    : projectNames.get(event.projectId) ?? '삭제된 프로젝트'}
+                </span>
+              ) : null}
               <span className="font-mono text-xs text-[var(--annotation)]">
                 {event.kind}
               </span>
