@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ProjectStatus } from '@deployhub/db';
 import { Annotation } from './annotation';
 import { Sheet } from './sheet';
+import { ProjectSheetCollapse } from './project-sheet-collapse';
 import { StatusDot } from '../ui/status-dot';
 import { Badge, type Tone } from '../ui/badge';
 import { formatDateTime } from '../../lib/datetime';
@@ -84,19 +85,22 @@ export function ProjectSheet({
 
   return (
     <Sheet className="min-w-0 overflow-hidden">
-      <header className="flex min-w-0 items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-          <StatusDot tone={tone} />
-          <Link
-            href={`/projects/${project.slug}`}
-            className="min-w-0 break-words text-[15px] font-medium text-[var(--line)] hover:underline"
-          >
-            {project.name}
-          </Link>
-          <Badge tone={tone}>{project.judgement}</Badge>
-        </div>
-
-        {project.latestDeploymentAt && project.latestDeploymentRelative ? (
+      <ProjectSheetCollapse
+        projectId={project.id}
+        projectName={project.name}
+        header={(
+          <>
+            <StatusDot tone={tone} />
+            <Link
+              href={`/projects/${project.slug}`}
+              className="min-w-0 break-words text-[15px] font-medium text-[var(--line)] hover:underline"
+            >
+              {project.name}
+            </Link>
+            <Badge tone={tone}>{project.judgement}</Badge>
+          </>
+        )}
+        trailing={project.latestDeploymentAt && project.latestDeploymentRelative ? (
           <time
             className="shrink-0 text-xs text-[var(--absent)]"
             dateTime={project.latestDeploymentAt.toISOString()}
@@ -105,45 +109,45 @@ export function ProjectSheet({
             {project.latestDeploymentRelative}
           </time>
         ) : null}
-      </header>
+      >
+        <div className="mt-4 min-w-0 border-t border-[var(--rule)] pt-4 font-mono text-[13px]">
+          <ul className="min-w-0 space-y-2">
+            {project.repository ? (
+              <li className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[var(--line-mute)]">
+                <span className="shrink-0 text-[var(--annotation)]">github</span>
+                <span className="min-w-0 break-all">{project.repository}</span>
+              </li>
+            ) : null}
 
-      <div className="mt-4 min-w-0 border-t border-[var(--rule)] pt-4 font-mono text-[13px]">
-        <ul className="min-w-0 space-y-2">
-          {project.repository ? (
-            <li className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[var(--line-mute)]">
-              <span className="shrink-0 text-[var(--annotation)]">github</span>
-              <span className="min-w-0 break-all">{project.repository}</span>
-            </li>
-          ) : null}
-
-          {project.deploymentLabel ? (
-            <li className="min-w-0">
-              <div className="flex min-w-0 items-baseline gap-2 text-[var(--line-mute)]">
-                <span
-                  aria-hidden="true"
-                  className="shrink-0 text-[var(--absent)]"
-                >
-                  └─┬
-                </span>
-                <span className="min-w-0 break-words">
-                  {project.deploymentLabel}
-                </span>
-              </div>
-              {componentItems.length > 0 ? (
-                <ul className="ml-2 mt-2 min-w-0 space-y-2 sm:ml-4">
+            {project.deploymentLabel ? (
+              <li className="min-w-0">
+                <div className="flex min-w-0 items-baseline gap-2 text-[var(--line-mute)]">
+                  <span
+                    aria-hidden="true"
+                    className="shrink-0 text-[var(--absent)]"
+                  >
+                    └─┬
+                  </span>
+                  <span className="min-w-0 break-words">
+                    {project.deploymentLabel}
+                  </span>
+                </div>
+                {componentItems.length > 0 ? (
+                  <ul className="ml-2 mt-2 min-w-0 space-y-2 sm:ml-4">
+                    {componentItems}
+                  </ul>
+                ) : null}
+              </li>
+            ) : componentItems.length > 0 ? (
+              <li className="min-w-0">
+                <ul className="min-w-0 space-y-2">
                   {componentItems}
                 </ul>
-              ) : null}
-            </li>
-          ) : componentItems.length > 0 ? (
-            <li className="min-w-0">
-              <ul className="min-w-0 space-y-2">
-                {componentItems}
-              </ul>
-            </li>
-          ) : null}
-        </ul>
-      </div>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      </ProjectSheetCollapse>
     </Sheet>
   );
 }
