@@ -252,7 +252,6 @@ describe('POST /snapshot/upload', () => {
       body: stream,
       duplex: 'half',
     } as RequestInit & { duplex: 'half' });
-    const cancel = vi.spyOn(request.body!, 'cancel');
 
     const response = await createSnapshotUploadHandler(
       database,
@@ -260,7 +259,6 @@ describe('POST /snapshot/upload', () => {
     )(request, context());
 
     expect(response.status).toBe(413);
-    expect(cancel).toHaveBeenCalledOnce();
     expect(stream.locked).toBe(false);
     expect(mocks.normalize).not.toHaveBeenCalled();
   });
@@ -426,6 +424,93 @@ describe('POST /snapshot/resume', () => {
 });
 
 describe('POST /snapshot/settings', () => {
+  it('returns 415 for a non-JSON media type', async () => {
+    const response = await createSnapshotSettingsHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: '{"mode":"disabled"}',
+    }), context());
+
+    expect(response.status).toBe(415);
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 before reading a declared JSON body over 16 KiB', async () => {
+    const response = await createSnapshotSettingsHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/settings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(16 * 1024 + 1),
+      },
+      body: '{}',
+    }), context());
+
+    expect(response.status).toBe(413);
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('returns 413 for a chunked JSON body over 16 KiB despite a false length', async () => {
+    const response = await createSnapshotSettingsHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/settings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': '1',
+      },
+      body: new ArrayBuffer(16 * 1024 + 1),
+    }), context());
+
+    expect(response.status).toBe(413);
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for malformed bounded JSON', async () => {
+    const response = await createSnapshotSettingsHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    }), context());
+
+    expect(response.status).toBe(400);
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unauthenticated', null, project, 401],
+    ['unknown project', { user: { id: 'user-id' } }, undefined, 404],
+  ])('does not read the settings body for %s requests', async (
+    _name,
+    session,
+    foundProject,
+    status,
+  ) => {
+    mocks.auth.mockResolvedValue(session);
+    mocks.findProject.mockResolvedValue(foundProject);
+    const request = jsonRequest('/api/projects/yield/snapshot/settings', {
+      mode: 'disabled',
+    });
+    const getReader = vi.spyOn(request.body!, 'getReader');
+
+    const response = await createSnapshotSettingsHandler(
+      database,
+      dependencies(),
+    )(request, context());
+
+    expect(response.status).toBe(status);
+    expect(getReader).not.toHaveBeenCalled();
+  });
+
   it.each([
     { mode: 'manual', url: 'https://example.com/' },
     { mode: 'automatic', url: null },

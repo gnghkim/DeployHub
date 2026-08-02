@@ -13,60 +13,10 @@ import {
   type SnapshotRouteContext,
   type SnapshotRouteDependencies,
 } from '../route-utils';
+import { readBoundedBody } from '../bounded-body';
 
 const MAX_MULTIPART_BYTES = 6 * 1024 * 1024;
-
-type BoundedBodyResult =
-  | { ok: true; body: ArrayBuffer }
-  | { ok: false };
-
-async function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
-  if (body === null || body.locked) return;
-  await body.cancel().catch(() => undefined);
-}
-
-async function readBoundedMultipartBody(request: Request): Promise<BoundedBodyResult> {
-  const rawLength = request.headers.get('content-length');
-  if (rawLength !== null && /^\d+$/.test(rawLength)) {
-    const declaredLength = Number(rawLength);
-    if (
-      !Number.isSafeInteger(declaredLength)
-      || declaredLength > MAX_MULTIPART_BYTES
-    ) {
-      await cancelBody(request.body);
-      return { ok: false };
-    }
-  }
-  if (request.body === null) return { ok: true, body: new ArrayBuffer(0) };
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_MULTIPART_BYTES) {
-        chunks.length = 0;
-        await reader.cancel().catch(() => undefined);
-        return { ok: false };
-      }
-      chunks.push(Uint8Array.from(value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const body = new ArrayBuffer(total);
-  const target = new Uint8Array(body);
-  let offset = 0;
-  for (const chunk of chunks) {
-    target.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return { ok: true, body };
-}
+const BODY_READ_TIMEOUT_MS = 10_000;
 
 export function createSnapshotUploadHandler(
   database: Db,
@@ -80,14 +30,20 @@ export function createSnapshotUploadHandler(
     const authorized = await authorizeSnapshotProject(database, context, dependencies);
     if (!authorized.ok) return authorized.response;
 
-    let boundedBody: BoundedBodyResult;
-    try {
-      boundedBody = await readBoundedMultipartBody(request);
-    } catch {
-      return Response.json({ error: 'Invalid upload' }, { status: 400 });
-    }
+    const boundedBody = await readBoundedBody(request.body, {
+      maximumBytes: MAX_MULTIPART_BYTES,
+      timeoutMs: BODY_READ_TIMEOUT_MS,
+      declaredLength: request.headers.get('content-length'),
+      signal: request.signal,
+    });
     if (!boundedBody.ok) {
-      return Response.json({ error: 'upload_too_large' }, { status: 413 });
+      if (boundedBody.reason === 'too_large') {
+        return Response.json({ error: 'upload_too_large' }, { status: 413 });
+      }
+      if (boundedBody.reason === 'timeout' || boundedBody.reason === 'aborted') {
+        return Response.json({ error: 'upload_timeout' }, { status: 408 });
+      }
+      return Response.json({ error: 'Invalid upload' }, { status: 400 });
     }
 
     let formData: FormData;

@@ -1,6 +1,7 @@
 import type { Db } from '@deployhub/db';
 import { auth } from '../../../../../../auth/config';
 import { db } from '../../../../../../lib/db';
+import { readBoundedBody } from '../bounded-body';
 import {
   authorizeSnapshotProject,
   notFoundResponse,
@@ -12,6 +13,9 @@ import {
 } from '../route-utils';
 
 export { persistSnapshotSettings } from '../route-utils';
+
+const MAX_SETTINGS_BODY_BYTES = 16 * 1024;
+const BODY_READ_TIMEOUT_MS = 10_000;
 
 function normalizePublicHttpUrl(value: unknown): string | null | undefined {
   if (value === null) return null;
@@ -67,9 +71,34 @@ export function createSnapshotSettingsHandler(
     const authorized = await authorizeSnapshotProject(database, context, dependencies);
     if (!authorized.ok) return authorized.response;
 
+    const mediaType = request.headers.get('content-type')
+      ?.split(';', 1)[0]
+      ?.trim()
+      .toLowerCase();
+    if (mediaType !== 'application/json') {
+      return Response.json({ error: 'JSON content type required' }, { status: 415 });
+    }
+
+    const boundedBody = await readBoundedBody(request.body, {
+      maximumBytes: MAX_SETTINGS_BODY_BYTES,
+      timeoutMs: BODY_READ_TIMEOUT_MS,
+      declaredLength: request.headers.get('content-length'),
+      signal: request.signal,
+    });
+    if (!boundedBody.ok) {
+      if (boundedBody.reason === 'too_large') {
+        return Response.json({ error: 'Request body too large' }, { status: 413 });
+      }
+      if (boundedBody.reason === 'timeout' || boundedBody.reason === 'aborted') {
+        return Response.json({ error: 'Request body timeout' }, { status: 408 });
+      }
+      return Response.json({ error: 'Invalid settings' }, { status: 400 });
+    }
+
     let body: unknown;
     try {
-      body = await request.json();
+      const json = new TextDecoder('utf-8', { fatal: true }).decode(boundedBody.body);
+      body = JSON.parse(json) as unknown;
     } catch {
       return Response.json({ error: 'Invalid settings' }, { status: 400 });
     }
