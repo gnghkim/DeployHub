@@ -53,7 +53,7 @@ export function ProjectSheetCollapse({
       <header className="flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           <button
-            aria-controls={detailsId}
+            aria-controls={collapsed ? undefined : detailsId}
             aria-expanded={!collapsed}
             aria-label={`${projectName} ${collapsed ? '펼치기' : '접기'}`}
             className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded text-[var(--absent)] hover:bg-[var(--rule)] hover:text-[var(--line)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
@@ -69,9 +69,11 @@ export function ProjectSheetCollapse({
         {trailing}
       </header>
 
-      <div hidden={collapsed} id={detailsId}>
-        {children}
-      </div>
+      {collapsed ? null : (
+        <div id={detailsId}>
+          {children}
+        </div>
+      )}
     </>
   );
 }

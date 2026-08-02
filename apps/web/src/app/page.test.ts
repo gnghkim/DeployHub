@@ -74,6 +74,16 @@ describe('project overview routes', () => {
       .toHaveLength(1);
   });
 
+  it('passes snapshot summary metadata from the project query to each card', () => {
+    const home = source('./page.tsx');
+    const projectSheet = source('../components/schematic/project-sheet.tsx');
+
+    expect(home).toContain('listProjectsWithSummaryData');
+    expect(home).toContain('project={project}');
+    expect(projectSheet).toContain('snapshot: {');
+    expect(projectSheet).toContain("snapshotMode: 'disabled' | 'automatic' | 'manual'");
+  });
+
   it('fetches only the discovered count and links to the discovery screen', () => {
     const home = source('./page.tsx');
 

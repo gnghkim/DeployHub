@@ -38,6 +38,19 @@ describe('project sheet', () => {
     expect(SHEET).toContain('focus-within:border-[var(--annotation)]');
     expect(SHEET).toContain('focus-within:bg-white/[0.02]');
   });
+
+  it('lays out project information beside a snapshot preview on desktop', () => {
+    expect(SHEET).toContain("lg:grid-cols-[minmax(0,1fr)_minmax(20rem,42%)]");
+    expect(SHEET).toContain('<ProjectInformation project={project}');
+    expect(SHEET).toContain('<ProjectSnapshotPreview project={project}');
+  });
+
+  it('loads private snapshot images lazily without Next image optimization', () => {
+    expect(SHEET).toContain('loading="lazy"');
+    expect(SHEET).toContain('unoptimized');
+    expect(SHEET).toContain('target="_blank"');
+    expect(SHEET).toContain('rel="noreferrer"');
+  });
 });
 
 describe('root screen', () => {

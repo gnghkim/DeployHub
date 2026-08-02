@@ -36,7 +36,8 @@ describe('ProjectSheetCollapse', () => {
           header={<span data-testid="header">Project header</span>}
           trailing={<span data-testid="trailing">Just now</span>}
         >
-          <span data-testid="details">Project details</span>
+          <span data-testid="information">Project information</span>
+          <span data-testid="snapshot">Project snapshot</span>
         </ProjectSheetCollapse>,
       );
     });
@@ -63,13 +64,16 @@ describe('ProjectSheetCollapse', () => {
     expect(detailsRegion?.hidden).toBe(false);
   });
 
-  it('collapses only details and persists the toggle state', async () => {
+  it('removes information and snapshot bodies while retaining only the header', async () => {
     await render();
 
     await act(async () => toggleButton()?.click());
 
-    expect(details('project-1')?.hidden).toBe(true);
+    expect(details('project-1')).toBeNull();
+    expect(container.querySelector('[data-testid="information"]')).toBeNull();
+    expect(container.querySelector('[data-testid="snapshot"]')).toBeNull();
     expect(toggleButton()?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggleButton()?.hasAttribute('aria-controls')).toBe(false);
     expect(toggleButton()?.getAttribute('aria-label')).toBe('DeployHub 펼치기');
     expect(container.querySelector('[data-testid="header"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="trailing"]')).not.toBeNull();
@@ -78,7 +82,10 @@ describe('ProjectSheetCollapse', () => {
     await act(async () => toggleButton()?.click());
 
     expect(details('project-1')?.hidden).toBe(false);
+    expect(container.querySelector('[data-testid="information"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="snapshot"]')).not.toBeNull();
     expect(toggleButton()?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggleButton()?.getAttribute('aria-controls')).toBe(details('project-1')?.id);
     expect(toggleButton()?.getAttribute('aria-label')).toBe('DeployHub 접기');
     expect(localStorage.getItem(storageKey('project-1'))).toBeNull();
   });
@@ -105,7 +112,7 @@ describe('ProjectSheetCollapse', () => {
         </>,
       );
     });
-    expect(details('project-1')?.hidden).toBe(true);
+    expect(details('project-1')).toBeNull();
     expect(details('project-2')?.hidden).toBe(false);
   });
 
@@ -149,7 +156,7 @@ describe('ProjectSheetCollapse', () => {
     await render();
 
     await act(async () => toggleButton()?.click());
-    expect(details('project-1')?.hidden).toBe(true);
+    expect(details('project-1')).toBeNull();
 
     await act(async () => toggleButton()?.click());
     expect(details('project-1')?.hidden).toBe(false);

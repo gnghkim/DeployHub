@@ -16,6 +16,14 @@ const baseProject = {
   deploymentLabel: null,
   components: [],
   componentObservations: new Map<string, { name: string; state: string }>(),
+  snapshotMode: 'automatic' as const,
+  snapshot: {
+    hasImage: false,
+    source: null,
+    capturedAt: null,
+    checksum: null,
+    lastAttemptStatus: null,
+  },
 };
 
 describe('ProjectSheet rendering', () => {
@@ -153,5 +161,84 @@ describe('ProjectSheet rendering', () => {
     expect(markup).toContain('min-w-0');
     expect(markup).toContain('break-all');
     expect(markup).toContain('overflow-hidden');
+  });
+
+  it('renders snapshot metadata on the left and a lazy 16:10 preview on the right', () => {
+    const capturedAt = new Date('2026-08-01T03:04:00.000Z');
+    const markup = renderToStaticMarkup(createElement(ProjectSheet, {
+      project: {
+        ...baseProject,
+        repository: 'gnghkim/DeployHub',
+        snapshot: {
+          hasImage: true,
+          source: 'automatic' as const,
+          capturedAt,
+          checksum: 'sha/value',
+          lastAttemptStatus: 'success' as const,
+        },
+      },
+      tone: 'neutral',
+    }));
+
+    const container = document.createElement('div');
+    container.innerHTML = markup;
+    const body = container.querySelector('[data-testid="project-card-body"]');
+    const information = container.querySelector('[data-testid="project-information"]');
+    const preview = container.querySelector('[data-testid="project-snapshot-preview"]');
+    expect(body?.className).toContain('lg:grid-cols-[minmax(0,1fr)_minmax(20rem,42%)]');
+    expect(body?.firstElementChild).toBe(information);
+    expect(body?.lastElementChild).toBe(preview);
+
+    const link = preview?.querySelector<HTMLAnchorElement>(
+      'a[href="/api/projects/deployhub/snapshot?checksum=sha%2Fvalue"]',
+    );
+    expect(link?.target).toBe('_blank');
+    expect(link?.rel).toBe('noreferrer');
+    const image = link?.querySelector('img');
+    expect(image?.loading).toBe('lazy');
+    expect(image?.className).toContain('object-contain');
+    expect(image?.closest('[data-testid="snapshot-frame"]')?.className)
+      .toContain('aspect-[16/10]');
+    expect(preview?.textContent).toContain('자동 캡처');
+    expect(preview?.textContent).toContain('정상');
+    expect(preview?.querySelector(`time[datetime="${capturedAt.toISOString()}"]`))
+      .not.toBeNull();
+  });
+
+  it('keeps the previous image visible with an updating badge', () => {
+    const markup = renderToStaticMarkup(createElement(ProjectSheet, {
+      project: {
+        ...baseProject,
+        snapshot: {
+          hasImage: true,
+          source: 'manual' as const,
+          capturedAt: new Date('2026-08-01T03:04:00.000Z'),
+          checksum: 'old-checksum',
+          lastAttemptStatus: 'pending' as const,
+        },
+      },
+      tone: 'neutral',
+    }));
+
+    const container = document.createElement('div');
+    container.innerHTML = markup;
+    const preview = container.querySelector('[data-testid="project-snapshot-preview"]');
+    expect(preview?.querySelector('img')).not.toBeNull();
+    expect(preview?.textContent).toContain('갱신 중');
+    expect(preview?.textContent).toContain('수동 업로드');
+  });
+
+  it('links an empty snapshot preview to project settings', () => {
+    const markup = renderToStaticMarkup(createElement(ProjectSheet, {
+      project: baseProject,
+      tone: 'neutral',
+    }));
+
+    const container = document.createElement('div');
+    container.innerHTML = markup;
+    const preview = container.querySelector('[data-testid="project-snapshot-preview"]');
+    expect(preview?.textContent).toContain('등록된 스냅샷이 없습니다.');
+    expect(preview?.querySelector('a[href="/projects/deployhub/edit"]'))
+      .not.toBeNull();
   });
 });

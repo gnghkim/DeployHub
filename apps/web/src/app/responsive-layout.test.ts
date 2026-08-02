@@ -39,4 +39,12 @@ describe('responsive shell spacing', () => {
     expect(topbar).toContain('md:px-8');
     expect(topbar).not.toMatch(/(?<!md:)px-8/);
   });
+
+  it('stacks snapshot previews below information until the desktop breakpoint', () => {
+    const projectSheet = source('../components/schematic/project-sheet.tsx');
+
+    expect(projectSheet).toContain('lg:grid-cols-[minmax(0,1fr)_minmax(20rem,42%)]');
+    expect(projectSheet).toMatch(/className="[^"]*\bgrid\b[^"]*lg:grid-cols-/);
+    expect(projectSheet).not.toContain('grid-cols-[minmax(0,1fr)_minmax(20rem,42%)] lg:');
+  });
 });
