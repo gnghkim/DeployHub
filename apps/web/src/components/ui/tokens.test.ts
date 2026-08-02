@@ -19,7 +19,7 @@ const REQUIRED: Record<string, string> = {
   '--line': '#f8f9fa',
   '--line-mute': '#9ca3af',
   '--annotation': '#8b949e',
-  '--absent': '#7c8590',
+  '--absent': '#7e8893',
   '--fault': '#ff6161',
   '--caution': '#ffc533',
   '--confirm': '#59d499',

@@ -30,6 +30,9 @@ describe('project sheet', () => {
 
   it('scopes hover and focus interaction styles to project cards', () => {
     expect(SHARED_SHEET).not.toMatch(/hover:(?:border|bg)-/);
+    expect(SHARED_SHEET).not.toContain('focus-within:');
+    expect(SHARED_SHEET).not.toContain('shadow-');
+    expect(SHARED_SHEET).not.toMatch(/\b(?:transition|duration)-/);
     expect(SHEET).toContain('hover:border-[var(--annotation)]');
     expect(SHEET).toContain('hover:bg-white/[0.02]');
     expect(SHEET).toContain('focus-within:border-[var(--annotation)]');

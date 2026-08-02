@@ -110,15 +110,28 @@ describe('design tokens', () => {
   });
 
   it.each(['--annotation', '--absent'])(
-    '%s meets WCAG AA contrast on project card backgrounds',
+    '%s meets WCAG AA contrast on normal and hovered project card surfaces',
     (token) => {
       const css = readFileSync(GLOBALS, 'utf8');
       const foreground = parseHexToken(css, token);
       const paper = parseHexToken(css, '--paper');
-      const hover = composite([255, 255, 255], paper, 0.02);
+      const grid = parseHexToken(css, '--grid');
+      const canvas = parseHexToken(css, '--canvas');
+      const hoverNonGrid = composite([255, 255, 255], canvas, 0.02);
 
-      expect(contrastRatio(foreground, paper), `${token} on --paper`).toBeGreaterThanOrEqual(4.5);
-      expect(contrastRatio(foreground, hover), `${token} on project-card hover`).toBeGreaterThanOrEqual(4.5);
+      const surfaces: Array<[string, Rgb]> = [
+        ['--paper', paper],
+        ['--grid', grid],
+        ['project-card hover non-grid', hoverNonGrid],
+        ['--grid on project-card hover', grid],
+      ];
+
+      for (const [surface, background] of surfaces) {
+        expect(
+          contrastRatio(foreground, background),
+          `${token} on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     },
   );
 });
