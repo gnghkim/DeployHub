@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
   getSnapshotState,
+  markSnapshotPending,
   saveAutomaticSnapshot,
   saveManualSnapshot,
   schema,
@@ -23,6 +24,7 @@ import {
   enqueueSnapshotCapture,
   type SnapshotCapturePayload,
 } from './snapshot-capture';
+import { createRunner } from '../runner';
 
 const SNAPSHOT_URL = 'https://project.example/app?private=value';
 const SNAPSHOTTER_URL = 'http://snapshotter.internal:3001/base?ignored=yes';
@@ -320,9 +322,13 @@ describe('snapshot capture handler', () => {
     const projectId = await insertProject();
     const response = deferred<Response>();
     const fetchFn = vi.fn(() => response.promise);
-    const running = createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
-      fetch: fetchFn,
-    })(job(projectId));
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    const runner = createRunner(db, {
+      'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+        fetch: fetchFn,
+      }),
+    }, 'snapshot-manual-race-worker');
+    const running = runner.runOnce();
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
 
     const manualImage = Buffer.from('manual-image');
@@ -335,34 +341,139 @@ describe('snapshot capture handler', () => {
     });
     response.resolve(successResponse());
 
-    await expect(running).resolves.toBeUndefined();
+    await expect(running).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
     expect(await getSnapshotState(db, projectId)).toMatchObject({
       imageData: manualImage,
       source: 'manual',
       checksum: 'manual-checksum',
     });
+    expect(await db.select().from(schema.jobs)).toEqual([
+      expect.objectContaining({
+        status: 'succeeded',
+        dedupeKey: null,
+      }),
+    ]);
   });
 
-  it('discards an automatic result when the project URL changes during capture', async () => {
+  it('atomically trails the latest URL when its enqueue loses to the running job', async () => {
+    const projectId = await insertProject();
+    const response = deferred<Response>();
+    const fetchFn = vi.fn()
+      .mockImplementationOnce(() => response.promise)
+      .mockResolvedValueOnce(successResponse());
+    await enqueueSnapshotCapture(db, {
+      projectId,
+      url: SNAPSHOT_URL,
+      requestId: 'old-request',
+    });
+    const runner = createRunner(db, {
+      'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+        fetch: fetchFn,
+      }),
+    }, 'snapshot-race-worker');
+    const running = runner.runOnce();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+
+    const latestUrl = 'https://new.example/app';
+    await db
+      .update(schema.projects)
+      .set({ snapshotUrl: latestUrl })
+      .where(eq(schema.projects.id, projectId));
+    await expect(enqueueSnapshotCapture(db, {
+      projectId,
+      url: latestUrl,
+      requestId: 'enqueue-that-loses-the-race',
+    })).resolves.toBe(false);
+    response.resolve(successResponse());
+
+    await expect(running).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      imageData: null,
+      lastAttemptAt: null,
+      lastAttemptStatus: null,
+      lastError: null,
+    });
+    const afterStale = await db.select().from(schema.jobs);
+    expect(afterStale).toHaveLength(2);
+    expect(afterStale).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        status: 'succeeded',
+        dedupeKey: null,
+        payload: expect.objectContaining({ url: SNAPSHOT_URL }),
+      }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: expect.objectContaining({
+          projectId,
+          url: latestUrl,
+        }),
+      }),
+    ]));
+
+    await expect(runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      imageData: IMAGE,
+      source: 'automatic',
+      sourceUrl: latestUrl,
+      lastAttemptStatus: 'success',
+      lastError: null,
+    });
+  });
+
+  it('does not clear a newer pending attempt while reconciling a stale result', async () => {
     const projectId = await insertProject();
     const response = deferred<Response>();
     const fetchFn = vi.fn(() => response.promise);
-    const running = createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
-      fetch: fetchFn,
-    })(job(projectId));
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    const runner = createRunner(db, {
+      'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+        fetch: fetchFn,
+      }),
+    }, 'snapshot-newer-attempt-worker');
+    const running = runner.runOnce();
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
 
+    const latestUrl = 'https://newer-attempt.example/app';
     await db
       .update(schema.projects)
-      .set({ snapshotUrl: 'https://new.example/app' })
+      .set({ snapshotUrl: latestUrl })
       .where(eq(schema.projects.id, projectId));
+    await expect(markSnapshotPending(db, projectId, latestUrl)).resolves.toBe(true);
+    const newerAttempt = await getSnapshotState(db, projectId);
     response.resolve(successResponse());
 
-    await expect(running).resolves.toBeUndefined();
-    expect(await getSnapshotState(db, projectId)).toMatchObject({
-      imageData: null,
-      lastAttemptStatus: 'pending',
+    await expect(running).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
     });
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      lastAttemptAt: newerAttempt!.lastAttemptAt,
+      lastAttemptStatus: 'pending',
+      lastError: null,
+    });
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'succeeded', dedupeKey: null }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: expect.objectContaining({ url: latestUrl }),
+      }),
+    ]));
   });
 
   it('completes when the project is deleted during capture', async () => {
@@ -550,6 +661,96 @@ describe('snapshot capture handler', () => {
       lastAttemptStatus: 'failed',
       lastError: 'image_too_large',
     });
+  });
+
+  it.each([
+    {
+      name: 'oversized declared image',
+      status: 200,
+      headers: {
+        'content-type': 'image/webp',
+        'content-length': String(MAX_IMAGE_BYTES + 1),
+        'x-image-width': '1440',
+        'x-image-height': '900',
+      },
+      permanent: true,
+    },
+    {
+      name: 'non-JSON error',
+      status: 500,
+      headers: { 'content-type': 'text/plain' },
+      permanent: false,
+    },
+    {
+      name: 'invalid image MIME type',
+      status: 200,
+      headers: {
+        'content-type': 'image/png',
+        'x-image-width': '1440',
+        'x-image-height': '900',
+      },
+      permanent: false,
+    },
+    {
+      name: 'invalid image dimensions',
+      status: 200,
+      headers: {
+        'content-type': 'image/webp',
+        'x-image-width': '1',
+        'x-image-height': '900',
+      },
+      permanent: false,
+    },
+  ])('cancels the response body for $name', async ({
+    status,
+    headers,
+    permanent,
+  }) => {
+    const projectId = await insertProject();
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+      },
+      cancel,
+    });
+    const response = new Response(stream, { status, headers });
+    const handled = createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+      fetch: vi.fn().mockResolvedValue(response),
+    })(job(projectId));
+
+    if (permanent) await expect(handled).resolves.toBeUndefined();
+    else await expect(handled).rejects.toThrow('snapshot capture failed');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+  });
+
+  it('releases a response reader after malformed JSON or a stream read error', async () => {
+    const malformedProjectId = await insertProject();
+    const malformed = new Response('{not-json', {
+      status: 500,
+      headers: { 'content-type': 'application/json' },
+    });
+    await expect(createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+      fetch: vi.fn().mockResolvedValue(malformed),
+    })(job(malformedProjectId))).rejects.toThrow(
+      'snapshot capture failed: render_failed',
+    );
+    expect(malformed.body?.locked).toBe(false);
+
+    const failedProjectId = await insertProject();
+    const failedStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error('stream secret'));
+      },
+    });
+    const failed = successResponse(failedStream, { 'content-length': '1' });
+    await expect(createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+      fetch: vi.fn().mockResolvedValue(failed),
+    })(job(failedProjectId))).rejects.toThrow(
+      'snapshot capture failed: render_failed',
+    );
+    expect(failed.body?.locked).toBe(false);
   });
 
   it.each([

@@ -8,6 +8,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
@@ -17,6 +18,7 @@ import {
   getSnapshotState,
   markSnapshotFailed,
   markSnapshotPending,
+  markSnapshotPendingAttempt,
   resumeAutomaticSnapshot,
   saveAutomaticSnapshot,
   saveManualSnapshot,
@@ -127,6 +129,33 @@ function manualInput(projectId: string, overrides: {
 }
 
 describe('project snapshot repository', () => {
+  it('gives pending attempts distinct tokens within the same millisecond', async () => {
+    const project = await insertProject();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-02T03:00:00.000Z'));
+    try {
+      const first = await markSnapshotPendingAttempt(
+        db,
+        project.id,
+        'https://example.com/app',
+      );
+      const second = await markSnapshotPendingAttempt(
+        db,
+        project.id,
+        'https://example.com/app',
+      );
+
+      expect(first).not.toBe(false);
+      expect(second).not.toBe(false);
+      if (!first || !second) throw new Error('pending attempt was rejected');
+      expect(second.attemptedAt.getTime()).toBeGreaterThan(
+        first.attemptedAt.getTime(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('marks an attempt pending without requiring an existing snapshot row', async () => {
     const project = await insertProject();
 

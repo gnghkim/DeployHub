@@ -1,6 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { projectSnapshots, projects } from '../schema/projects';
+import { jobs } from '../schema/jobs';
 
 export type ProjectSnapshotState = typeof projectSnapshots.$inferSelect;
 
@@ -37,6 +39,17 @@ export type AutomaticSnapshotInput = SnapshotImageInput & {
 
 export type ManualSnapshotInput = SnapshotImageInput;
 
+export type SnapshotPendingAttempt = {
+  attemptedAt: Date;
+};
+
+export type ReconcileStaleSnapshotCaptureInput = {
+  jobId: string;
+  projectId: string;
+  expectedUrl: string;
+  attemptedAt?: Date;
+};
+
 export async function getSnapshotState(
   db: Db,
   projectId: string,
@@ -48,11 +61,11 @@ export async function getSnapshotState(
   return snapshot;
 }
 
-export async function markSnapshotPending(
+export async function markSnapshotPendingAttempt(
   db: Db,
   projectId: string,
   expectedUrl: string,
-): Promise<boolean> {
+): Promise<SnapshotPendingAttempt | false> {
   return db.transaction(async (tx) => {
     const [project] = await tx
       .select({
@@ -70,7 +83,14 @@ export async function markSnapshotPending(
       return false;
     }
 
-    const attemptedAt = new Date();
+    const [previousAttempt] = await tx
+      .select({ lastAttemptAt: projectSnapshots.lastAttemptAt })
+      .from(projectSnapshots)
+      .where(eq(projectSnapshots.projectId, projectId));
+    const attemptedAt = new Date(Math.max(
+      Date.now(),
+      (previousAttempt?.lastAttemptAt?.getTime() ?? -1) + 1,
+    ));
     await tx
       .insert(projectSnapshots)
       .values({
@@ -89,6 +109,88 @@ export async function markSnapshotPending(
           updatedAt: attemptedAt,
         },
       });
+    return { attemptedAt };
+  });
+}
+
+export async function markSnapshotPending(
+  db: Db,
+  projectId: string,
+  expectedUrl: string,
+): Promise<boolean> {
+  return (await markSnapshotPendingAttempt(db, projectId, expectedUrl)) !== false;
+}
+
+export async function reconcileStaleSnapshotCapture(
+  db: Db,
+  input: ReconcileStaleSnapshotCaptureInput,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({
+        snapshotMode: projects.snapshotMode,
+        snapshotUrl: projects.snapshotUrl,
+      })
+      .from(projects)
+      .where(eq(projects.id, input.projectId))
+      .for('update');
+    if (!project) throw new SnapshotProjectNotFoundError(input.projectId);
+    if (
+      project.snapshotMode === 'automatic'
+      && project.snapshotUrl === input.expectedUrl
+    ) {
+      return false;
+    }
+
+    const dedupeKey = `snapshot:${input.projectId}`;
+    const [activeJob] = await tx
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(
+        eq(jobs.id, input.jobId),
+        eq(jobs.type, 'snapshot.capture'),
+        eq(jobs.status, 'running'),
+        eq(jobs.dedupeKey, dedupeKey),
+      ))
+      .for('update');
+    if (!activeJob) return false;
+
+    const reconciledAt = new Date();
+    if (input.attemptedAt !== undefined) {
+      await tx
+        .update(projectSnapshots)
+        .set({
+          lastAttemptAt: null,
+          lastAttemptStatus: null,
+          lastError: null,
+          updatedAt: reconciledAt,
+        })
+        .where(and(
+          eq(projectSnapshots.projectId, input.projectId),
+          eq(projectSnapshots.lastAttemptStatus, 'pending'),
+          eq(projectSnapshots.lastAttemptAt, input.attemptedAt),
+        ));
+    }
+
+    await tx
+      .update(jobs)
+      .set({ dedupeKey: null, updatedAt: reconciledAt })
+      .where(eq(jobs.id, activeJob.id));
+
+    if (project.snapshotMode === 'automatic' && project.snapshotUrl !== null) {
+      const payload = JSON.stringify({
+        projectId: input.projectId,
+        url: project.snapshotUrl,
+        requestId: randomUUID(),
+      });
+      await tx.execute(sql`
+        INSERT INTO jobs (type, dedupe_key, payload, max_attempts)
+        VALUES ('snapshot.capture', ${dedupeKey}, ${payload}::jsonb, 3)
+        ON CONFLICT (type, dedupe_key)
+          WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running')
+          DO NOTHING
+      `);
+    }
     return true;
   });
 }

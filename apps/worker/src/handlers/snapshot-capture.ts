@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import {
   enqueueUnique,
   markSnapshotFailed,
-  markSnapshotPending,
+  markSnapshotPendingAttempt,
+  reconcileStaleSnapshotCapture,
   saveAutomaticSnapshot,
   SnapshotProjectNotFoundError,
   type Db,
@@ -122,32 +123,43 @@ async function readBounded(
   maximumBytes: number,
   overflowCode: SnapshotErrorCode,
 ): Promise<Buffer> {
-  const declaredLength = contentLength(response);
-  if (declaredLength !== null && declaredLength > maximumBytes) {
-    throw new CaptureFailure(overflowCode);
-  }
-  if (response.body === null) throw new CaptureFailure('render_failed');
-
-  const reader = response.body.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   const chunks: Buffer[] = [];
   let total = 0;
   try {
+    const declaredLength = contentLength(response);
+    if (declaredLength !== null && declaredLength > maximumBytes) {
+      throw new CaptureFailure(overflowCode);
+    }
+    if (response.body === null) throw new CaptureFailure('render_failed');
+    reader = response.body.getReader();
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
       if (total > maximumBytes) {
         chunks.length = 0;
-        await reader.cancel().catch(() => undefined);
         throw new CaptureFailure(overflowCode);
       }
       chunks.push(Buffer.from(value));
     }
   } catch (error) {
+    if (reader !== undefined) {
+      await reader.cancel().catch(() => undefined);
+    } else {
+      await cancelResponseBody(response);
+    }
     if (error instanceof CaptureFailure) throw error;
     throw new CaptureFailure('render_failed');
+  } finally {
+    reader?.releaseLock();
   }
   return Buffer.concat(chunks, total);
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  if (response.body === null || response.body.locked) return;
+  await response.body.cancel().catch(() => undefined);
 }
 
 function mediaType(response: Response): string | null {
@@ -159,7 +171,10 @@ function mediaType(response: Response): string | null {
 }
 
 async function responseErrorCode(response: Response): Promise<SnapshotErrorCode> {
-  if (mediaType(response) !== 'application/json') return 'render_failed';
+  if (mediaType(response) !== 'application/json') {
+    await cancelResponseBody(response);
+    return 'render_failed';
+  }
   try {
     const body = await readBounded(response, MAX_ERROR_BYTES, 'render_failed');
     const parsed: unknown = JSON.parse(body.toString('utf8'));
@@ -188,12 +203,14 @@ async function responseErrorCode(response: Response): Promise<SnapshotErrorCode>
 
 async function validateSuccess(response: Response): Promise<Buffer> {
   if (mediaType(response) !== 'image/webp') {
+    await cancelResponseBody(response);
     throw new CaptureFailure('render_failed');
   }
   if (
     response.headers.get('x-image-width') !== String(CAPTURE_WIDTH)
     || response.headers.get('x-image-height') !== String(CAPTURE_HEIGHT)
   ) {
+    await cancelResponseBody(response);
     throw new CaptureFailure('render_failed');
   }
   const image = await readBounded(
@@ -268,12 +285,37 @@ async function recordFailure(
 
 async function finishFailure(
   db: Db,
+  jobId: string,
   payload: SnapshotCapturePayload,
+  attemptedAt: Date,
   code: SnapshotErrorCode,
 ): Promise<void> {
   const current = await recordFailure(db, payload, code);
-  if (!current || PERMANENT_ERROR_CODES.has(code)) return;
+  if (!current) {
+    await reconcileStaleAttempt(db, jobId, payload, attemptedAt);
+    return;
+  }
+  if (PERMANENT_ERROR_CODES.has(code)) return;
   throw retryError(code);
+}
+
+async function reconcileStaleAttempt(
+  db: Db,
+  jobId: string,
+  payload: SnapshotCapturePayload,
+  attemptedAt?: Date,
+): Promise<void> {
+  try {
+    await reconcileStaleSnapshotCapture(db, {
+      jobId,
+      projectId: payload.projectId,
+      expectedUrl: payload.url,
+      attemptedAt,
+    });
+  } catch (error) {
+    if (error instanceof SnapshotProjectNotFoundError) return;
+    throw retryError('navigation_failed');
+  }
 }
 
 export function createSnapshotCaptureHandler(
@@ -285,13 +327,18 @@ export function createSnapshotCaptureHandler(
 
   return async (job) => {
     const payload = parsePayload(job.payload);
+    let attemptedAt: Date;
     try {
-      const pending = await markSnapshotPending(
+      const pending = await markSnapshotPendingAttempt(
         db,
         payload.projectId,
         payload.url,
       );
-      if (!pending) return;
+      if (!pending) {
+        await reconcileStaleAttempt(db, job.id, payload);
+        return;
+      }
+      attemptedAt = pending.attemptedAt;
     } catch (error) {
       if (error instanceof SnapshotProjectNotFoundError) return;
       throw retryError('navigation_failed');
@@ -299,7 +346,13 @@ export function createSnapshotCaptureHandler(
 
     const endpoint = captureEndpoint(snapshotterUrl);
     if (endpoint === null) {
-      await finishFailure(db, payload, 'navigation_failed');
+      await finishFailure(
+        db,
+        job.id,
+        payload,
+        attemptedAt,
+        'navigation_failed',
+      );
       return;
     }
 
@@ -310,12 +363,13 @@ export function createSnapshotCaptureHandler(
       const code = error instanceof CaptureFailure
         ? error.code
         : 'render_failed';
-      await finishFailure(db, payload, code);
+      await finishFailure(db, job.id, payload, attemptedAt, code);
       return;
     }
 
+    let saved: boolean;
     try {
-      await saveAutomaticSnapshot(db, {
+      saved = await saveAutomaticSnapshot(db, {
         projectId: payload.projectId,
         url: payload.url,
         deploymentId: payload.deploymentId,
@@ -326,7 +380,11 @@ export function createSnapshotCaptureHandler(
       });
     } catch (error) {
       if (error instanceof SnapshotProjectNotFoundError) return;
-      await finishFailure(db, payload, 'render_failed');
+      await finishFailure(db, job.id, payload, attemptedAt, 'render_failed');
+      return;
+    }
+    if (!saved) {
+      await reconcileStaleAttempt(db, job.id, payload, attemptedAt);
     }
   };
 }
