@@ -64,6 +64,13 @@
       "when": 1785568146657,
       "tag": "0008_component_health_url",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785643663340,
+      "tag": "0009_project_snapshots",
+      "breakpoints": true
     }
   ]
 }

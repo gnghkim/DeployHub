@@ -8,38 +8,112 @@ let db: Db;
 let stop: () => Promise<void>;
 
 describe('enqueueUnique', () => {
-  it('does not insert when the same type is pending', async () => {
-    await enqueue(db, { type: 'sync.github' });
+  it('allows only one concurrent pending job for the same type and dedupe key', async () => {
+    await db.execute(`
+      CREATE FUNCTION delay_job_insert() RETURNS trigger AS $$
+      BEGIN
+        PERFORM pg_sleep(0.1);
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `);
+    await db.execute(`
+      CREATE TRIGGER delay_job_insert
+      BEFORE INSERT ON jobs
+      FOR EACH ROW EXECUTE FUNCTION delay_job_insert()
+    `);
 
-    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(false);
+    let inserted: boolean[];
+    try {
+      inserted = await Promise.all(
+        Array.from({ length: 10 }, () => enqueueUnique(db, {
+          type: 'snapshot.capture',
+          dedupeKey: 'snapshot:project-1',
+        })),
+      );
+    } finally {
+      await db.execute('DROP TRIGGER delay_job_insert ON jobs');
+      await db.execute('DROP FUNCTION delay_job_insert()');
+    }
+
+    expect(inserted.filter(Boolean)).toHaveLength(1);
     expect(await db.select().from(schema.jobs)).toHaveLength(1);
   });
 
-  it('does not insert when the same type is running', async () => {
-    await enqueue(db, { type: 'sync.github' });
+  it('does not insert the same type and dedupe key while the job is running', async () => {
+    await enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    });
     await claim(db, 'worker-1', 1, 60);
 
-    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(false);
+    await expect(enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    })).resolves.toBe(false);
   });
 
-  it('inserts when same-type jobs are terminal', async () => {
-    const succeeded = await enqueue(db, { type: 'sync.github' });
-    await claim(db, 'worker-1', 1, 60);
+  it('allows a different project dedupe key for the same type', async () => {
+    await expect(enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    })).resolves.toBe(true);
+    await expect(enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-2',
+    })).resolves.toBe(true);
+
+    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+  });
+
+  it('releases a type and dedupe key after the job completes', async () => {
+    await enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    });
+    const [succeeded] = await claim(db, 'worker-1', 1, 60);
+    if (!succeeded) throw new Error('expected a claimed job');
     await complete(db, succeeded.id);
 
-    const failed = await enqueue(db, { type: 'sync.github', maxAttempts: 1 });
+    await expect(enqueueUnique(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    })).resolves.toBe(true);
+    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+  });
+
+  it('retains global-by-type behavior when no dedupe key is supplied', async () => {
+    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(true);
+    await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(false);
+
+    await expect(enqueueUnique(db, { type: 'sync.vercel' })).resolves.toBe(true);
+    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+  });
+
+  it('inserts without a key when global same-type jobs are terminal', async () => {
+    await enqueueUnique(db, { type: 'sync.github' });
+    const [succeeded] = await claim(db, 'worker-1', 1, 60);
+    if (!succeeded) throw new Error('expected a claimed job');
+    await complete(db, succeeded.id);
+
+    await enqueueUnique(db, { type: 'sync.github', maxAttempts: 1 });
     await claim(db, 'worker-1', 1, 60);
-    await fail(db, failed.id, 'test failure');
+    const [running] = await db.select().from(schema.jobs).where(eq(schema.jobs.status, 'running'));
+    if (!running) throw new Error('expected a running job');
+    await fail(db, running.id, 'test failure');
 
     await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(true);
     expect(await db.select().from(schema.jobs)).toHaveLength(3);
   });
 
-  it('is not blocked by a different job type', async () => {
-    await enqueue(db, { type: 'sync.github' });
+  it('stores an optional dedupe key for unconditional enqueue', async () => {
+    const job = await enqueue(db, {
+      type: 'snapshot.capture',
+      dedupeKey: 'snapshot:project-1',
+    });
 
-    await expect(enqueueUnique(db, { type: 'sync.vercel' })).resolves.toBe(true);
-    expect(await db.select().from(schema.jobs)).toHaveLength(2);
+    const [row] = await db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id));
+    expect(row?.dedupeKey).toBe('snapshot:project-1');
   });
 
   it('does not alter enqueue unconditional behavior', async () => {

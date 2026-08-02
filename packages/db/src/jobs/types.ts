@@ -8,6 +8,7 @@ export type JobRecord = {
 
 export type EnqueueOptions = {
   type: string;
+  dedupeKey?: string;
   payload?: Record<string, unknown>;
   runAt?: Date;
   maxAttempts?: number;

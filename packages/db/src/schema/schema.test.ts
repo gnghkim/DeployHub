@@ -1,10 +1,128 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
 
 let db: Db;
 let stop: () => Promise<void>;
+
+describe('project snapshot schema', () => {
+  it('defines the snapshot enums with the approved values', async () => {
+    const result = await db.execute<{ name: string; values: string[] }>(`
+      SELECT t.typname AS name,
+             array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS values
+      FROM pg_type t
+      JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typname IN ('snapshot_mode', 'snapshot_source', 'snapshot_attempt_status')
+      GROUP BY t.typname
+      ORDER BY t.typname
+    `);
+
+    expect(result.rows).toEqual([
+      { name: 'snapshot_attempt_status', values: ['pending', 'success', 'failed'] },
+      { name: 'snapshot_mode', values: ['disabled', 'automatic', 'manual'] },
+      { name: 'snapshot_source', values: ['automatic', 'manual'] },
+    ]);
+  });
+
+  it('stores the project snapshot URL and defaults snapshot mode to disabled', async () => {
+    const result = await db.execute<{ snapshot_url: string; snapshot_mode: string }>(`
+      INSERT INTO projects (name, slug, snapshot_url)
+      VALUES ('Snapshot fields', 'snapshot-fields', 'https://example.com/app')
+      RETURNING snapshot_url, snapshot_mode
+    `);
+
+    expect(result.rows[0]).toEqual({
+      snapshot_url: 'https://example.com/app',
+      snapshot_mode: 'disabled',
+    });
+  });
+
+  it('uses project_id as the one-to-one snapshot primary key', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'One snapshot', slug: 'one-snapshot' })
+      .returning();
+    if (!project) throw new Error('project insert failed');
+
+    const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await db.insert(schema.projectSnapshots).values({
+      projectId: project.id,
+      imageData,
+      contentType: 'image/png',
+      width: 1200,
+      height: 630,
+      source: 'manual',
+    });
+
+    const [snapshot] = await db
+      .select()
+      .from(schema.projectSnapshots)
+      .where(eq(schema.projectSnapshots.projectId, project.id));
+    expect(snapshot?.imageData).toEqual(imageData);
+    type ProjectSnapshotRow = typeof schema.projectSnapshots.$inferSelect;
+    expectTypeOf<ProjectSnapshotRow['imageData']>().toEqualTypeOf<Buffer | null>();
+
+    await expect(
+      db.insert(schema.projectSnapshots).values({ projectId: project.id }),
+    ).rejects.toThrow();
+  });
+
+  it('cascade deletes the snapshot with its project', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'Cascade snapshot', slug: 'cascade-snapshot' })
+      .returning();
+    if (!project) throw new Error('project insert failed');
+
+    await db.insert(schema.projectSnapshots).values({ projectId: project.id });
+    await db.delete(schema.projects).where(eq(schema.projects.id, project.id));
+
+    const remaining = await db
+      .select()
+      .from(schema.projectSnapshots)
+      .where(eq(schema.projectSnapshots.projectId, project.id));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it('allows a null deployment foreign key and clears it when deployment is deleted', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'Deployment snapshot', slug: 'deployment-snapshot' })
+      .returning();
+    if (!project) throw new Error('project insert failed');
+
+    const [snapshot] = await db
+      .insert(schema.projectSnapshots)
+      .values({ projectId: project.id })
+      .returning();
+    expect(snapshot?.deploymentId).toBeNull();
+
+    const [deployment] = await db
+      .insert(schema.deployments)
+      .values({
+        projectId: project.id,
+        provider: 'vercel',
+        environment: 'production',
+        externalDeploymentId: 'snapshot-deployment',
+        status: 'ready',
+      })
+      .returning();
+    if (!deployment) throw new Error('deployment insert failed');
+
+    await db
+      .update(schema.projectSnapshots)
+      .set({ deploymentId: deployment.id })
+      .where(eq(schema.projectSnapshots.projectId, project.id));
+    await db.delete(schema.deployments).where(eq(schema.deployments.id, deployment.id));
+
+    const [afterDelete] = await db
+      .select()
+      .from(schema.projectSnapshots)
+      .where(eq(schema.projectSnapshots.projectId, project.id));
+    expect(afterDelete?.deploymentId).toBeNull();
+  });
+});
 
 describe('change_events schema', () => {
   it('rejects unsupported severity values', async () => {

@@ -22,9 +22,10 @@ function toRecord(row: JobRow): JobRecord {
 
 export async function enqueue(db: Db, options: EnqueueOptions): Promise<JobRecord> {
   const result = await db.execute<JobRow>(sql`
-    INSERT INTO jobs (type, payload, run_at, max_attempts)
+    INSERT INTO jobs (type, dedupe_key, payload, run_at, max_attempts)
     VALUES (
       ${options.type},
+      ${options.dedupeKey ?? null},
       ${JSON.stringify(options.payload ?? {})}::jsonb,
       ${options.runAt ?? sql`now()`},
       ${options.maxAttempts ?? 3}
@@ -36,19 +37,20 @@ export async function enqueue(db: Db, options: EnqueueOptions): Promise<JobRecor
   return toRecord(row);
 }
 
-/** Do not insert if the same type has a pending or running job. Return true only when inserted. */
+/** Do not insert if the same type and dedupe key has a pending or running job. */
 export async function enqueueUnique(db: Db, options: EnqueueOptions): Promise<boolean> {
   const result = await db.execute<{ id: string }>(sql`
-    INSERT INTO jobs (type, payload, run_at, max_attempts)
-    SELECT
+    INSERT INTO jobs (type, dedupe_key, payload, run_at, max_attempts)
+    VALUES (
       ${options.type},
+      ${options.dedupeKey ?? '__global__'},
       ${JSON.stringify(options.payload ?? {})}::jsonb,
       now(),
       ${options.maxAttempts ?? 3}
-    WHERE NOT EXISTS (
-      SELECT 1 FROM jobs
-      WHERE type = ${options.type} AND status IN ('pending', 'running')
     )
+    ON CONFLICT (type, dedupe_key)
+      WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running')
+      DO NOTHING
     RETURNING id
   `);
   return result.rows.length > 0;

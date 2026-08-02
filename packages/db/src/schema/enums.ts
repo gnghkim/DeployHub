@@ -8,6 +8,18 @@ export const projectLifecycle = pgEnum('project_lifecycle', [
   'experimental', 'development', 'production', 'deprecated',
 ]);
 
+export const snapshotMode = pgEnum('snapshot_mode', [
+  'disabled', 'automatic', 'manual',
+]);
+
+export const snapshotSource = pgEnum('snapshot_source', [
+  'automatic', 'manual',
+]);
+
+export const snapshotAttemptStatus = pgEnum('snapshot_attempt_status', [
+  'pending', 'success', 'failed',
+]);
+
 export const componentType = pgEnum('component_type', [
   'frontend', 'backend', 'api', 'worker', 'scheduler', 'database',
   'authentication', 'storage', 'cache', 'queue', 'monitoring',

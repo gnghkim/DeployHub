@@ -1,8 +1,20 @@
 import { relations } from 'drizzle-orm';
 import {
-  index, jsonb, pgTable, smallint, text, timestamp, unique, uuid,
+  customType, index, integer, jsonb, pgTable, smallint, text, timestamp, unique, uuid,
 } from 'drizzle-orm/pg-core';
-import { componentType, projectLifecycle, projectStatus } from './enums';
+import {
+  componentType,
+  projectLifecycle,
+  projectStatus,
+  snapshotAttemptStatus,
+  snapshotMode,
+  snapshotSource,
+} from './enums';
+import { deployments } from './observations';
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 export const projects = pgTable(
   'projects',
@@ -16,6 +28,8 @@ export const projects = pgTable(
     importance: smallint('importance').notNull().default(3),
     owner: text('owner'),
     repository: text('repository'),
+    snapshotUrl: text('snapshot_url'),
+    snapshotMode: snapshotMode('snapshot_mode').notNull().default('disabled'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
@@ -24,6 +38,27 @@ export const projects = pgTable(
     index('projects_repository_idx').on(t.repository),
   ],
 );
+
+export const projectSnapshots = pgTable('project_snapshots', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  imageData: bytea('image_data'),
+  contentType: text('content_type'),
+  width: integer('width'),
+  height: integer('height'),
+  source: snapshotSource('source'),
+  sourceUrl: text('source_url'),
+  deploymentId: uuid('deployment_id').references(() => deployments.id, {
+    onDelete: 'set null',
+  }),
+  checksum: text('checksum'),
+  capturedAt: timestamp('captured_at', { withTimezone: true }),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  lastAttemptStatus: snapshotAttemptStatus('last_attempt_status'),
+  lastError: text('last_error'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const components = pgTable(
   'components',
