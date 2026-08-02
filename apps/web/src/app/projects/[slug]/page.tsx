@@ -37,6 +37,7 @@ import {
   buildComposition,
   isComponentObservationResource,
 } from './composition';
+import { SnapshotPanel, type SnapshotPanelProps } from './snapshot-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,6 +98,7 @@ export default async function ProjectDetailPage({
     linkedResources,
     drift,
     deployments,
+    snapshotRows,
     {
       status,
       evidenceEvents,
@@ -117,8 +119,30 @@ export default async function ProjectDetailPage({
         )`),
         desc(schema.deployments.createdAt),
       ),
+    db
+      .select({
+        hasImage: sql<boolean>`${schema.projectSnapshots.imageData} is not null`,
+        source: schema.projectSnapshots.source,
+        capturedAt: schema.projectSnapshots.capturedAt,
+        checksum: schema.projectSnapshots.checksum,
+        lastAttemptAt: schema.projectSnapshots.lastAttemptAt,
+        lastAttemptStatus: schema.projectSnapshots.lastAttemptStatus,
+        lastError: schema.projectSnapshots.lastError,
+      })
+      .from(schema.projectSnapshots)
+      .where(eq(schema.projectSnapshots.projectId, project.id)),
     historyPromise,
   ]);
+  const snapshotRow = snapshotRows[0];
+  const snapshot: SnapshotPanelProps['snapshot'] = {
+    hasImage: snapshotRow?.hasImage ?? false,
+    source: snapshotRow?.source ?? null,
+    capturedAt: snapshotRow?.capturedAt?.toISOString() ?? null,
+    checksum: snapshotRow?.checksum ?? null,
+    lastAttemptAt: snapshotRow?.lastAttemptAt?.toISOString() ?? null,
+    lastAttemptStatus: snapshotRow?.lastAttemptStatus ?? null,
+    lastError: snapshotRow?.lastError ?? null,
+  };
   const deployment = summarizeProject({
     components: project.components.map((component) => ({
       type: component.componentType,
@@ -197,6 +221,13 @@ export default async function ProjectDetailPage({
             {status.status}
           </Badge>
         </div>
+
+        <SnapshotPanel
+          slug={project.slug}
+          mode={project.snapshotMode}
+          snapshotUrl={project.snapshotUrl}
+          snapshot={snapshot}
+        />
 
         <Card>
           <div>

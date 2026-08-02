@@ -3,6 +3,7 @@
 import type { TimelineEvent } from '@deployhub/db';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createElement, type ComponentPropsWithoutRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listTimelineEvents: vi.fn(),
   notFound: vi.fn(),
   select: vi.fn(),
+  refresh: vi.fn(),
 }));
 
 vi.mock('@deployhub/db', async (importOriginal) => ({
@@ -27,7 +29,15 @@ vi.mock('@deployhub/db', async (importOriginal) => ({
 vi.mock('../../../lib/db', () => ({
   db: { select: mocks.select },
 }));
-vi.mock('next/navigation', () => ({ notFound: mocks.notFound }));
+vi.mock('next/navigation', () => ({
+  notFound: mocks.notFound,
+  useRouter: () => ({ refresh: mocks.refresh }),
+}));
+vi.mock('next/image', () => ({
+  default: ({ unoptimized: _unoptimized, ...props }: ComponentPropsWithoutRef<'img'> & {
+    unoptimized?: boolean;
+  }) => createElement('img', props),
+}));
 
 import ProjectDetailPage from './page';
 
@@ -36,10 +46,12 @@ const testFileUrl = import.meta.url.startsWith('file:')
   : pathToFileURL(import.meta.filename).href;
 const pagePath = fileURLToPath(new URL('./page.tsx', testFileUrl));
 const compositionPath = fileURLToPath(new URL('./composition.tsx', testFileUrl));
+const editPagePath = fileURLToPath(new URL('./edit/page.tsx', testFileUrl));
 const page = readFileSync(
   pagePath,
   'utf8',
 );
+const editPage = readFileSync(editPagePath, 'utf8');
 
 const now = new Date('2026-08-01T00:00:00.000Z');
 const project = {
@@ -147,16 +159,30 @@ beforeEach(() => {
     throw new Error('NOT_FOUND');
   });
   mocks.select.mockReset();
-  mocks.select.mockImplementation(() => ({
+  mocks.select.mockImplementation((selection?: Record<string, unknown>) => ({
     from: () => ({
-      where: () => ({
-        orderBy: async () => [],
-      }),
+      where: () => selection?.hasImage
+        ? Promise.resolve([])
+        : ({ orderBy: async () => [] }),
     }),
   }));
 });
 
 describe('project detail status', () => {
+  it('renders snapshot settings after the existing project form only on edit', () => {
+    expect(editPage).toContain('<SnapshotSettingsForm');
+    expect(editPage.indexOf('<ProjectForm project={project} />'))
+      .toBeLessThan(editPage.indexOf('<SnapshotSettingsForm'));
+    expect(page).not.toContain('<SnapshotSettingsForm');
+  });
+
+  it('selects snapshot metadata without image bytes and renders the detail panel', () => {
+    expect(page).toContain('<SnapshotPanel');
+    expect(page).toContain('hasImage: sql<boolean>');
+    expect(page).not.toContain('imageData: schema.projectSnapshots.imageData');
+    expect(page).toContain('lastError: schema.projectSnapshots.lastError');
+  });
+
   it('구성도가 Annotation 으로 관측을 그린다', () => {
     const composition = readFileSync(
       compositionPath,

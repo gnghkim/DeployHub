@@ -9,6 +9,7 @@ import { Card } from '../../../../components/ui/card';
 import { db } from '../../../../lib/db';
 import { ProjectForm } from '../../project-form';
 import { ComponentForm } from '../components/component-form';
+import { SnapshotSettingsForm } from '../snapshot-settings-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,17 @@ export default async function EditProjectPage({
             프로젝트
           </h3>
           <ProjectForm project={project} />
+        </Card>
+
+        <Card>
+          <h3 className="mb-5 text-base font-medium text-[var(--line)]">
+            스냅샷 설정
+          </h3>
+          <SnapshotSettingsForm
+            slug={project.slug}
+            mode={project.snapshotMode}
+            snapshotUrl={project.snapshotUrl}
+          />
         </Card>
 
         <Card>
