@@ -58,12 +58,13 @@ docker compose --env-file .env -f docker/compose.yml run --rm --no-deps caddy \
 
 ## Snapshotter 보안 경계
 
-Snapshotter 이미지는 브라우저와 시스템 의존성이 포함된
-`mcr.microsoft.com/playwright:v1.62.0-noble`을 빌드와 런타임에 모두 사용한다.
-앱의 Playwright 패키지도 1.62.0으로 고정하며, 설치 중 브라우저를 다시 받지
-않는다. 최종 이미지에는 프로덕션 `node_modules`와 번들만 복사하고 `pwuser`로
-실행한다. Chromium 사용자 네임스페이스 샌드박스를 켜며 `--no-sandbox`, root,
-`privileged`, `SYS_ADMIN`, `seccomp=unconfined`는 사용하지 않는다.
+빌드 단계는 Debian/glibc 기반 `node:22.22.0-bookworm-slim`으로 고정한다.
+여기서 만든 프로덕션 `node_modules`와 번들만 브라우저와 시스템 의존성이 포함된
+`mcr.microsoft.com/playwright:v1.62.0-noble` 런타임으로 복사한다. 앱의
+Playwright 패키지도 1.62.0으로 고정하며, 설치 중 브라우저를 다시 받지 않는다.
+최종 이미지는 `pwuser`로 실행한다. Chromium 사용자 네임스페이스 샌드박스를
+켜며 `--no-sandbox`, root, `privileged`, `SYS_ADMIN`, `seccomp=unconfined`는
+사용하지 않는다.
 
 `playwright-seccomp.json`은 Playwright v1.62.0의 공식 전체 프로필을 그대로
 체크인한 것이다:
