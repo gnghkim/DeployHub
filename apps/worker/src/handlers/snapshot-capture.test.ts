@@ -241,18 +241,68 @@ describe('snapshot capture handler', () => {
   });
 
   it.each([
-    {},
-    { projectId: 'project-only' },
-    { projectId: 123, url: SNAPSHOT_URL },
-    { projectId: 'project', url: 123 },
-    { projectId: 'project', url: SNAPSHOT_URL, deploymentId: null },
-    { projectId: 'project', url: SNAPSHOT_URL, requestId: 123 },
-    { projectId: 'project', url: SNAPSHOT_URL, extra: true },
-  ])('rejects malformed payload without exposing it: %j', async (payload) => {
-    const secret = 'payload-secret.example/private';
+    { name: 'a non-object payload', payload: 'not-an-object' },
+    { name: 'a null payload', payload: null },
+    { name: 'an array payload', payload: [] },
+    { name: 'a missing projectId', payload: { url: SNAPSHOT_URL } },
+    { name: 'a missing url', payload: { projectId: 'project' } },
+    {
+      name: 'an empty projectId',
+      payload: { projectId: '', url: SNAPSHOT_URL },
+    },
+    {
+      name: 'an empty url',
+      payload: { projectId: 'project', url: '' },
+    },
+    {
+      name: 'a non-string projectId',
+      payload: { projectId: 123, url: SNAPSHOT_URL },
+    },
+    {
+      name: 'a non-string url',
+      payload: {
+        projectId: 'project',
+        url: { value: 'payload-secret.example/private' },
+      },
+      secret: 'payload-secret.example/private',
+    },
+    {
+      name: 'a null deploymentId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, deploymentId: null },
+    },
+    {
+      name: 'an empty deploymentId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, deploymentId: '' },
+    },
+    {
+      name: 'a non-string deploymentId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, deploymentId: 123 },
+    },
+    {
+      name: 'a null requestId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, requestId: null },
+    },
+    {
+      name: 'an empty requestId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, requestId: '' },
+    },
+    {
+      name: 'a non-string requestId',
+      payload: { projectId: 'project', url: SNAPSHOT_URL, requestId: 123 },
+    },
+    {
+      name: 'an unknown key',
+      payload: {
+        projectId: 'project',
+        url: SNAPSHOT_URL,
+        'payload-secret.example/private': true,
+      },
+      secret: 'payload-secret.example/private',
+    },
+  ])('rejects $name safely', async ({ payload, secret }) => {
     const malformedJob: JobRecord = {
       ...job(randomUUID()),
-      payload: { ...payload, secret },
+      payload: payload as JobRecord['payload'],
     };
     const fetchFn = vi.fn();
 
@@ -262,7 +312,7 @@ describe('snapshot capture handler', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('invalid snapshot capture payload');
-    expect((error as Error).message).not.toContain(secret);
+    if (secret) expect((error as Error).message).not.toContain(secret);
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
