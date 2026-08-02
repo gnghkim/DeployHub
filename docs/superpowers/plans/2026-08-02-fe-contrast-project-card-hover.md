@@ -80,15 +80,19 @@ function contrast(foreground: Rgb, background: Rgb): number {
 Add this test inside `describe('design tokens', ...)`:
 
 ```ts
-  it('keeps support text at WCAG AA contrast on paper and card hover', () => {
+  it('keeps support text at WCAG AA contrast on normal and hovered card surfaces', () => {
     const css = readFileSync(GLOBALS, 'utf8');
     const paper = rgb(tokenHex(css, '--paper'));
-    const hover = blend({ r: 255, g: 255, b: 255 }, paper, 0.02);
+    const grid = rgb(tokenHex(css, '--grid'));
+    const canvas = rgb(tokenHex(css, '--canvas'));
+    const hover = blend({ r: 255, g: 255, b: 255 }, canvas, 0.02);
+    const surfaces = [paper, grid, hover];
 
     for (const token of ['--annotation', '--absent']) {
       const foreground = rgb(tokenHex(css, token));
-      expect(contrast(foreground, paper), `${token} on paper`).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(foreground, hover), `${token} on hover`).toBeGreaterThanOrEqual(4.5);
+      for (const background of surfaces) {
+        expect(contrast(foreground, background)).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 ```
