@@ -23,8 +23,9 @@
 
 - `--annotation`: `#8b949e`
   - `--paper: #111316` 대비 약 6.05:1
-- `--absent`: `#7c8590`
-  - `--paper: #111316` 대비 약 4.98:1
+- `--absent`: `#7e8893`
+  - `--paper: #111316` 대비 약 5.17:1
+  - `--grid: #1d2024` 대비 약 4.54:1
 - `--canvas`, `--paper`, `--grid`, `--rule`, `--line`, `--line-mute`와 상태 색상은
   현재 사용자 변경값을 유지한다.
 - 프로젝트명 `text-base font-semibold`, 상세 영역 `text-sm`, 배포 시각 `text-[13px]`
@@ -68,7 +69,7 @@
 ## 테스트와 검증
 
 - 디자인 토큰 테스트에서 hex 색상을 읽어 상대 휘도와 대비를 계산한다.
-- `--annotation`과 `--absent`가 `--paper` 및 프로젝트 카드 호버 배경에서
+- `--annotation`과 `--absent`가 `--paper`, `--grid` 및 프로젝트 카드 호버 배경에서
   각각 4.5:1 이상인지 검증한다.
 - 렌더 테스트에서 프로젝트명 링크의 hover underline과 focus-visible 피드백을 검증한다.
 - 소스 계약 테스트에서 공용 `Sheet`에는 호버 스타일이 없고 `ProjectSheet`에만

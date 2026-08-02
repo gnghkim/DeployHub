@@ -151,7 +151,7 @@ In `apps/web/src/app/globals.css`, replace only these two token values:
 
 ```css
   --annotation:  #8b949e;
-  --absent:      #7c8590;
+  --absent:      #7e8893;
 ```
 
 Keep the user's current values for `--canvas`, `--paper`, `--grid`, `--rule`, `--line`, and `--line-mute` unchanged.
@@ -167,7 +167,7 @@ const REQUIRED: Record<string, string> = {
   '--line': '#f8f9fa',
   '--line-mute': '#9ca3af',
   '--annotation': '#8b949e',
-  '--absent': '#7c8590',
+  '--absent': '#7e8893',
   '--fault': '#ff6161',
   '--caution': '#ffc533',
   '--confirm': '#59d499',
@@ -246,7 +246,7 @@ Expected: exit 0 with no TypeScript errors.
 - [ ] **Step 2: Run the complete web test suite**
 
 ```bash
-pnpm --filter web exec vitest run
+pnpm exec vitest run apps/web
 ```
 
 Expected: every web test file and test passes.
@@ -261,13 +261,13 @@ Expected: the production build exits 0. The existing middleware deprecation warn
 
 - [ ] **Step 4: Verify final contrast numerically**
 
-Run the focused design-token test again and confirm both support tokens pass on paper and the 2% white hover composite:
+Run the focused design-token test again and confirm both support tokens pass on paper, grid, and the actual 2% white-over-canvas hover composite:
 
 ```bash
 pnpm --filter web exec vitest run src/app/design-tokens.test.ts
 ```
 
-Expected: exit 0; the approved palette produces approximately 6.05:1 for `--annotation` and 4.98:1 for `--absent` on paper, with both remaining at or above 4.5:1 on hover.
+Expected: exit 0; the approved palette produces approximately 6.05:1 for `--annotation` on paper and 5.17:1 for `--absent` on paper, with both remaining at or above 4.5:1 on grid and hover surfaces.
 
 - [ ] **Step 5: Inspect scope and cleanliness**
 
