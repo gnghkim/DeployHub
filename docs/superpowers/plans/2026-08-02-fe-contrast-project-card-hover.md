@@ -14,6 +14,7 @@
 
 - Modify: `apps/web/src/app/globals.css` — apply the approved support-text colors while retaining the user's other palette changes.
 - Modify: `apps/web/src/app/design-tokens.test.ts` — calculate real WCAG contrast ratios for paper and the 2% white hover composite.
+- Modify: `apps/web/src/components/ui/tokens.test.ts` — update the exact token contract to the approved refreshed palette.
 - Modify: `apps/web/src/components/schematic/project-sheet.tsx` — scope card hover/focus styling and restore link affordance.
 - Modify: `apps/web/src/components/schematic/project-sheet.test.ts` — protect the shared `Sheet` boundary and project-only styling.
 - Modify: `apps/web/src/components/schematic/project-sheet-render.test.ts` — verify rendered hover and keyboard-focus classes on the project link/card.
@@ -24,6 +25,7 @@
 **Files:**
 - Modify: `apps/web/src/app/design-tokens.test.ts`
 - Modify: `apps/web/src/app/globals.css`
+- Modify: `apps/web/src/components/ui/tokens.test.ts`
 - Modify: `apps/web/src/components/schematic/project-sheet.test.ts`
 - Modify: `apps/web/src/components/schematic/project-sheet-render.test.ts`
 - Modify: `apps/web/src/components/schematic/project-sheet.tsx`
@@ -154,6 +156,27 @@ In `apps/web/src/app/globals.css`, replace only these two token values:
 
 Keep the user's current values for `--canvas`, `--paper`, `--grid`, `--rule`, `--line`, and `--line-mute` unchanged.
 
+In `apps/web/src/components/ui/tokens.test.ts`, update the exact color contract to the user's refreshed palette plus the approved support colors:
+
+```ts
+const REQUIRED: Record<string, string> = {
+  '--canvas': '#030406',
+  '--paper': '#111316',
+  '--grid': '#1d2024',
+  '--rule': '#2b2f33',
+  '--line': '#f8f9fa',
+  '--line-mute': '#9ca3af',
+  '--annotation': '#8b949e',
+  '--absent': '#7c8590',
+  '--fault': '#ff6161',
+  '--caution': '#ffc533',
+  '--confirm': '#59d499',
+  '--accent': '#57c1ff',
+};
+```
+
+The existing eight exact-token failures are the expected baseline signal that this contract still describes the pre-refresh palette.
+
 - [ ] **Step 6: Restore the shared `Sheet` boundary**
 
 In `apps/web/src/components/schematic/sheet.tsx`, restore the static class list:
@@ -197,6 +220,7 @@ Run:
 ```bash
 git add apps/web/src/app/globals.css \
   apps/web/src/app/design-tokens.test.ts \
+  apps/web/src/components/ui/tokens.test.ts \
   apps/web/src/components/schematic/project-sheet.tsx \
   apps/web/src/components/schematic/project-sheet.test.ts \
   apps/web/src/components/schematic/project-sheet-render.test.ts \
@@ -204,7 +228,7 @@ git add apps/web/src/app/globals.css \
 git commit -m "fix(web): restore accessible project card styling"
 ```
 
-Expected: the commit contains the user's FE refresh plus the accessibility and scope corrections, while `.superpowers/` remains untracked.
+Expected: the commit contains the user's FE refresh, updated token contract, and the accessibility and scope corrections, while `.superpowers/` remains untracked.
 
 ### Task 2: Full verification
 
@@ -253,4 +277,4 @@ git show --stat --oneline HEAD
 git status --short
 ```
 
-Expected: diff check exits 0; only the six planned FE/test files are in the implementation commit; the visual companion `.superpowers/` directory is the only unrelated untracked path.
+Expected: diff check exits 0; only the seven planned FE/test files are in the implementation commit; the visual companion `.superpowers/` directory is the only unrelated untracked path.
