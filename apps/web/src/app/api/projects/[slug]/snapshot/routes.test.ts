@@ -2,12 +2,18 @@ import type { Db } from '@deployhub/db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../../../auth/config', () => ({ auth: vi.fn() }));
 
-import type { SnapshotRouteDependencies } from './route-utils';
+import type {
+  SnapshotProject,
+  SnapshotRouteDependencies,
+} from './route-utils';
 import { createProjectSnapshotHandlers } from './route';
 import { createSnapshotUploadHandler } from './upload/route';
 import { createSnapshotCaptureHandler } from './capture/route';
 import { createSnapshotResumeHandler } from './resume/route';
-import { createSnapshotSettingsHandler } from './settings/route';
+import {
+  createSnapshotSettingsHandler,
+  persistSnapshotSettings,
+} from './settings/route';
 
 const database = {} as Db;
 const project = {
@@ -18,6 +24,7 @@ const project = {
 };
 const image = Buffer.from('webp-image');
 const checksum = 'a'.repeat(64);
+const MAX_MULTIPART_BYTES = 6 * 1024 * 1024;
 
 const mocks = {
   auth: vi.fn(),
@@ -47,6 +54,36 @@ function jsonRequest(path: string, body: unknown): Request {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function fileOfSize(size: number, name: string): File {
+  return new File([new ArrayBuffer(size)], name, { type: 'image/png' });
+}
+
+function asArrayBuffer(buffer: Buffer): ArrayBuffer {
+  const result = new ArrayBuffer(buffer.byteLength);
+  new Uint8Array(result).set(buffer);
+  return result;
+}
+
+function oversizedMultipartBody(kind: 'files' | 'text'): {
+  boundary: string;
+  body: ArrayBuffer;
+} {
+  const boundary = 'snapshot-test-boundary';
+  const chunks = kind === 'files'
+    ? [
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="first.png"\r\nContent-Type: image/png\r\n\r\n`),
+      Buffer.alloc(4_000_000),
+      Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="second"; filename="second.png"\r\nContent-Type: image/png\r\n\r\n`),
+      Buffer.alloc(3_000_000),
+    ]
+    : [
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="screen.png"\r\nContent-Type: image/png\r\n\r\nx\r\n--${boundary}\r\nContent-Disposition: form-data; name="notes"\r\n\r\n`),
+      Buffer.alloc(MAX_MULTIPART_BYTES, 120),
+    ];
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { boundary, body: asArrayBuffer(Buffer.concat(chunks)) };
 }
 
 function handlers() {
@@ -203,6 +240,126 @@ describe('POST /snapshot/upload', () => {
     }), context());
     expect(response.status).toBe(400);
   });
+
+  it('rejects Content-Length above the whole multipart cap before reading', async () => {
+    const stream = new ReadableStream<Uint8Array>();
+    const request = new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': 'multipart/form-data; boundary=unused',
+        'content-length': String(MAX_MULTIPART_BYTES + 1),
+      },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+    const cancel = vi.spyOn(request.body!, 'cancel');
+
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(request, context());
+
+    expect(response.status).toBe(413);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(stream.locked).toBe(false);
+    expect(mocks.normalize).not.toHaveBeenCalled();
+  });
+
+  it('bounds chunked bodies even when Content-Length lies and cancels the reader', async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_MULTIPART_BYTES));
+        controller.enqueue(new Uint8Array(1));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const request = new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': 'multipart/form-data; boundary=unused',
+        'content-length': '1',
+      },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit & { duplex: 'half' });
+
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(request, context());
+
+    expect(response.status).toBe(413);
+    expect(cancelled).toBe(true);
+    expect(stream.locked).toBe(false);
+  });
+
+  it('rejects aggregate multipart bytes across multiple files', async () => {
+    const multipart = oversizedMultipartBody('files');
+
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': `multipart/form-data; boundary=${multipart.boundary}`,
+      },
+      body: multipart.body,
+    }), context());
+
+    expect(response.status).toBe(413);
+    expect(mocks.normalize).not.toHaveBeenCalled();
+  });
+
+  it('rejects aggregate multipart bytes from oversized text fields', async () => {
+    const multipart = oversizedMultipartBody('text');
+
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      headers: {
+        'content-type': `multipart/form-data; boundary=${multipart.boundary}`,
+      },
+      body: multipart.body,
+    }), context());
+
+    expect(response.status).toBe(413);
+    expect(mocks.normalize).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for malformed multipart after bounded reading', async () => {
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'multipart/form-data; boundary=broken' },
+      body: 'not-a-multipart-body',
+    }), context());
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns a safe 500 for unexpected normalizer failures', async () => {
+    mocks.normalize.mockRejectedValue(new Error('https://secret.example/token'));
+    const body = new FormData();
+    body.set('file', fileOfSize(1, 'screen.png'));
+    const response = await createSnapshotUploadHandler(
+      database,
+      dependencies(),
+    )(new Request('http://deployhub.test/api/projects/yield/snapshot/upload', {
+      method: 'POST',
+      body,
+    }), context());
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: 'upload_failed' });
+  });
 });
 
 describe('POST /snapshot/capture', () => {
@@ -303,7 +460,122 @@ describe('POST /snapshot/settings', () => {
     )(jsonRequest('/api/projects/yield/snapshot/settings', body), context());
 
     expect(response.status).toBe(200);
-    expect(mocks.updateSettings).toHaveBeenCalledWith(database, project.id, expected);
+    expect(mocks.updateSettings).toHaveBeenCalledWith(
+      database,
+      project,
+      expected,
+      'request-uuid',
+    );
     expect(mocks.revalidate).toHaveBeenCalledWith('yield');
+  });
+});
+
+describe('atomic snapshot settings persistence', () => {
+  function transactionalDatabase(initial: SnapshotProject = project) {
+    let committed: SnapshotProject = { ...initial };
+    const tx = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({
+            for: async () => [{
+              snapshotMode: staged.snapshotMode,
+              snapshotUrl: staged.snapshotUrl,
+            }],
+          }),
+        }),
+      })),
+      update: vi.fn(() => ({
+        set: (values: Record<string, unknown>) => ({
+          where: () => ({
+            returning: async () => {
+              Object.assign(staged, values);
+              return [{ id: initial.id }];
+            },
+          }),
+        }),
+      })),
+    };
+    let staged: SnapshotProject = { ...committed };
+    const fakeDb = {
+      transaction: async (callback: (transaction: typeof tx) => Promise<boolean>) => {
+        staged = { ...committed };
+        const result = await callback(tx);
+        committed = { ...staged };
+        return result;
+      },
+    } as unknown as Db;
+    return { fakeDb, tx, current: () => committed };
+  }
+
+  it.each([
+    ['disabled to automatic', { ...project, snapshotMode: 'disabled' as const }],
+    ['manual to automatic', { ...project, snapshotMode: 'manual' as const }],
+    ['automatic URL change', { ...project, snapshotUrl: 'https://old.example.com/' }],
+  ])('updates and coalesces capture in one transaction for %s', async (_name, previous) => {
+    const state = transactionalDatabase(previous);
+    const coalesce = vi.fn().mockResolvedValue(true);
+    await persistSnapshotSettings(state.fakeDb, previous, {
+      mode: 'automatic',
+      url: 'https://new.example.com/',
+    }, 'settings-request-id', { coalesce });
+
+    expect(coalesce).toHaveBeenCalledWith(state.tx, {
+      projectId: project.id,
+      payload: {
+        projectId: project.id,
+        url: 'https://new.example.com/',
+        requestId: 'settings-request-id',
+      },
+      maxAttempts: 3,
+    });
+    expect(state.current()).toMatchObject({
+      snapshotMode: 'automatic',
+      snapshotUrl: 'https://new.example.com/',
+    });
+  });
+
+  it.each([
+    ['same automatic settings', project, { mode: 'automatic' as const, url: project.snapshotUrl }],
+    ['disable automatic', project, { mode: 'disabled' as const, url: project.snapshotUrl }],
+  ])('does not enqueue for %s', async (_name, previous, settings) => {
+    const state = transactionalDatabase(previous);
+    const coalesce = vi.fn();
+    await persistSnapshotSettings(
+      state.fakeDb,
+      previous,
+      settings,
+      'settings-request-id',
+      { coalesce },
+    );
+    expect(coalesce).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the settings update when enqueue fails', async () => {
+    const previous = { ...project, snapshotMode: 'disabled' as const };
+    const state = transactionalDatabase(previous);
+    const coalesce = vi.fn().mockRejectedValue(new Error('enqueue failed'));
+
+    await expect(persistSnapshotSettings(state.fakeDb, previous, {
+      mode: 'automatic',
+      url: project.snapshotUrl,
+    }, 'settings-request-id', { coalesce })).rejects.toThrow('enqueue failed');
+    expect(state.current()).toEqual(previous);
+  });
+
+  it('decides whether to enqueue from locked transaction state, not stale route state', async () => {
+    const staleRouteProject = project;
+    const currentDatabaseProject = {
+      ...project,
+      snapshotUrl: 'https://changed-concurrently.example.com/',
+    };
+    const state = transactionalDatabase(currentDatabaseProject);
+    const coalesce = vi.fn().mockResolvedValue(true);
+
+    await persistSnapshotSettings(state.fakeDb, staleRouteProject, {
+      mode: 'automatic',
+      url: project.snapshotUrl,
+    }, 'settings-request-id', { coalesce });
+
+    expect(coalesce).toHaveBeenCalledOnce();
   });
 });

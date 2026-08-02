@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   deleteSnapshotImage,
+  coalesceSnapshotCaptureJob,
   enqueueSnapshotCaptureTrailing,
   getProjectBySlug,
   getSnapshotState,
@@ -53,8 +54,9 @@ export type SnapshotRouteDependencies = {
   enqueue: (database: Db, payload: SnapshotCaptureRequest) => Promise<boolean>;
   updateSettings: (
     database: Db,
-    projectId: string,
+    project: SnapshotProject,
     settings: SnapshotSettings,
+    requestId: string,
   ) => Promise<boolean>;
   normalize: (file: File) => Promise<NormalizedSnapshotUpload>;
   revalidate: (slug: string) => void;
@@ -73,18 +75,7 @@ const defaultDependencies: SnapshotRouteDependencies = {
     payload,
     maxAttempts: 3,
   }),
-  updateSettings: async (database, projectId, settings) => {
-    const updated = await database
-      .update(schema.projects)
-      .set({
-        snapshotMode: settings.mode,
-        snapshotUrl: settings.url,
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.projects.id, projectId))
-      .returning({ id: schema.projects.id });
-    return updated.length > 0;
-  },
+  updateSettings: persistSnapshotSettings,
   normalize: normalizeSnapshotUpload,
   revalidate: () => {
     revalidatePath('/');
@@ -92,6 +83,60 @@ const defaultDependencies: SnapshotRouteDependencies = {
   },
   randomUUID,
 };
+
+type SnapshotSettingsPersistenceDependencies = {
+  coalesce?: typeof coalesceSnapshotCaptureJob;
+};
+
+export async function persistSnapshotSettings(
+  database: Db,
+  project: SnapshotProject,
+  settings: SnapshotSettings,
+  requestId: string,
+  dependencies: SnapshotSettingsPersistenceDependencies = {},
+): Promise<boolean> {
+  const coalesce = dependencies.coalesce ?? coalesceSnapshotCaptureJob;
+  return database.transaction(async (transaction) => {
+    const [current] = await transaction
+      .select({
+        snapshotMode: schema.projects.snapshotMode,
+        snapshotUrl: schema.projects.snapshotUrl,
+      })
+      .from(schema.projects)
+      .where(eq(schema.projects.id, project.id))
+      .for('update');
+    if (!current) return false;
+
+    const updated = await transaction
+      .update(schema.projects)
+      .set({
+        snapshotMode: settings.mode,
+        snapshotUrl: settings.url,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.projects.id, project.id))
+      .returning({ id: schema.projects.id });
+    if (updated.length === 0) return false;
+
+    const shouldCapture = settings.mode === 'automatic'
+      && (
+        current.snapshotMode !== 'automatic'
+        || current.snapshotUrl !== settings.url
+      );
+    if (shouldCapture) {
+      await coalesce(transaction, {
+        projectId: project.id,
+        payload: {
+          projectId: project.id,
+          url: settings.url,
+          requestId,
+        },
+        maxAttempts: 3,
+      });
+    }
+    return true;
+  });
+}
 
 export function snapshotRouteDependencies(
   overrides: Partial<SnapshotRouteDependencies>,

@@ -11,6 +11,8 @@ import {
   type SnapshotSettings,
 } from '../route-utils';
 
+export { persistSnapshotSettings } from '../route-utils';
+
 function normalizePublicHttpUrl(value: unknown): string | null | undefined {
   if (value === null) return null;
   if (typeof value !== 'string' || value.length === 0 || value.trim() !== value) {
@@ -77,8 +79,9 @@ export function createSnapshotSettingsHandler(
     }
     const updated = await dependencies.updateSettings(
       database,
-      authorized.project.id,
+      authorized.project,
       settings,
+      dependencies.randomUUID(),
     );
     if (!updated) return notFoundResponse();
 
