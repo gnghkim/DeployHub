@@ -476,6 +476,6 @@ describe('startValidatingProxy', () => {
     const request = openProxyHttpRequest(proxy.url, 'http://example.com/idle');
 
     await vi.waitFor(() => expect(proxy.failure).toMatchObject({ code: 'navigation_failed' }));
-    expect(request.destroyed).toBe(true);
+    await vi.waitFor(() => expect(request.destroyed).toBe(true));
   });
 });
