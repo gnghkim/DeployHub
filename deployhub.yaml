@@ -31,6 +31,13 @@ spec:
       path: apps/worker
       provider: hostinger
       container: deployhub-worker
+    - name: snapshotter
+      type: api
+      runtime: nodejs
+      language: typescript
+      path: apps/snapshotter
+      provider: hostinger
+      container: deployhub-snapshotter
     - name: database
       type: database
       runtime: postgresql

@@ -163,6 +163,9 @@ ACME_EMAIL=<본인 이메일>
 - `DATABASE_URL` 의 호스트는 `postgres` 다. `localhost` 가 아니다. 컨테이너 네트워크 이름이다.
 - `AUTH_TRUST_HOST=true` 가 없으면 Caddy 뒤에서 Auth.js 가 모든 인증 요청을 `UntrustedHost` 로 거부한다.
 - `ALLOWED_GITHUB_LOGINS` 가 비어 있으면 **아무도 로그인할 수 없다.** 설계상 fail-closed 다.
+- Compose에서는 worker의 `SNAPSHOTTER_URL`이 기본값
+  `http://snapshotter:3001`을 사용한다. 외부 snapshotter를 운영하는 경우가
+  아니면 `.env`에 별도 URL을 넣지 않는다.
 
 권한을 좁힌다:
 
@@ -190,6 +193,11 @@ docker run --rm --entrypoint sh deployhub-migrate:local -c 'ls /app/drizzle/*.sq
 ```
 
 `deployhub:local` 은 web 과 worker 가 공유하고 `command` 로 갈린다. 자체 Caddy 이미지는 `standalone` 프로파일에 있어 여기서 빌드되지 않는다(공용 Caddy 를 쓰는 서버에서는 필요 없다).
+
+`deployhub-snapshotter:local`은 별도 Dockerfile로 빌드된다. Node
+22.22.0 builder와 Playwright 1.62.0 런타임, 앱의 Playwright 1.62.0과 sharp
+0.35.3 버전을 맞췄다. 이미지에는 Chromium과 시스템 의존성이 포함되어 있어
+애플리케이션 이미지보다 크므로 첫 빌드와 전송 시간을 배포 계획에 포함한다.
 
 수 분 걸린다. 마지막에 `Built` 가 보이면 성공이다.
 
@@ -224,11 +232,26 @@ docker compose --env-file .env -f docker/compose.yml exec postgres \
   "select tablename from pg_tables where schemaname='public' order by 1;"
 ```
 
-7개가 나와야 한다 — `component_resources`, `components`, `jobs`, `projects`, `provider_accounts`, `resources`, `users`.
+현재 전체 마이그레이션 기준으로 14개가 나와야 한다. 스냅샷 변경은 다음 두
+마이그레이션이다.
+
+- `0009_project_snapshots.sql`: `project_snapshots` 테이블, 프로젝트 설정 컬럼,
+  상태 enum과 활성 작업 중복 방지 키를 추가한다.
+- `0010_typical_moondragon.sql`: 한 캡처가 실행 중일 때 들어온 마지막 요청을
+  보존하는 trailing job 컬럼을 추가한다.
+
+적용 여부는 테이블과 컬럼을 직접 확인한다.
+
+```bash
+docker compose --env-file .env -f docker/compose.yml exec postgres \
+  psql -U deployhub -d deployhub -c "\\d project_snapshots"
+docker compose --env-file .env -f docker/compose.yml exec postgres \
+  psql -U deployhub -d deployhub -c "\\d jobs"
+```
 
 ---
 
-## 9. web·worker·socket-proxy 기동
+## 9. web·worker·snapshotter·socket-proxy 기동
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml up -d
@@ -237,6 +260,19 @@ docker compose --env-file .env -f docker/compose.yml logs worker | tail -5
 ```
 
 worker 로그에 `[worker] 시작 worker-xxxxxxxx` 가 보여야 한다.
+
+`snapshotter`가 `healthy`인지 확인한다. 이 서비스는 공개 health route나 호스트
+포트를 만들지 않는다. 컨테이너 내부 healthcheck가 존재하지 않는 `GET
+/__health`를 호출하고 결정적인 404 `blocked_target` 응답을 정상으로 판정한다.
+
+```bash
+docker inspect deployhub-snapshotter --format '{{.State.Health.Status}}'
+docker compose --env-file .env -f docker/compose.yml logs snapshotter --tail 10
+```
+
+`unhealthy`면 worker의 다른 수집 작업은 계속되지만 자동 캡처는 재시도 후 실패
+상태로 남는다. snapshotter 로그에는 요청 ID, 소요 시간과 정규화된 결과 코드만
+남고 대상 URL이나 페이지 내용은 남지 않아야 한다.
 
 web 이 응답하는지 확인 (아직 외부 노출 전):
 
@@ -280,6 +316,33 @@ docker exec deployhub-worker node -e \
 ```
 
 `web` 에서 `도달함` 이 나오면 격리가 깨진 것이다. 배포를 멈추고 `docker/compose.yml` 의 `networks:` 를 확인해라.
+
+### snapshotter 격리 확인
+
+snapshotter는 worker와 `snapshot` 네트워크만 공유한다. 호스트 포트,
+`deployhub`/`docker-api`/`web` 네트워크, `.env`, 데이터베이스 자격 증명과 Docker
+소켓이 없어야 한다.
+
+```bash
+docker inspect deployhub-snapshotter \
+  --format 'networks={{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}} ports={{json .NetworkSettings.Ports}} user={{.Config.User}}'
+docker inspect deployhub-snapshotter \
+  --format 'readonly={{.HostConfig.ReadonlyRootfs}} caps={{json .HostConfig.CapDrop}} security={{json .HostConfig.SecurityOpt}}'
+```
+
+첫 출력에는 프로젝트 이름이 붙은 `snapshot` 네트워크 하나와 `user=pwuser`만,
+두 번째 출력에는 read-only root filesystem, `ALL` capability drop,
+`no-new-privileges`와 전용 seccomp 프로필이 보여야 한다. 실제 공개 페이지 캡처
+smoke test는 [Docker 실행 문서](../docker/README.md)의 절차를 따른다. 인증이
+필요한 페이지는 로그인 쿠키를 전달하지 말고 관리 화면에서 수동 이미지를
+업로드한다.
+
+`snapshot` 네트워크에는 공개 페이지 캡처를 위한 egress가 있다. 애플리케이션은
+DNS 고정 validating proxy로 사설·loopback·link-local·metadata 주소를 거부하지만,
+브라우저와 컨테이너까지 모두 탈출한 공격자의 직접 소켓까지 애플리케이션만으로
+차단할 수는 없다. 운영 호스트 firewall/egress 정책에서 사설망, Docker
+host/bridge gateway와 cloud metadata 대역을 차단하고 필요한 공개 HTTP(S)/DNS만
+허용한다.
 
 이미지는 다이제스트로 고정되어 있다. 올릴 때는 릴리스 노트를 읽고 `compose.yml` 의 다이제스트를 함께 갱신한다 — 태그만 바꾸면 고정한 의미가 없다.
 
@@ -417,11 +480,32 @@ docker exec deployhub-postgres psql -U deployhub -d deployhub -tAc \
 docker exec deployhub-postgres psql -U deployhub -d deployhub -c "\d <테이블>"
 ```
 
+스냅샷 기능 배포 순서는 `web/worker/snapshotter` 이미지 빌드 → PostgreSQL 기동
+→ `0009`·`0010`을 포함한 마이그레이션 → 전체 서비스 기동이다. 새 worker를
+마이그레이션보다 먼저 시작하면 아직 없는 스냅샷 컬럼과 작업 필드를 읽게 되므로
+순서를 바꾸지 않는다.
+
+### 스냅샷 배포 롤백
+
+문제가 생기면 먼저 worker와 snapshotter를 멈춰 새 캡처와 이미지 교체를 막는다.
+
+```bash
+docker compose --env-file .env -f docker/compose.yml stop worker snapshotter
+```
+
+그다음 검증된 이전 Git 커밋/이미지 태그로 web과 worker를 되돌려 다시 기동한다.
+`0009`와 `0010`은 기존 테이블을 삭제하지 않는 추가형 마이그레이션이므로 운영
+장애 중에 역방향 SQL로 enum, 컬럼, 테이블이나 이미지 데이터를 삭제하지 않는다.
+이전 애플리케이션은 추가 스키마를 무시할 수 있고, 보존한 데이터는 수정 버전을
+재배포할 때 다시 사용할 수 있다. 롤백 전에 DB 백업을 만들고, 이전 worker를
+기동한 뒤 unknown `snapshot.capture` 작업이 남았다는 로그가 없는지 확인한다.
+
 ### 로그
 
 ```bash
 docker compose --env-file .env -f docker/compose.yml logs -f web
 docker compose --env-file .env -f docker/compose.yml logs -f worker
+docker compose --env-file .env -f docker/compose.yml logs -f snapshotter
 ```
 
 ### 백업 (구축방안 9.1)
@@ -434,6 +518,13 @@ docker compose --env-file .env -f docker/compose.yml exec -T postgres \
 ```
 
 이 파일을 외부 스토리지로 옮긴다. `.env` 와 키는 패스워드 매니저에 별도 보관한다.
+
+프로젝트 스냅샷의 현재 WebP는 `project_snapshots.image_data`의 PostgreSQL
+`bytea`로 저장되므로 위 `pg_dump`에 함께 포함된다. 이미지 파일용 별도 볼륨은
+없다. 스냅샷 한 장은 최대 1.5 MB지만 프로젝트 수만큼 DB와 압축 백업 크기가
+증가하므로 데이터베이스·백업 스토리지 사용량과 백업 시간을 함께 감시한다.
+복원 테스트에서는 `project_snapshots` 행 수뿐 아니라 인증 후 실제 이미지가
+열리는지도 확인한다. 데이터베이스 보존 정책이 곧 스냅샷 보존 정책이다.
 
 ### 알아둘 것
 

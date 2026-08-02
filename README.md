@@ -12,6 +12,8 @@ manifest는 바로 운영 정보에 반영하지 않고 Draft로 제출한 뒤 �
 - 최근 배포 상태와 시각을 프로젝트·구성요소와 연결해 보여 준다.
 - 프로젝트 카드를 이름 단위로 접어 필요한 프로젝트만 자세히 볼 수 있으며, 접힘
   상태는 브라우저에 프로젝트별로 유지된다.
+- 프로젝트별 대표 화면을 자동 캡처하거나 수동 업로드해 목록 카드와 상세 화면에서
+  확인한다. 캡처 설정·업로드·이미지 조회는 로그인한 사용자에게만 허용한다.
 - CLI가 저장소를 감지해 `deployhub.yaml` 초안을 만들고 Schema로 검증한다.
 - 신규 등록과 변경 사항을 Draft로 제출해 사람의 승인 후 반영한다.
 - GitHub OAuth와 허용 사용자 목록으로 관리 화면 접근을 제한한다.
@@ -21,15 +23,17 @@ manifest는 바로 운영 정보에 반영하지 않고 Draft로 제출한 뒤 �
 | 구성요소 | 역할 |
 | --- | --- |
 | `apps/web` | Next.js 기반 관리 화면, 인증, API와 Draft 검토 화면 |
-| `apps/worker` | 상태 점검, Docker 정보 동기화와 백그라운드 작업 처리 |
-| PostgreSQL | 프로젝트, 구성요소, 상태, 배포와 Draft 데이터 저장 |
+| `apps/worker` | 상태 점검, Docker 정보 동기화, 스냅샷 예약과 백그라운드 작업 처리 |
+| `apps/snapshotter` | 격리된 Playwright/Chromium으로 공개 웹 페이지를 WebP로 캡처 |
+| PostgreSQL | 프로젝트, 구성요소, 상태, 배포, Draft와 현재 스냅샷 이미지 저장 |
 | Docker Socket Proxy | 워커에 제한된 Docker 조회 API만 제공 |
 | `@deployhub/cli` | 저장소 감지, manifest 검증, 상태·차이 조회와 Draft 제출 |
 
 저장소는 pnpm workspace 모노레포이며, 공통 데이터베이스·수집기·manifest·공유
 코드는 `packages/` 아래에 있다. 운영 환경에서는 Docker Compose로 웹, 워커,
-PostgreSQL과 Socket Proxy를 실행하고 Caddy가 HTTPS 요청을 웹 컨테이너로
-전달한다.
+snapshotter, PostgreSQL과 Socket Proxy를 실행하고 Caddy가 HTTPS 요청을 웹
+컨테이너로 전달한다. snapshotter는 worker와 전용 네트워크만 공유하며 호스트
+포트, 데이터베이스 자격 증명과 Docker 소켓을 받지 않는다.
 
 ## 요구사항
 
@@ -68,11 +72,32 @@ pnpm typecheck
 pnpm test
 pnpm --filter web build
 pnpm --filter worker build
+pnpm --filter snapshotter build
 pnpm --filter @deployhub/cli build
 ```
 
 PostgreSQL 마이그레이션과 전체 Compose 실행 절차는 운영 환경의 네트워크·환경변수
 설정에 의존하므로 [배포 가이드](./docs/deployment.md)를 따른다.
+
+## 프로젝트 스냅샷
+
+프로젝트 편집 화면에서 대표 URL과 스냅샷 모드를 설정한다.
+
+- `automatic`: Docker의 새 `running` 운영 배포 또는 Vercel의 새 `READY` 운영
+  배포가 처음 관측되면 공개 HTTP(S) 대표 URL을 캡처한다. 로그인 세션, 쿠키,
+  브라우저 프로필이나 자격 증명은 snapshotter에 전달하지 않으므로 인증이 필요한
+  페이지에는 사용하지 않는다.
+- `manual`: 로그인한 관리자가 PNG/JPEG/WebP 파일을 업로드해 현재 이미지를
+  고정한다. 이후 자동 캡처 결과가 이 이미지를 덮어쓰지 않으며, 자동 모드를
+  재개하면 다음 캡처를 즉시 예약한다.
+- `disabled`: 자동 캡처를 예약하지 않는다. 기존 이미지는 별도 삭제 전까지
+  유지된다.
+
+자동 캡처와 수동 업로드 결과는 1440×900 WebP, 최대 1.5 MB로 정규화되어
+PostgreSQL에 저장된다. 수동 업로드 원본은 최대 5 MB다. 목록 쿼리는 이미지
+바이트를 읽지 않고 메타데이터만 가져오며, 실제 이미지는 인증된 전용 API에서
+지연 로드한다. 자동 대상은 DNS와 모든 요청·리다이렉트 단계에서 공개 주소인지
+재검증한다.
 
 ## DeployHub CLI
 
@@ -147,6 +172,8 @@ node packages/cli/dist/index.js sync --draft
 | Auth.js (`next-auth`) | 5.0.0-beta.32 |
 | React | 19.2.8 |
 | React DOM | 19.2.8 |
+| Playwright | 1.62.0 |
+| sharp | 0.35.3 |
 | Caddy | 2.11.4 |
 | caddy-ratelimit | v0.1.1-0.20260612195517-5625512f24f6 |
 
