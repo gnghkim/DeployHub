@@ -12,14 +12,14 @@ const topbar = readFileSync(
 );
 
 const REQUIRED: Record<string, string> = {
-  '--canvas': '#07080a',
-  '--paper': '#0d0d0d',
-  '--grid': '#16181a',
-  '--rule': '#242728',
-  '--line': '#f4f4f6',
-  '--line-mute': '#cdcdcd',
-  '--annotation': '#9c9c9d',
-  '--absent': '#6a6b6c',
+  '--canvas': '#030406',
+  '--paper': '#111316',
+  '--grid': '#1d2024',
+  '--rule': '#2b2f33',
+  '--line': '#f8f9fa',
+  '--line-mute': '#9ca3af',
+  '--annotation': '#8b949e',
+  '--absent': '#7c8590',
   '--fault': '#ff6161',
   '--caution': '#ffc533',
   '--confirm': '#59d499',

@@ -9,6 +9,10 @@ const SHEET = readFileSync(
   join(PROJECT_ROOT, 'src/components/schematic/project-sheet.tsx'),
   'utf8',
 );
+const SHARED_SHEET = readFileSync(
+  join(PROJECT_ROOT, 'src/components/schematic/sheet.tsx'),
+  'utf8',
+);
 const ROOT = readFileSync(join(PROJECT_ROOT, 'src/app/page.tsx'), 'utf8');
 
 describe('project sheet', () => {
@@ -22,6 +26,14 @@ describe('project sheet', () => {
 
   it('renders inside a Sheet', () => {
     expect(SHEET).toContain('<Sheet');
+  });
+
+  it('scopes hover and focus interaction styles to project cards', () => {
+    expect(SHARED_SHEET).not.toMatch(/hover:(?:border|bg)-/);
+    expect(SHEET).toContain('hover:border-[var(--annotation)]');
+    expect(SHEET).toContain('hover:bg-white/[0.02]');
+    expect(SHEET).toContain('focus-within:border-[var(--annotation)]');
+    expect(SHEET).toContain('focus-within:bg-white/[0.02]');
   });
 });
 

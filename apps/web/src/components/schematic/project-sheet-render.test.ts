@@ -53,6 +53,9 @@ describe('ProjectSheet rendering', () => {
     expect(projectLink).not.toBeNull();
     if (!projectLink) throw new Error('Project link was not rendered');
     expect(details.contains(projectLink)).toBe(false);
+    expect(projectLink.className).toContain('hover:underline');
+    expect(projectLink.className).toContain('focus-visible:underline');
+    expect(projectLink.className).toContain('focus-visible:outline-2');
 
     const badge = Array.from(container.querySelectorAll('span')).find(
       (element) => element.textContent === '장애',

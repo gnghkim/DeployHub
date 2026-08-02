@@ -9,6 +9,51 @@ const WEB_ROOT = join(HERE, '..', '..');
 const GLOBALS = join(HERE, 'globals.css');
 const SELF = 'design-tokens.test.ts';
 
+type Rgb = [number, number, number];
+
+function parseHexToken(css: string, token: string): Rgb {
+  const match = css.match(new RegExp(`${token}:\\s*(#[0-9a-fA-F]{6})\\s*;`));
+  if (!match) throw new Error(`Missing six-digit hex value for ${token}`);
+
+  const value = match[1];
+  if (!value) throw new Error(`Missing six-digit hex value for ${token}`);
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
+}
+
+function relativeLuminance(rgb: Rgb): number {
+  const toLinear = (channel: number): number => {
+    const srgb = channel / 255;
+    return srgb <= 0.04045
+      ? srgb / 12.92
+      : ((srgb + 0.055) / 1.055) ** 2.4;
+  };
+  const [red, green, blue] = rgb.map(toLinear) as Rgb;
+
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrastRatio(foreground: Rgb, background: Rgb): number {
+  const lighter = Math.max(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  const darker = Math.min(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function composite(foreground: Rgb, background: Rgb, alpha: number): Rgb {
+  return foreground.map(
+    (channel, index) => channel * alpha + background[index]! * (1 - alpha),
+  ) as Rgb;
+}
+
 function allSourceText(): string {
   const listed = execFileSync(
     'git',
@@ -63,4 +108,17 @@ describe('design tokens', () => {
     expect(css.includes('64px')).toBe(false);
     expect(css.includes('56px')).toBe(false);
   });
+
+  it.each(['--annotation', '--absent'])(
+    '%s meets WCAG AA contrast on project card backgrounds',
+    (token) => {
+      const css = readFileSync(GLOBALS, 'utf8');
+      const foreground = parseHexToken(css, token);
+      const paper = parseHexToken(css, '--paper');
+      const hover = composite([255, 255, 255], paper, 0.02);
+
+      expect(contrastRatio(foreground, paper), `${token} on --paper`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(foreground, hover), `${token} on project-card hover`).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 });

@@ -46,7 +46,7 @@ export function ProjectSheet({
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <span
             aria-hidden="true"
-            className="shrink-0 text-[var(--absent)]"
+            className="shrink-0 text-[var(--absent)] opacity-70"
           >
             {connector}
           </span>
@@ -63,7 +63,7 @@ export function ProjectSheet({
             <li className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
               <span
                 aria-hidden="true"
-                className="shrink-0 text-[var(--absent)]"
+                className="shrink-0 text-[var(--absent)] opacity-70"
               >
                 └─
               </span>
@@ -84,7 +84,7 @@ export function ProjectSheet({
   });
 
   return (
-    <Sheet className="min-w-0 overflow-hidden">
+    <Sheet className="min-w-0 overflow-hidden transition-colors duration-300 hover:border-[var(--annotation)] hover:bg-white/[0.02] focus-within:border-[var(--annotation)] focus-within:bg-white/[0.02] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.02)]">
       <ProjectSheetCollapse
         projectId={project.id}
         projectName={project.name}
@@ -93,7 +93,7 @@ export function ProjectSheet({
             <StatusDot tone={tone} />
             <Link
               href={`/projects/${project.slug}`}
-              className="min-w-0 break-words text-[15px] font-medium text-[var(--line)] hover:underline"
+              className="min-w-0 break-words text-base font-semibold text-[var(--line)] transition-colors hover:text-white hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
             >
               {project.name}
             </Link>
@@ -102,7 +102,7 @@ export function ProjectSheet({
         )}
         trailing={project.latestDeploymentAt && project.latestDeploymentRelative ? (
           <time
-            className="shrink-0 text-xs text-[var(--absent)]"
+            className="shrink-0 text-[13px] text-[var(--absent)]"
             dateTime={project.latestDeploymentAt.toISOString()}
             title={formatDateTime(project.latestDeploymentAt)}
           >
@@ -110,7 +110,7 @@ export function ProjectSheet({
           </time>
         ) : null}
       >
-        <div className="mt-4 min-w-0 border-t border-[var(--rule)] pt-4 font-mono text-[13px]">
+        <div className="mt-4 min-w-0 border-t border-[var(--rule)] pt-4 font-mono text-sm">
           <ul className="min-w-0 space-y-2">
             {project.repository ? (
               <li className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[var(--line-mute)]">
@@ -124,7 +124,7 @@ export function ProjectSheet({
                 <div className="flex min-w-0 items-baseline gap-2 text-[var(--line-mute)]">
                   <span
                     aria-hidden="true"
-                    className="shrink-0 text-[var(--absent)]"
+                    className="shrink-0 text-[var(--absent)] opacity-70"
                   >
                     └─┬
                   </span>
