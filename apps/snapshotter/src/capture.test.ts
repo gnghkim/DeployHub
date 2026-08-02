@@ -129,6 +129,7 @@ function browserFixture(options: {
   let proxyFailure: SnapshotCaptureError | undefined;
   const proxy = {
     url: 'http://127.0.0.1:43123',
+    activeStreamCount: 0,
     get failure() {
       return proxyFailure;
     },

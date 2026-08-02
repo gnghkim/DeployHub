@@ -1,6 +1,7 @@
 import {
   createServer,
   request as httpRequest,
+  type ClientRequest,
   type IncomingHttpHeaders,
   type IncomingMessage,
   type OutgoingHttpHeaders,
@@ -30,6 +31,12 @@ export interface HttpForwardContext {
   signal: AbortSignal;
 }
 
+export type HttpRequestFunction = (
+  target: URL,
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void,
+) => ClientRequest;
+
 export interface TunnelDialContext {
   hostname: string;
   port: 443;
@@ -44,6 +51,8 @@ export interface ValidatingProxyOptions {
   maxConcurrentStreams?: number;
   maxTransferBytes?: number;
   idleTimeoutMs?: number;
+  requestHttp?: HttpRequestFunction;
+  requestHttps?: HttpRequestFunction;
   forwardHttp?: (context: HttpForwardContext) => Promise<void>;
   dialTunnel?: (context: TunnelDialContext) => Promise<Duplex>;
   onFailure?: (error: SnapshotCaptureError) => void;
@@ -57,6 +66,7 @@ export const DEFAULT_PROXY_IDLE_TIMEOUT_MS = 5_000;
 export interface ValidatingProxy {
   readonly url: string;
   readonly failure: SnapshotCaptureError | undefined;
+  readonly activeStreamCount: number;
   block(error: SnapshotCaptureError): void;
   close(): Promise<void>;
 }
@@ -139,30 +149,79 @@ async function forwardPinnedHttp({
   target,
   address,
   signal,
-}: HttpForwardContext) {
-  const requestFunction = target.protocol === 'https:' ? httpsRequest : httpRequest;
+}: HttpForwardContext, requestHttp: HttpRequestFunction, requestHttps: HttpRequestFunction) {
+  const requestFunction = target.protocol === 'https:' ? requestHttps : requestHttp;
   await new Promise<void>((resolve, reject) => {
-    const outgoing = requestFunction(
-      target,
-      createPinnedRequestOptions(
-        request.method,
-        request.headers,
+    let settled = false;
+    let outgoing: ClientRequest | undefined;
+    let incoming: IncomingMessage | undefined;
+    const navigationFailure = () => new SnapshotCaptureError('navigation_failed');
+    const destroyBothDirections = () => {
+      if (outgoing) request.unpipe(outgoing);
+      if (incoming) incoming.unpipe(response);
+      if (!request.destroyed) request.destroy();
+      if (outgoing && !outgoing.destroyed) outgoing.destroy();
+      if (incoming && !incoming.destroyed) incoming.destroy();
+      if (!response.destroyed && !response.writableEnded) response.destroy();
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      destroyBothDirections();
+      reject(error);
+    };
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    response.once('error', rejectOnce);
+    response.once('close', () => {
+      if (!response.writableEnded) rejectOnce(navigationFailure());
+    });
+    request.once('error', rejectOnce);
+    request.once('aborted', () => rejectOnce(navigationFailure()));
+
+    try {
+      outgoing = requestFunction(
         target,
-        address,
-        signal,
-      ),
-      (incoming) => {
-        response.writeHead(
-          incoming.statusCode ?? 502,
-          responseHeaders(incoming.headers),
-        );
-        incoming.pipe(response);
-        incoming.once('end', resolve);
-        incoming.once('error', reject);
-      },
-    );
-    outgoing.once('error', reject);
-    request.pipe(outgoing);
+        createPinnedRequestOptions(
+          request.method,
+          request.headers,
+          target,
+          address,
+          signal,
+        ),
+        (upstreamResponse) => {
+          if (settled) {
+            upstreamResponse.destroy();
+            return;
+          }
+          incoming = upstreamResponse;
+          upstreamResponse.once('error', rejectOnce);
+          upstreamResponse.once('aborted', () => rejectOnce(navigationFailure()));
+          upstreamResponse.once('close', () => {
+            if (!upstreamResponse.complete) rejectOnce(navigationFailure());
+          });
+          response.once('finish', resolveOnce);
+          try {
+            response.writeHead(
+              upstreamResponse.statusCode ?? 502,
+              responseHeaders(upstreamResponse.headers),
+            );
+            upstreamResponse.pipe(response);
+          } catch (error) {
+            rejectOnce(error);
+          }
+        },
+      );
+      outgoing.once('error', rejectOnce);
+      outgoing.once('abort', () => rejectOnce(navigationFailure()));
+      request.pipe(outgoing);
+    } catch (error) {
+      rejectOnce(error);
+    }
   });
 }
 
@@ -214,7 +273,11 @@ export async function startValidatingProxy(
 ): Promise<ValidatingProxy> {
   const controller = new AbortController();
   const activeStreams = new Set<Duplex>();
-  const forwardHttp = options.forwardHttp ?? forwardPinnedHttp;
+  const forwardHttp = options.forwardHttp ?? ((context) => forwardPinnedHttp(
+    context,
+    options.requestHttp ?? httpRequest,
+    options.requestHttps ?? httpsRequest,
+  ));
   const dialTunnel = options.dialTunnel ?? dialPinnedTunnel;
   const maxRequests = options.maxRequests ?? DEFAULT_MAX_PROXY_REQUESTS;
   const maxConcurrentStreams =
@@ -477,6 +540,9 @@ export async function startValidatingProxy(
     url: `http://127.0.0.1:${address.port}`,
     get failure() {
       return failure;
+    },
+    get activeStreamCount() {
+      return concurrentStreams;
     },
     block,
     async close() {

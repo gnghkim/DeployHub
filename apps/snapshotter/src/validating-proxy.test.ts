@@ -1,4 +1,8 @@
-import { request as httpRequest, type ClientRequest } from 'node:http';
+import {
+  createServer as createHttpServer,
+  request as httpRequest,
+  type ClientRequest,
+} from 'node:http';
 import { connect as netConnect } from 'node:net';
 import { PassThrough } from 'node:stream';
 
@@ -10,6 +14,7 @@ import {
   DEFAULT_MAX_PROXY_REQUESTS,
   DEFAULT_MAX_TRANSFER_BYTES,
   DEFAULT_PROXY_IDLE_TIMEOUT_MS,
+  type HttpRequestFunction,
   type ValidatingProxy,
   createPinnedRequestOptions,
   filterHopByHopHeaders,
@@ -340,6 +345,97 @@ describe('startValidatingProxy', () => {
     await expect(proxyHttpRequest(proxy.url, 'http://example.com/declared')).rejects.toBeDefined();
     expect(proxy.failure).toMatchObject({ code: 'image_too_large' });
     expect(bodyWritten).not.toHaveBeenCalled();
+  });
+
+  it('contains oversized Content-Length errors from the default HTTP forwarder', async () => {
+    const upstreamSockets = new Set<import('node:net').Socket>();
+    const upstream = createHttpServer((_request, response) => {
+      response.writeHead(200, { 'content-length': '4096' });
+      response.write(Buffer.alloc(16));
+    });
+    upstream.on('connection', (socket) => {
+      upstreamSockets.add(socket);
+      socket.once('close', () => upstreamSockets.delete(socket));
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    const upstreamAddress = upstream.address() as import('node:net').AddressInfo;
+    const requestHttp: HttpRequestFunction = (_target, options, callback) =>
+      httpRequest({
+        hostname: '127.0.0.1',
+        port: upstreamAddress.port,
+        path: '/oversized',
+        method: options.method,
+        headers: options.headers,
+        signal: options.signal,
+      }, callback);
+    const proxy = await startValidatingProxy({
+      addressResolver: resolver(['93.184.216.34']),
+      idleTimeoutMs: 100,
+      maxConcurrentStreams: 1,
+      maxTransferBytes: 1_024,
+      requestHttp,
+    });
+
+    try {
+      await expect(
+        proxyHttpRequest(proxy.url, 'http://example.com/oversized'),
+      ).rejects.toBeDefined();
+      expect(proxy.failure).toMatchObject({ code: 'image_too_large' });
+      await vi.waitFor(() => expect(upstreamSockets.size).toBe(0));
+      expect(proxy.activeStreamCount).toBe(0);
+      await expect(proxy.close()).resolves.toBeUndefined();
+    } finally {
+      await proxy.close();
+      upstream.closeAllConnections();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  });
+
+  it('settles default forwarding once when the proxy client aborts', async () => {
+    let markUpstreamReached!: () => void;
+    const upstreamReached = new Promise<void>((resolve) => {
+      markUpstreamReached = resolve;
+    });
+    const upstreamSockets = new Set<import('node:net').Socket>();
+    const upstream = createHttpServer(() => markUpstreamReached());
+    upstream.on('connection', (socket) => {
+      upstreamSockets.add(socket);
+      socket.once('close', () => upstreamSockets.delete(socket));
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    const upstreamAddress = upstream.address() as import('node:net').AddressInfo;
+    const requestHttp: HttpRequestFunction = (_target, options, callback) =>
+      httpRequest({
+        hostname: '127.0.0.1',
+        port: upstreamAddress.port,
+        path: '/pending',
+        method: options.method,
+        headers: options.headers,
+        signal: options.signal,
+      }, callback);
+    const proxy = await startValidatingProxy({
+      addressResolver: resolver(['93.184.216.34']),
+      idleTimeoutMs: 1_000,
+      requestHttp,
+    });
+    const client = openProxyHttpRequest(proxy.url, 'http://example.com/pending');
+
+    try {
+      await upstreamReached;
+      client.destroy();
+
+      await vi.waitFor(() => expect(proxy.failure).toMatchObject({
+        code: 'navigation_failed',
+      }));
+      await vi.waitFor(() => expect(upstreamSockets.size).toBe(0));
+      expect(proxy.activeStreamCount).toBe(0);
+      await expect(proxy.close()).resolves.toBeUndefined();
+    } finally {
+      client.destroy();
+      await proxy.close();
+      upstream.closeAllConnections();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
   });
 
   it('counts CONNECT bytes in both directions and destroys both sockets', async () => {
