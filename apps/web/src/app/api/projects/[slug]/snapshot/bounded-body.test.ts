@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readBoundedBody, type BodyReadTimer } from './bounded-body';
 
+function never(): Promise<never> {
+  return new Promise(() => undefined);
+}
+
+async function promptly<T>(promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error('did not settle promptly')), 100);
+    }),
+  ]);
+}
+
+function fakeBody(reader: Record<string, unknown>): ReadableStream<Uint8Array> {
+  return { getReader: () => reader } as unknown as ReadableStream<Uint8Array>;
+}
+
 describe('readBoundedBody', () => {
   it('stores arbitrarily many small chunks in one fixed allocation', async () => {
     const chunkCount = 10_000;
@@ -71,8 +88,15 @@ describe('readBoundedBody', () => {
   });
 
   it('uses the injected deadline timer and cancels a stalled read', async () => {
-    const cancel = vi.fn();
-    const stream = new ReadableStream<Uint8Array>({ cancel });
+    const cancel = vi.fn(() => never());
+    const releaseLock = vi.fn(() => {
+      throw new TypeError('pending read');
+    });
+    const reader = { read: vi.fn(() => never()), cancel, releaseLock };
+    const stream = fakeBody(reader);
+    const controller = new AbortController();
+    const addEventListener = vi.spyOn(controller.signal, 'addEventListener');
+    const removeEventListener = vi.spyOn(controller.signal, 'removeEventListener');
     const timer: BodyReadTimer = {
       setTimeout(callback) {
         queueMicrotask(callback);
@@ -81,14 +105,17 @@ describe('readBoundedBody', () => {
       clearTimeout: vi.fn(),
     };
 
-    await expect(readBoundedBody(stream, {
+    await expect(promptly(readBoundedBody(stream, {
       maximumBytes: 16,
       timeoutMs: 10_000,
       timer,
-    })).resolves.toEqual({ ok: false, reason: 'timeout' });
+      signal: controller.signal,
+    }))).resolves.toEqual({ ok: false, reason: 'timeout' });
     expect(cancel).toHaveBeenCalledOnce();
-    expect(stream.locked).toBe(false);
+    expect(releaseLock).toHaveBeenCalledOnce();
     expect(timer.clearTimeout).toHaveBeenCalledWith(1);
+    expect(addEventListener).toHaveBeenCalledOnce();
+    expect(removeEventListener).toHaveBeenCalledOnce();
   });
 
   it('cancels and unlocks the reader when the request signal aborts', async () => {
@@ -106,5 +133,81 @@ describe('readBoundedBody', () => {
     await expect(pending).resolves.toEqual({ ok: false, reason: 'aborted' });
     expect(cancel).toHaveBeenCalledOnce();
     expect(stream.locked).toBe(false);
+  });
+
+  it('returns promptly on abort even when cancel and read never settle', async () => {
+    const cancel = vi.fn(() => never());
+    const releaseLock = vi.fn(() => {
+      throw new TypeError('pending read');
+    });
+    const stream = fakeBody({ read: vi.fn(() => never()), cancel, releaseLock });
+    const controller = new AbortController();
+    const pending = readBoundedBody(stream, {
+      maximumBytes: 16,
+      timeoutMs: 10_000,
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(promptly(pending)).resolves.toEqual({
+      ok: false,
+      reason: 'aborted',
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+  });
+
+  it('returns declared overflow promptly when cancel never settles', async () => {
+    const cancel = vi.fn(() => never());
+    const releaseLock = vi.fn();
+    const read = vi.fn(() => never());
+    const stream = fakeBody({ read, cancel, releaseLock });
+
+    await expect(promptly(readBoundedBody(stream, {
+      maximumBytes: 4,
+      timeoutMs: 10_000,
+      declaredLength: '5',
+    }))).resolves.toEqual({ ok: false, reason: 'too_large' });
+    expect(read).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+  });
+
+  it('returns actual overflow promptly when cancel never settles', async () => {
+    const cancel = vi.fn(() => never());
+    const releaseLock = vi.fn();
+    const stream = fakeBody({
+      read: vi.fn().mockResolvedValue({
+        done: false,
+        value: new Uint8Array(5),
+      }),
+      cancel,
+      releaseLock,
+    });
+
+    await expect(promptly(readBoundedBody(stream, {
+      maximumBytes: 4,
+      timeoutMs: 10_000,
+    }))).resolves.toEqual({ ok: false, reason: 'too_large' });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+  });
+
+  it('returns stream errors promptly and observes a never-settling cancel', async () => {
+    const cancel = vi.fn(() => never());
+    const releaseLock = vi.fn();
+    const stream = fakeBody({
+      read: vi.fn().mockRejectedValue(new Error('stream failed')),
+      cancel,
+      releaseLock,
+    });
+
+    await expect(promptly(readBoundedBody(stream, {
+      maximumBytes: 4,
+      timeoutMs: 10_000,
+    }))).resolves.toEqual({ ok: false, reason: 'stream_error' });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
   });
 });

@@ -43,10 +43,35 @@ function declaredLengthExceeds(value: string | null | undefined, maximum: number
   return !Number.isSafeInteger(length) || length > maximum;
 }
 
-async function cancelReader(
+function startCancel(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<void> {
-  await reader.cancel().catch(() => undefined);
+): void {
+  try {
+    void reader.cancel().catch(() => undefined);
+  } catch {
+    // A synchronous cancellation error is observed and intentionally ignored.
+  }
+}
+
+function releaseReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reading: Promise<unknown> | undefined,
+): void {
+  try {
+    reader.releaseLock();
+    return;
+  } catch {
+    if (!reading) return;
+  }
+  void reading
+    .catch(() => undefined)
+    .finally(() => {
+      try {
+        reader.releaseLock();
+      } catch {
+        // No response path waits for a reader that cannot be released.
+      }
+    });
 }
 
 export async function readBoundedBody(
@@ -64,13 +89,14 @@ export async function readBoundedBody(
   let timeoutHandle: unknown;
   let timerStarted = false;
   let abortHandler: (() => void) | undefined;
+  let reading: Promise<'complete' | 'too_large'> | undefined;
   try {
     if (declaredLengthExceeds(options.declaredLength, options.maximumBytes)) {
-      await cancelReader(reader);
+      startCancel(reader);
       return { ok: false, reason: 'too_large' };
     }
     if (options.signal?.aborted) {
-      await cancelReader(reader);
+      startCancel(reader);
       return { ok: false, reason: 'aborted' };
     }
 
@@ -82,7 +108,7 @@ export async function readBoundedBody(
     }
 
     let total = 0;
-    const reading = (async (): Promise<'complete' | 'too_large'> => {
+    reading = (async (): Promise<'complete' | 'too_large'> => {
       while (true) {
         const { done, value } = await reader.read();
         if (done) return 'complete';
@@ -113,13 +139,12 @@ export async function readBoundedBody(
     try {
       const result = await Promise.race([reading, interrupted]);
       if (result === 'too_large') {
-        await cancelReader(reader);
+        startCancel(reader);
         return { ok: false, reason: 'too_large' };
       }
       return { ok: true, body: storage.subarray(0, total) };
     } catch (error) {
-      await cancelReader(reader);
-      await reading.catch(() => undefined);
+      startCancel(reader);
       if (error instanceof BodyReadInterrupted) {
         return { ok: false, reason: error.reason };
       }
@@ -132,6 +157,6 @@ export async function readBoundedBody(
     if (abortHandler && options.signal) {
       options.signal.removeEventListener('abort', abortHandler);
     }
-    reader.releaseLock();
+    releaseReader(reader, reading);
   }
 }
