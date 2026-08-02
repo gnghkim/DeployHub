@@ -10,7 +10,12 @@ import {
 } from 'drizzle-orm';
 import type { Db } from '../client';
 import { deployments } from '../schema/observations';
-import { components, domains, projects } from '../schema/projects';
+import {
+  components,
+  domains,
+  projectSnapshots,
+  projects,
+} from '../schema/projects';
 import { componentResources, resources } from '../schema/resources';
 import {
   listProjectStatusData,
@@ -24,6 +29,13 @@ export type ProjectDetail = ProjectRow & {
   components: ComponentRow[];
   domains: DomainRow[];
 };
+export type ProjectSnapshotSummary = {
+  hasImage: boolean;
+  source: typeof projectSnapshots.$inferSelect['source'];
+  capturedAt: Date | null;
+  checksum: string | null;
+  lastAttemptStatus: typeof projectSnapshots.$inferSelect['lastAttemptStatus'];
+};
 export type ProjectListSummaryData = ProjectRow & {
   components: ComponentRow[];
   observedProviders: string[];
@@ -31,6 +43,7 @@ export type ProjectListSummaryData = ProjectRow & {
   judgement: ProjectStatus;
   /** 구성요소 id → 관측된 컨테이너 이름과 상태. 없으면 키가 없다. */
   componentObservations: Map<string, { name: string; state: string }>;
+  snapshot: ProjectSnapshotSummary;
 };
 
 export async function listProjects(db: Db): Promise<ProjectRow[]> {
@@ -49,13 +62,14 @@ export async function listProjectsWithSummaryData(
     ${deployments.createdAt}
   )`.mapWith(deployments.createdAt);
 
-  // These are the only four follow-up queries for the whole project list.
-  // The total stays at five regardless of how many projects are returned.
+  // These are the only five follow-up queries for the whole project list.
+  // The total stays at six regardless of how many projects are returned.
   const [
     componentRows,
     linkedResourceRows,
     latestDeploymentRows,
     statusByProject,
+    snapshotRows,
   ] = await Promise.all([
     db
       .select()
@@ -101,6 +115,17 @@ export async function listProjectsWithSummaryData(
         desc(deployments.createdAt),
       ),
     listProjectStatusData(db, projectIds),
+    db
+      .select({
+        projectId: projectSnapshots.projectId,
+        hasImage: sql<boolean>`${projectSnapshots.imageData} is not null`,
+        source: projectSnapshots.source,
+        capturedAt: projectSnapshots.capturedAt,
+        checksum: projectSnapshots.checksum,
+        lastAttemptStatus: projectSnapshots.lastAttemptStatus,
+      })
+      .from(projectSnapshots)
+      .where(inArray(projectSnapshots.projectId, projectIds)),
   ]);
 
   const componentsByProject = new Map<string, ComponentRow[]>();
@@ -138,6 +163,17 @@ export async function listProjectsWithSummaryData(
     )),
   );
 
+  const snapshotsByProject = new Map(snapshotRows.map((snapshot) => [
+    snapshot.projectId,
+    {
+      hasImage: snapshot.hasImage,
+      source: snapshot.source,
+      capturedAt: snapshot.capturedAt,
+      checksum: snapshot.checksum,
+      lastAttemptStatus: snapshot.lastAttemptStatus,
+    },
+  ]));
+
   return projectRows.map((project) => ({
     ...project,
     components: componentsByProject.get(project.id) ?? [],
@@ -145,6 +181,13 @@ export async function listProjectsWithSummaryData(
     latestDeploymentAt: latestDeploymentByProject.get(project.id) ?? null,
     judgement: statusByProject.get(project.id)?.status ?? '미확인',
     componentObservations: observationsByProject.get(project.id) ?? new Map(),
+    snapshot: snapshotsByProject.get(project.id) ?? {
+      hasImage: false,
+      source: null,
+      capturedAt: null,
+      checksum: null,
+      lastAttemptStatus: null,
+    },
   }));
 }
 

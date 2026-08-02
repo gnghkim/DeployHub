@@ -155,7 +155,7 @@ describe('프로젝트 조회', () => {
     expect(rows[0]?.judgement).toBe('정상');
   });
 
-  it('프로젝트가 1개든 10개든 목록 요약은 정확히 5개 쿼리만 실행한다', async () => {
+  it('프로젝트가 1개든 10개든 목록 요약은 정확히 6개 쿼리만 실행한다', async () => {
     await db.insert(schema.projects).values({ name: 'Project 1', slug: 'project-1' });
 
     queryCount = 0;
@@ -175,8 +175,54 @@ describe('프로젝트 조회', () => {
     await listProjectsWithSummaryData(countedDb);
     const tenProjectQueryCount = queryCount;
 
-    expect(oneProjectQueryCount).toBe(5);
+    expect(oneProjectQueryCount).toBe(6);
     expect(tenProjectQueryCount).toBe(oneProjectQueryCount);
+  });
+
+  it('스냅샷 blob을 읽지 않고 목록에 스냅샷 메타데이터만 포함한다', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'Snapshot project', slug: 'snapshot-project' })
+      .returning();
+    if (!project) throw new Error('project insert 실패');
+    const capturedAt = new Date('2026-08-02T04:00:00.000Z');
+    await db.insert(schema.projectSnapshots).values({
+      projectId: project.id,
+      imageData: Buffer.from('private-image-bytes'),
+      contentType: 'image/webp',
+      width: 1440,
+      height: 900,
+      source: 'manual',
+      checksum: 'summary-checksum',
+      capturedAt,
+      lastAttemptAt: capturedAt,
+      lastAttemptStatus: 'success',
+    });
+
+    const [summary] = await listProjectsWithSummaryData(db);
+
+    expect(summary?.snapshot).toEqual({
+      hasImage: true,
+      source: 'manual',
+      capturedAt,
+      checksum: 'summary-checksum',
+      lastAttemptStatus: 'success',
+    });
+    expect(summary?.snapshot).not.toHaveProperty('imageData');
+  });
+
+  it('스냅샷 행이 없으면 빈 스냅샷 메타데이터를 반환한다', async () => {
+    await db.insert(schema.projects).values({ name: 'No snapshot', slug: 'no-snapshot' });
+
+    const [summary] = await listProjectsWithSummaryData(db);
+
+    expect(summary?.snapshot).toEqual({
+      hasImage: false,
+      source: null,
+      capturedAt: null,
+      checksum: null,
+      lastAttemptStatus: null,
+    });
   });
 
   describe('구성요소 관측', () => {
