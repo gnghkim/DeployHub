@@ -21,6 +21,9 @@ import {
 } from './errors.js';
 
 export const REQUEST_BODY_LIMIT_BYTES = 16 * 1024;
+export const DEFAULT_MAX_CONCURRENT_CAPTURES = 2;
+const DEFAULT_HEADERS_TIMEOUT_MS = 10_000;
+const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 5_000;
 
 type CaptureFunction = (url: string, signal: AbortSignal) => Promise<Buffer>;
 
@@ -35,7 +38,35 @@ export interface SnapshotServerOptions {
   log?: (entry: CaptureLogEntry) => void;
   requestId?: () => string;
   requestTimeoutMs?: number;
+  admission?: CaptureAdmission;
 }
+
+export interface CaptureAdmission {
+  tryAcquire(): (() => void) | undefined;
+}
+
+export function createCaptureAdmission(
+  maximum = DEFAULT_MAX_CONCURRENT_CAPTURES,
+): CaptureAdmission {
+  if (!Number.isInteger(maximum) || maximum < 1) {
+    throw new RangeError('Capture admission maximum must be a positive integer.');
+  }
+  let active = 0;
+  return {
+    tryAcquire() {
+      if (active >= maximum) return undefined;
+      active += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        active -= 1;
+      };
+    },
+  };
+}
+
+const processAdmission = createCaptureAdmission();
 
 export interface SnapshotServerStartOptions extends SnapshotServerOptions {
   port?: number;
@@ -56,7 +87,9 @@ function sendJson(
   response: ServerResponse,
   status: number,
   code: SnapshotErrorCode,
+  closeConnection = false,
 ) {
+  if (response.destroyed || response.writableEnded) return;
   const body = Buffer.from(
     JSON.stringify({ error: { code, message: SNAPSHOT_ERROR_MESSAGES[code] } }),
   );
@@ -64,6 +97,7 @@ function sendJson(
     'cache-control': 'no-store',
     'content-type': 'application/json; charset=utf-8',
     'content-length': String(body.byteLength),
+    ...(closeConnection ? { connection: 'close' } : {}),
   });
   response.end(body);
 }
@@ -100,7 +134,6 @@ function contentLengthExceedsLimit(request: IncomingMessage) {
 
 async function readBoundedBody(request: IncomingMessage, signal: AbortSignal) {
   if (contentLengthExceedsLimit(request)) {
-    request.resume();
     throw new RequestError(413);
   }
 
@@ -207,9 +240,9 @@ function handleRejectedRoute(
   response: ServerResponse,
   status: number,
 ) {
-  request.resume();
   if (status === 405) response.setHeader('allow', 'POST');
-  sendJson(response, status, 'blocked_target');
+  response.once('finish', () => request.destroy());
+  sendJson(response, status, 'blocked_target', true);
 }
 
 export function createSnapshotServer(options: SnapshotServerOptions = {}): Server {
@@ -217,8 +250,9 @@ export function createSnapshotServer(options: SnapshotServerOptions = {}): Serve
   const log = options.log ?? defaultLog;
   const createRequestId = options.requestId ?? randomUUID;
   const requestTimeoutMs = options.requestTimeoutMs ?? CAPTURE_TIMEOUT_MS;
+  const admission = options.admission ?? processAdmission;
 
-  return createServer((request, response) => {
+  const server = createServer((request, response) => {
     const requestId = createRequestId();
     const startedAt = performance.now();
     let logged = false;
@@ -251,14 +285,25 @@ export function createSnapshotServer(options: SnapshotServerOptions = {}): Serve
     const timer = setTimeout(() => controller.abort(), requestTimeoutMs);
     timer.unref();
     const onRequestAborted = () => controller.abort();
+    const onResponseClosed = () => {
+      if (!response.writableEnded) controller.abort();
+    };
     request.once('aborted', onRequestAborted);
+    response.once('close', onResponseClosed);
 
     void (async () => {
+      let releaseAdmission: (() => void) | undefined;
       try {
         if (!contentTypeIsJson(request)) throw new RequestError(415);
         const body = parseCaptureRequest(
           await readBoundedBody(request, controller.signal),
         );
+        releaseAdmission = admission.tryAcquire();
+        if (!releaseAdmission) {
+          sendJson(response, 503, 'navigation_failed');
+          finish('navigation_failed');
+          return;
+        }
         const image = await withAbort(capture(body.url, controller.signal), controller.signal);
         if (image.byteLength > MAX_IMAGE_BYTES) {
           throw new SnapshotCaptureError('image_too_large');
@@ -275,7 +320,8 @@ export function createSnapshotServer(options: SnapshotServerOptions = {}): Serve
         finish('success');
       } catch (error) {
         if (error instanceof RequestError) {
-          sendJson(response, error.status, 'blocked_target');
+          response.once('finish', () => request.destroy());
+          sendJson(response, error.status, 'blocked_target', true);
           finish('blocked_target');
           return;
         }
@@ -286,11 +332,17 @@ export function createSnapshotServer(options: SnapshotServerOptions = {}): Serve
         sendJson(response, statusForCaptureError(normalized.code), normalized.code);
         finish(normalized.code);
       } finally {
+        releaseAdmission?.();
         clearTimeout(timer);
         request.removeListener('aborted', onRequestAborted);
+        response.removeListener('close', onResponseClosed);
       }
     })();
   });
+  server.requestTimeout = requestTimeoutMs;
+  server.headersTimeout = Math.min(requestTimeoutMs, DEFAULT_HEADERS_TIMEOUT_MS);
+  server.keepAliveTimeout = DEFAULT_KEEP_ALIVE_TIMEOUT_MS;
+  return server;
 }
 
 function configuredPort() {

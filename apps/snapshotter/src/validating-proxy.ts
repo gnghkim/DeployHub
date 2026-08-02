@@ -40,10 +40,19 @@ export interface TunnelDialContext {
 export interface ValidatingProxyOptions {
   addressResolver?: AddressResolver;
   signal?: AbortSignal;
+  maxRequests?: number;
+  maxConcurrentStreams?: number;
+  maxTransferBytes?: number;
+  idleTimeoutMs?: number;
   forwardHttp?: (context: HttpForwardContext) => Promise<void>;
   dialTunnel?: (context: TunnelDialContext) => Promise<Duplex>;
   onFailure?: (error: SnapshotCaptureError) => void;
 }
+
+export const DEFAULT_MAX_PROXY_REQUESTS = 256;
+export const DEFAULT_MAX_CONCURRENT_STREAMS = 32;
+export const DEFAULT_MAX_TRANSFER_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_PROXY_IDLE_TIMEOUT_MS = 5_000;
 
 export interface ValidatingProxy {
   readonly url: string;
@@ -75,23 +84,53 @@ function pinnedLookup(address: ValidatedAddress): NonNullable<RequestOptions['lo
   }) as NonNullable<RequestOptions['lookup']>;
 }
 
-function requestHeaders(headers: IncomingHttpHeaders, target: URL) {
+function connectionHeaderTokens(headers: IncomingHttpHeaders) {
+  const value = headers.connection;
+  const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  return new Set(
+    values.flatMap((entry) => entry.split(',')).map((entry) => entry.trim().toLowerCase()).filter(Boolean),
+  );
+}
+
+export function filterHopByHopHeaders(headers: IncomingHttpHeaders) {
   const result: OutgoingHttpHeaders = {};
+  const nominated = connectionHeaderTokens(headers);
   for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined || HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue;
+    const normalizedName = name.toLowerCase();
+    if (
+      value === undefined ||
+      HOP_BY_HOP_HEADERS.has(normalizedName) ||
+      nominated.has(normalizedName)
+    ) continue;
     result[name] = value;
   }
+  return result;
+}
+
+function requestHeaders(headers: IncomingHttpHeaders, target: URL) {
+  const result = filterHopByHopHeaders(headers);
   result.host = target.host;
   return result;
 }
 
+export function createPinnedRequestOptions(
+  method: string | undefined,
+  headers: IncomingHttpHeaders,
+  target: URL,
+  address: ValidatedAddress,
+  signal: AbortSignal,
+): RequestOptions {
+  return {
+    method,
+    headers: requestHeaders(headers, target),
+    agent: false,
+    lookup: pinnedLookup(address),
+    signal,
+  };
+}
+
 function responseHeaders(headers: IncomingHttpHeaders) {
-  const result: OutgoingHttpHeaders = {};
-  for (const [name, value] of Object.entries(headers)) {
-    if (value === undefined || HOP_BY_HOP_HEADERS.has(name.toLowerCase())) continue;
-    result[name] = value;
-  }
-  return result;
+  return filterHopByHopHeaders(headers);
 }
 
 async function forwardPinnedHttp({
@@ -105,13 +144,13 @@ async function forwardPinnedHttp({
   await new Promise<void>((resolve, reject) => {
     const outgoing = requestFunction(
       target,
-      {
-        method: request.method,
-        headers: requestHeaders(request.headers, target),
-        agent: false,
-        lookup: pinnedLookup(address),
+      createPinnedRequestOptions(
+        request.method,
+        request.headers,
+        target,
+        address,
         signal,
-      },
+      ),
       (incoming) => {
         response.writeHead(
           incoming.statusCode ?? 502,
@@ -177,8 +216,16 @@ export async function startValidatingProxy(
   const activeStreams = new Set<Duplex>();
   const forwardHttp = options.forwardHttp ?? forwardPinnedHttp;
   const dialTunnel = options.dialTunnel ?? dialPinnedTunnel;
+  const maxRequests = options.maxRequests ?? DEFAULT_MAX_PROXY_REQUESTS;
+  const maxConcurrentStreams =
+    options.maxConcurrentStreams ?? DEFAULT_MAX_CONCURRENT_STREAMS;
+  const maxTransferBytes = options.maxTransferBytes ?? DEFAULT_MAX_TRANSFER_BYTES;
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_PROXY_IDLE_TIMEOUT_MS;
   let failure: SnapshotCaptureError | undefined;
   let closed = false;
+  let requestCount = 0;
+  let concurrentStreams = 0;
+  let transferredBytes = 0;
 
   const destroyStreams = () => {
     for (const stream of activeStreams) stream.destroy();
@@ -199,6 +246,86 @@ export async function startValidatingProxy(
   options.signal?.addEventListener('abort', onExternalAbort, { once: true });
   if (options.signal?.aborted) onExternalAbort();
 
+  const consumeBytes = (bytes: number) => {
+    if (bytes <= 0) return true;
+    if (transferredBytes + bytes > maxTransferBytes) {
+      // Transfer exhaustion maps to the approved payload-size failure.
+      block(new SnapshotCaptureError('image_too_large'));
+      return false;
+    }
+    transferredBytes += bytes;
+    return true;
+  };
+  const remainingBytes = () => Math.max(0, maxTransferBytes - transferredBytes);
+  const acquireStream = () => {
+    requestCount += 1;
+    if (requestCount > maxRequests || concurrentStreams >= maxConcurrentStreams) {
+      // Request, concurrency, and idle exhaustion are retryable navigation failures.
+      block(new SnapshotCaptureError('navigation_failed'));
+      return undefined;
+    }
+    concurrentStreams += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      concurrentStreams -= 1;
+    };
+  };
+  const contentLengthFits = (value: string | string[] | number | undefined) => {
+    if (value === undefined) return true;
+    const text = Array.isArray(value) ? value[0] : String(value);
+    if (!text || !/^\d+$/.test(text)) return true;
+    if (Number(text) <= remainingBytes()) return true;
+    block(new SnapshotCaptureError('image_too_large'));
+    return false;
+  };
+  const meterClientSocket = (socket: Socket) => {
+    socket.setTimeout(idleTimeoutMs, () => {
+      block(new SnapshotCaptureError('navigation_failed'));
+    });
+    socket.on('data', (chunk: Buffer) => {
+      consumeBytes(chunk.byteLength);
+    });
+    type MeteredWrite = (
+      chunk: string | Uint8Array,
+      ...arguments_: unknown[]
+    ) => boolean;
+    const writable = socket as unknown as { write: MeteredWrite };
+    const originalWrite = writable.write.bind(socket);
+    writable.write = (chunk, ...arguments_) => {
+      const encoding = typeof arguments_[0] === 'string'
+        ? arguments_[0] as BufferEncoding
+        : undefined;
+      const bytes = typeof chunk === 'string'
+        ? Buffer.byteLength(chunk, encoding)
+        : chunk.byteLength;
+      if (!consumeBytes(bytes)) return false;
+      return originalWrite(chunk, ...arguments_);
+    };
+  };
+  const guardResponseLength = (response: ServerResponse) => {
+    type WriteHead = (
+      statusCode: number,
+      ...arguments_: unknown[]
+    ) => ServerResponse;
+    const writable = response as unknown as { writeHead: WriteHead };
+    const originalWriteHead = writable.writeHead.bind(response);
+    writable.writeHead = (statusCode, ...arguments_) => {
+      const suppliedHeaders = arguments_.find(
+        (value): value is OutgoingHttpHeaders =>
+          typeof value === 'object' && value !== null && !Array.isArray(value),
+      );
+      const contentLength = suppliedHeaders?.['content-length'] ??
+        suppliedHeaders?.['Content-Length'] ??
+        response.getHeader('content-length');
+      if (!contentLengthFits(contentLength)) {
+        throw new SnapshotCaptureError('image_too_large');
+      }
+      return originalWriteHead(statusCode, ...arguments_);
+    };
+  };
+
   const server = createServer((request, response) => {
     const client = request.socket;
     activeStreams.add(client);
@@ -207,6 +334,22 @@ export async function startValidatingProxy(
       client.destroy();
       return;
     }
+    const releaseStream = acquireStream();
+    if (!releaseStream) {
+      client.destroy();
+      return;
+    }
+    const release = () => releaseStream();
+    request.once('aborted', release);
+    response.once('finish', release);
+    response.once('close', release);
+    client.once('close', release);
+    if (!contentLengthFits(request.headers['content-length'])) {
+      release();
+      client.destroy();
+      return;
+    }
+    guardResponseLength(response);
     void (async () => {
       try {
         if (!request.url || !/^https?:\/\//i.test(request.url)) {
@@ -229,6 +372,8 @@ export async function startValidatingProxy(
       } catch (error) {
         block(normalizedFailure(error));
         if (!response.headersSent) response.destroy();
+      } finally {
+        release();
       }
     })();
   });
@@ -240,6 +385,13 @@ export async function startValidatingProxy(
       client.destroy();
       return;
     }
+    const releaseStream = acquireStream();
+    if (!releaseStream) {
+      client.destroy();
+      return;
+    }
+    const release = () => releaseStream();
+    client.once('close', release);
     void (async () => {
       try {
         const target = parseConnectAuthority(request.url ?? '');
@@ -261,7 +413,10 @@ export async function startValidatingProxy(
           return;
         }
         activeStreams.add(upstream);
-        upstream.once('close', () => activeStreams.delete(upstream));
+        upstream.once('close', () => {
+          activeStreams.delete(upstream);
+          release();
+        });
         const closeBoth = () => {
           client.destroy();
           upstream.destroy();
@@ -273,6 +428,7 @@ export async function startValidatingProxy(
         client.pipe(upstream);
         upstream.pipe(client);
       } catch (error) {
+        release();
         block(normalizedFailure(error));
         client.destroy();
       }
@@ -285,6 +441,7 @@ export async function startValidatingProxy(
   });
   server.on('connection', (socket) => {
     activeStreams.add(socket);
+    meterClientSocket(socket);
     socket.once('close', () => activeStreams.delete(socket));
     if (failure) socket.destroy();
   });

@@ -1,4 +1,5 @@
 import type { AddressInfo } from 'node:net';
+import { connect as netConnect } from 'node:net';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,11 +7,23 @@ import { MAX_IMAGE_BYTES } from './capture.js';
 import { SnapshotCaptureError } from './errors.js';
 import {
   REQUEST_BODY_LIMIT_BYTES,
+  DEFAULT_MAX_CONCURRENT_CAPTURES,
+  createCaptureAdmission,
   createSnapshotServer,
   type SnapshotServerOptions,
 } from './server.js';
 
 const openServers: Array<ReturnType<typeof createSnapshotServer>> = [];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -55,6 +68,21 @@ async function postJson(baseUrl: string, body: unknown) {
 }
 
 describe('snapshotter server', () => {
+  it('uses a process admission default of two captures', () => {
+    expect(DEFAULT_MAX_CONCURRENT_CAPTURES).toBe(2);
+  });
+
+  it('releases an admission lease at most once', () => {
+    const admission = createCaptureAdmission(1);
+    const release = admission.tryAcquire();
+    expect(release).toBeTypeOf('function');
+
+    release?.();
+    release?.();
+    expect(admission.tryAcquire()).toBeTypeOf('function');
+    expect(admission.tryAcquire()).toBeUndefined();
+  });
+
   it('serves a bounded WebP response for the fixed viewport', async () => {
     const image = Buffer.from('RIFF0000WEBPimage');
     const capture = vi.fn(async () => image);
@@ -259,5 +287,140 @@ describe('snapshotter server', () => {
         error: { code: 'timeout' },
       });
     });
+  });
+
+  it('rejects excess valid capture work immediately with retryable 503', async () => {
+    const pending = [deferred<Buffer>(), deferred<Buffer>()];
+    const capture = vi.fn((_url: string) => pending[capture.mock.calls.length - 1]!.promise);
+    await withServer(
+      { admission: createCaptureAdmission(2), capture },
+      async (baseUrl) => {
+        const first = postJson(baseUrl, captureRequest('https://example.com/1'));
+        const second = postJson(baseUrl, captureRequest('https://example.com/2'));
+        await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(2));
+        const rejected = await postJson(baseUrl, captureRequest('https://example.com/3'));
+
+        expect(rejected.status).toBe(503);
+        await expect(rejected.json()).resolves.toMatchObject({
+          error: { code: 'navigation_failed' },
+        });
+        pending[0]!.resolve(Buffer.from('RIFF0000WEBPone'));
+        pending[1]!.resolve(Buffer.from('RIFF0000WEBPtwo'));
+        expect((await first).status).toBe(200);
+        expect((await second).status).toBe(200);
+      },
+    );
+  });
+
+  it('reuses an admission slot after capture success', async () => {
+    const first = deferred<Buffer>();
+    const capture = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValue(Buffer.from('RIFF0000WEBPnext'));
+    await withServer(
+      { admission: createCaptureAdmission(1), capture },
+      async (baseUrl) => {
+        const pending = postJson(baseUrl, captureRequest());
+        await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce());
+        first.resolve(Buffer.from('RIFF0000WEBPfirst'));
+        expect((await pending).status).toBe(200);
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(200);
+      },
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses an admission slot after capture failure', async () => {
+    const capture = vi.fn()
+      .mockRejectedValueOnce(new SnapshotCaptureError('navigation_failed'))
+      .mockResolvedValue(Buffer.from('RIFF0000WEBPnext'));
+    await withServer(
+      { admission: createCaptureAdmission(1), capture },
+      async (baseUrl) => {
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(502);
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(200);
+      },
+    );
+  });
+
+  it('reuses an admission slot after capture timeout', async () => {
+    const capture = vi.fn()
+      .mockImplementationOnce((_url: string, signal: AbortSignal) =>
+        new Promise<Buffer>((_resolve, reject) => signal.addEventListener(
+          'abort',
+          () => reject(new SnapshotCaptureError('timeout')),
+          { once: true },
+        )))
+      .mockResolvedValue(Buffer.from('RIFF0000WEBPnext'));
+    await withServer(
+      { admission: createCaptureAdmission(1), capture, requestTimeoutMs: 10 },
+      async (baseUrl) => {
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(504);
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(200);
+      },
+    );
+  });
+
+  it('aborts and releases admission when the client disconnects after its body', async () => {
+    const aborted = deferred<void>();
+    const capture = vi.fn()
+      .mockImplementationOnce((_url: string, signal: AbortSignal) =>
+        new Promise<Buffer>(() => signal.addEventListener(
+          'abort',
+          () => aborted.resolve(),
+          { once: true },
+        )))
+      .mockResolvedValue(Buffer.from('RIFF0000WEBPnext'));
+    await withServer(
+      { admission: createCaptureAdmission(1), capture },
+      async (baseUrl) => {
+        const address = new URL(baseUrl);
+        const socket = netConnect(Number(address.port), address.hostname);
+        const body = JSON.stringify(captureRequest());
+        await new Promise<void>((resolve) => socket.once('connect', resolve));
+        socket.write(
+          `POST /capture HTTP/1.1\r\nHost: ${address.host}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
+        );
+        await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce());
+        socket.destroy();
+        await aborted.promise;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        expect((await postJson(baseUrl, captureRequest())).status).toBe(200);
+      },
+    );
+    expect(capture).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['POST /unknown', '/unknown', 'POST', 404, REQUEST_BODY_LIMIT_BYTES * 4],
+    ['GET /capture', '/capture', 'GET', 405, REQUEST_BODY_LIMIT_BYTES * 4],
+    ['oversized /capture', '/capture', 'POST', 413, REQUEST_BODY_LIMIT_BYTES + 1],
+  ])('closes rejected slow bodies for %s', async (_name, path, method, status, length) => {
+    await withServer({}, async (baseUrl) => {
+      const address = new URL(baseUrl);
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = netConnect(Number(address.port), address.hostname, () => {
+          socket.write(
+            `${method} ${path} HTTP/1.1\r\nHost: ${address.host}\r\nContent-Type: application/json\r\nContent-Length: ${length}\r\nConnection: keep-alive\r\n\r\n`,
+          );
+        });
+        let received = '';
+        socket.on('data', (chunk) => { received += chunk.toString('utf8'); });
+        socket.once('close', () => resolve(received));
+        socket.once('error', reject);
+      });
+
+      expect(response).toContain(`HTTP/1.1 ${status}`);
+      expect(response.toLowerCase()).toContain('connection: close');
+    });
+  });
+
+  it('sets explicit HTTP request, header, and keep-alive timeouts', () => {
+    const server = createSnapshotServer({ requestTimeoutMs: 12_345 });
+
+    expect(server.requestTimeout).toBe(12_345);
+    expect(server.headersTimeout).toBeGreaterThan(0);
+    expect(server.keepAliveTimeout).toBeGreaterThan(0);
   });
 });

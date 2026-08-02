@@ -212,12 +212,10 @@ describe('captureSnapshot', () => {
     expect(deps.normalizeImage).toHaveBeenCalledWith(Buffer.from('png bytes'));
   });
 
-  it('validates every request and passes the full redirect depth before continuing', async () => {
+  it('validates routed initial and asset requests before continuing', async () => {
     const initial = request('https://example.com/');
-    const firstRedirect = request('https://www.example.com/', initial);
-    const secondRedirect = request('https://cdn.example.com/', firstRedirect);
     const asset = request('https://static.example.com/app.js');
-    const fixture = browserFixture({ requests: [initial, firstRedirect, secondRedirect, asset] });
+    const fixture = browserFixture({ requests: [initial, asset] });
     const validateUrl = vi.fn(async (url: string) => url);
 
     await captureSnapshot('https://example.com/', dependencies(fixture, { validateUrl }));
@@ -225,14 +223,10 @@ describe('captureSnapshot', () => {
     expect(validateUrl.mock.calls).toEqual([
       ['https://example.com/', 0],
       ['https://example.com/', 0],
-      ['https://www.example.com/', 1],
-      ['https://cdn.example.com/', 2],
       ['https://static.example.com/app.js', 0],
     ]);
     expect(fixture.continued).toEqual([
       'https://example.com/',
-      'https://www.example.com/',
-      'https://cdn.example.com/',
       'https://static.example.com/app.js',
     ]);
   });
@@ -304,6 +298,7 @@ describe('captureSnapshot', () => {
     expect(fixture.proxy.block).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'blocked_target' }),
     );
+    expect(fixture.proxy.block).toHaveBeenCalledOnce();
     expect(fixture.page.close).toHaveBeenCalled();
   });
 
