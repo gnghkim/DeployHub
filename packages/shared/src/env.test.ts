@@ -74,4 +74,25 @@ describe('loadEnv', () => {
     });
     expect(env.ALLOWED_GITHUB_LOGINS).toBeUndefined();
   });
+
+  it('loads SNAPSHOTTER_URL as an optional value without changing it', () => {
+    const source = {
+      DATABASE_URL: 'postgres://u:p@localhost:5432/d',
+      AUTH_SECRET: 's',
+      AUTH_GITHUB_ID: 'id',
+      AUTH_GITHUB_SECRET: 'secret',
+      ENCRYPTION_KEY: 'key',
+    };
+
+    expect(loadEnv(source)).toHaveProperty('SNAPSHOTTER_URL', undefined);
+    expect(
+      loadEnv({
+        ...source,
+        SNAPSHOTTER_URL: '  http://snapshotter:3001/path  ',
+      }),
+    ).toHaveProperty(
+      'SNAPSHOTTER_URL',
+      '  http://snapshotter:3001/path  ',
+    );
+  });
 });

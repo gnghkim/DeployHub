@@ -11,6 +11,7 @@ export type Env = {
   ALLOWED_GITHUB_LOGINS: string | undefined;
   ENCRYPTION_KEY: string;
   DOCKER_HOST_URL: string | undefined;
+  SNAPSHOTTER_URL: string | undefined;
 };
 
 function requireString(
@@ -40,5 +41,6 @@ export function loadEnv(source: Record<string, string | undefined>): Env {
     ALLOWED_GITHUB_LOGINS: source.ALLOWED_GITHUB_LOGINS,
     ENCRYPTION_KEY: requireString(source, 'ENCRYPTION_KEY'),
     DOCKER_HOST_URL: source.DOCKER_HOST_URL,
+    SNAPSHOTTER_URL: source.SNAPSHOTTER_URL,
   };
 }

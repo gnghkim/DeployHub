@@ -51,13 +51,48 @@ services:
     env_file: [../.env]
     environment:
       DOCKER_HOST_URL: ${DOCKER_HOST_URL:-http://socket-proxy:2375}
+      SNAPSHOTTER_URL: ${SNAPSHOTTER_URL:-http://snapshotter:3001}
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [deployhub, docker-api]
+    networks: [deployhub, docker-api, snapshot]
     labels:
       deployhub.project: "deployhub"
       deployhub.component: "worker"
+      deployhub.environment: "production"
+
+  snapshotter:
+    image: deployhub-snapshotter:${TAG:-local}
+    build:
+      context: ..
+      dockerfile: docker/Snapshotter.Dockerfile
+    container_name: deployhub-snapshotter
+    restart: unless-stopped
+    user: pwuser
+    init: true
+    shm_size: 1gb
+    security_opt:
+      - seccomp=./playwright-seccomp.json
+    networks: [snapshot]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const net=require('node:net');const socket=net.connect(3001,'127.0.0.1');socket.once('connect',()=>{socket.end();process.exit(0)});socket.once('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000).unref()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 2g
+    pids_limit: 256
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+    labels:
+      deployhub.project: "deployhub"
+      deployhub.component: "snapshotter"
       deployhub.environment: "production"
 
   socket-proxy:
@@ -140,6 +175,8 @@ networks:
   deployhub:
   docker-api:
     internal: true
+  # Snapshotter needs public egress for captures; only the worker may reach it.
+  snapshot:
   # 공용 Caddy 가 쓰는 기존 네트워크. 서버에 이미 존재한다.
   # 전용 서버에 새로 설치한다면 external 을 지우고 standalone 프로파일로
   # 자체 Caddy 를 띄운다.

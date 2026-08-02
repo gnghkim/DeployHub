@@ -55,3 +55,49 @@ docker compose --env-file .env -f docker/compose.yml run --rm --no-deps caddy \
 
 `caddy-ratelimit`은 `github.com/mholt/caddy-ratelimit`의
 `5625512f24f6f59d6f64fb3aafe5eecff0b286db` 커밋으로 고정했다.
+
+## Snapshotter 보안 경계
+
+Snapshotter 이미지는 브라우저와 시스템 의존성이 포함된
+`mcr.microsoft.com/playwright:v1.62.0-noble`을 빌드와 런타임에 모두 사용한다.
+앱의 Playwright 패키지도 1.62.0으로 고정하며, 설치 중 브라우저를 다시 받지
+않는다. 최종 이미지에는 프로덕션 `node_modules`와 번들만 복사하고 `pwuser`로
+실행한다. Chromium 사용자 네임스페이스 샌드박스를 켜며 `--no-sandbox`, root,
+`privileged`, `SYS_ADMIN`, `seccomp=unconfined`는 사용하지 않는다.
+
+`playwright-seccomp.json`은 Playwright v1.62.0의 공식 전체 프로필을 그대로
+체크인한 것이다:
+`https://raw.githubusercontent.com/microsoft/playwright/v1.62.0/utils/docker/seccomp_profile.json`.
+Docker 기본 허용 목록에 Chromium 샌드박스가 필요한 `clone`, `setns`,
+`unshare` 사용자 네임스페이스 호출만 추가한 upstream 프로필이다.
+
+컨테이너는 worker와 공유하는 `snapshot` 네트워크에만 연결된다. 호스트 포트를
+열지 않고 `.env`, 데이터베이스 자격 증명, `DATABASE_URL`, `DOCKER_HOST`,
+Docker socket을 받지 않는다. `snapshot` 네트워크는 캡처 대상에 접근할 수 있게
+외부 egress를 허용하지만 snapshotter를 `deployhub`, `docker-api`, `web`
+네트워크에 연결하지 않는다. 로그인이나 세션이 필요한 페이지는 자동 캡처하지
+않으며 사람이 별도로 확인하고 수동으로 이미지를 등록한다.
+
+브라우저 폭주를 제한하기 위해 메모리 2 GiB, PID 256개, `/dev/shm` 1 GiB,
+열린 파일 soft/hard 1024/2048 제한을 둔다. healthcheck는 공개 HTTP 경로를
+추가하지 않고 컨테이너 내부에서 3001번 TCP listen 상태만 확인한다. worker는
+snapshotter의 health에 의존해 시작을 막지 않으므로 캡처 서비스가 내려가도 다른
+작업을 계속 처리할 수 있다.
+
+빌드와 기본 점검:
+
+```sh
+docker compose --env-file .env -f docker/compose.yml build snapshotter
+docker compose --env-file .env -f docker/compose.yml run --rm --no-deps snapshotter \
+  node --input-type=module -e "await Promise.all([import('playwright'), import('sharp')]); console.log(process.getuid())"
+docker compose --env-file .env -f docker/compose.yml up -d snapshotter
+docker compose --env-file .env -f docker/compose.yml ps snapshotter
+```
+
+호스트 포트를 만들지 않는 실제 캡처 smoke test는 실행 중인 worker에서 호출한다.
+응답 본문은 출력하지 않는다.
+
+```sh
+docker compose --env-file .env -f docker/compose.yml exec -T worker \
+  node --input-type=module -e "const r=await fetch(process.env.SNAPSHOTTER_URL+'/capture',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url:'https://example.com',viewport:{width:1440,height:900}})}); console.log(r.status,r.headers.get('content-type'),r.headers.get('x-image-width'),r.headers.get('x-image-height'),(await r.arrayBuffer()).byteLength)"
+```

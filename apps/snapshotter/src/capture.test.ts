@@ -181,14 +181,17 @@ describe('captureSnapshot', () => {
     }));
     expect(fixture.launchBrowser).toHaveBeenCalledWith({
       headless: true,
+      chromiumSandbox: true,
       proxy: { server: 'http://127.0.0.1:43123' },
       args: [
         '--disable-quic',
         '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-        '--host-resolver-rules=MAP * ~NOTFOUND',
         '--proxy-bypass-list=<-loopback>',
       ],
     });
+    expect(fixture.launchBrowser).not.toHaveBeenCalledWith(
+      expect.objectContaining({ args: expect.arrayContaining(['--no-sandbox']) }),
+    );
     expect(fixture.browser.newContext).toHaveBeenCalledWith({
       acceptDownloads: false,
       ignoreHTTPSErrors: false,
@@ -211,6 +214,20 @@ describe('captureSnapshot', () => {
       type: 'png',
     });
     expect(deps.normalizeImage).toHaveBeenCalledWith(Buffer.from('png bytes'));
+  });
+
+  it('does not disable resolution for the loopback validating proxy', async () => {
+    const fixture = browserFixture();
+
+    await captureSnapshot('https://example.com/', dependencies(fixture));
+
+    expect(fixture.launchBrowser).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining([
+          '--host-resolver-rules=MAP * ~NOTFOUND',
+        ]),
+      }),
+    );
   });
 
   it('validates routed initial and asset requests before continuing', async () => {

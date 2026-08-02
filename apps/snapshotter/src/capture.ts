@@ -84,6 +84,7 @@ export interface CaptureDependencies {
   resolver?: AddressResolver;
   launchBrowser?: (options: {
     headless: true;
+    chromiumSandbox: true;
     proxy: { server: string };
     args: string[];
   }) => Promise<BrowserLike>;
@@ -229,6 +230,7 @@ export async function captureSnapshot(
     dependencies.launchBrowser ??
     ((options: {
       headless: true;
+      chromiumSandbox: true;
       proxy: { server: string };
       args: string[];
     }) => chromium.launch(options));
@@ -274,11 +276,11 @@ export async function captureSnapshot(
     const launchedBrowser = await acquireResource(
       () => launchBrowser({
         headless: true,
+        chromiumSandbox: true,
         proxy: { server: startedProxy.url },
         args: [
           '--disable-quic',
           '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-          '--host-resolver-rules=MAP * ~NOTFOUND',
           '--proxy-bypass-list=<-loopback>',
         ],
       }),
