@@ -36,6 +36,7 @@ type SnapshotImageInput = {
 export type AutomaticSnapshotInput = SnapshotImageInput & {
   url: string;
   deploymentId?: string | null;
+  attemptedAt?: Date;
 };
 
 export type ManualSnapshotInput = SnapshotImageInput;
@@ -238,6 +239,19 @@ export async function saveAutomaticSnapshot(
       updatedAt: attemptedAt,
     };
 
+    if (input.attemptedAt !== undefined) {
+      const saved = await tx
+        .update(projectSnapshots)
+        .set(snapshot)
+        .where(and(
+          eq(projectSnapshots.projectId, input.projectId),
+          eq(projectSnapshots.lastAttemptStatus, 'pending'),
+          eq(projectSnapshots.lastAttemptAt, input.attemptedAt),
+        ))
+        .returning({ projectId: projectSnapshots.projectId });
+      return saved.length > 0;
+    }
+
     await tx
       .insert(projectSnapshots)
       .values({ projectId: input.projectId, ...snapshot })
@@ -298,6 +312,7 @@ export async function markSnapshotFailed(
   projectId: string,
   expectedUrl: string,
   errorCode: SnapshotErrorCode,
+  attemptedAt?: Date,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     const [project] = await tx
@@ -316,23 +331,40 @@ export async function markSnapshotFailed(
       return false;
     }
 
-    const attemptedAt = new Date();
+    const failedAt = new Date();
+    if (attemptedAt !== undefined) {
+      const failed = await tx
+        .update(projectSnapshots)
+        .set({
+          lastAttemptAt: failedAt,
+          lastAttemptStatus: 'failed',
+          lastError: errorCode,
+          updatedAt: failedAt,
+        })
+        .where(and(
+          eq(projectSnapshots.projectId, projectId),
+          eq(projectSnapshots.lastAttemptStatus, 'pending'),
+          eq(projectSnapshots.lastAttemptAt, attemptedAt),
+        ))
+        .returning({ projectId: projectSnapshots.projectId });
+      return failed.length > 0;
+    }
     await tx
       .insert(projectSnapshots)
       .values({
         projectId,
-        lastAttemptAt: attemptedAt,
+        lastAttemptAt: failedAt,
         lastAttemptStatus: 'failed',
         lastError: errorCode,
-        updatedAt: attemptedAt,
+        updatedAt: failedAt,
       })
       .onConflictDoUpdate({
         target: projectSnapshots.projectId,
         set: {
-          lastAttemptAt: attemptedAt,
+          lastAttemptAt: failedAt,
           lastAttemptStatus: 'failed',
           lastError: errorCode,
-          updatedAt: attemptedAt,
+          updatedAt: failedAt,
         },
       });
     return true;

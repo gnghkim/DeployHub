@@ -255,13 +255,66 @@ describe('snapshot capture handler', () => {
       failed: 0,
     });
     expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: 'succeeded', dedupeKey: null }),
+      expect.objectContaining({
+        status: 'succeeded',
+        dedupeKey: `snapshot:${projectId}`,
+      }),
       expect.objectContaining({
         status: 'pending',
         dedupeKey: `snapshot:${projectId}`,
         payload: expect.objectContaining({ url: latestUrl }),
       }),
     ]));
+  });
+
+  it('keeps the newer image when a reclaimed handler finishes first', async () => {
+    const projectId = await insertProject();
+    const olderResponse = deferred<Response>();
+    const newerImage = Buffer.from('newer-webp-image');
+    const fetchFn = vi.fn()
+      .mockImplementationOnce(() => olderResponse.promise)
+      .mockResolvedValueOnce(successResponse(newerImage, {
+        'content-length': String(newerImage.byteLength),
+      }));
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    const handler = createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+      fetch: fetchFn,
+    });
+    const staleRunner = createRunner(
+      db,
+      { 'snapshot.capture': handler },
+      'stale-snapshot-worker',
+    );
+    const currentRunner = createRunner(
+      db,
+      { 'snapshot.capture': handler },
+      'current-snapshot-worker',
+    );
+    const staleRun = staleRunner.runOnce();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+    await db
+      .update(schema.jobs)
+      .set({ lockedAt: new Date(Date.now() - 600_000) })
+      .where(eq(schema.jobs.dedupeKey, `snapshot:${projectId}`));
+
+    await expect(currentRunner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    olderResponse.resolve(successResponse());
+
+    await expect(staleRun).resolves.toEqual({
+      claimed: 1,
+      succeeded: 0,
+      failed: 0,
+    });
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      imageData: newerImage,
+      checksum: createHash('sha256').update(newerImage).digest('hex'),
+      sourceUrl: SNAPSHOT_URL,
+      lastAttemptStatus: 'success',
+    });
   });
 
   it.each([
@@ -440,7 +493,7 @@ describe('snapshot capture handler', () => {
     const response = deferred<Response>();
     const fetchFn = vi.fn()
       .mockImplementationOnce(() => response.promise)
-      .mockResolvedValueOnce(successResponse());
+      .mockImplementation(() => Promise.resolve(successResponse()));
     await enqueueSnapshotCapture(db, {
       projectId,
       url: SNAPSHOT_URL,
@@ -482,7 +535,7 @@ describe('snapshot capture handler', () => {
     expect(afterStale).toEqual(expect.arrayContaining([
       expect.objectContaining({
         status: 'succeeded',
-        dedupeKey: null,
+        dedupeKey: `snapshot:${projectId}`,
         payload: expect.objectContaining({ url: SNAPSHOT_URL }),
       }),
       expect.objectContaining({
@@ -543,7 +596,10 @@ describe('snapshot capture handler', () => {
       lastError: null,
     });
     expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: 'succeeded', dedupeKey: null }),
+      expect.objectContaining({
+        status: 'succeeded',
+        dedupeKey: `snapshot:${projectId}`,
+      }),
       expect.objectContaining({
         status: 'pending',
         dedupeKey: `snapshot:${projectId}`,
@@ -592,7 +648,7 @@ describe('snapshot capture handler', () => {
     const response = deferred<Response>();
     const fetchFn = vi.fn()
       .mockImplementationOnce(() => response.promise)
-      .mockResolvedValueOnce(successResponse());
+      .mockImplementation(() => Promise.resolve(successResponse()));
     await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
     const runner = createRunner(db, {
       'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
@@ -614,15 +670,28 @@ describe('snapshot capture handler', () => {
       succeeded: 0,
       failed: 1,
     });
+    expect(await db.select().from(schema.jobs)).toEqual([
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: expect.not.objectContaining({ requestId: 'newer-request' }),
+        trailingPayload: expect.objectContaining({ requestId: 'newer-request' }),
+      }),
+    ]);
+
+    await expect(runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
     expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: 'failed', dedupeKey: null }),
+      expect.objectContaining({ status: 'succeeded' }),
       expect.objectContaining({
         status: 'pending',
         dedupeKey: `snapshot:${projectId}`,
         payload: expect.objectContaining({ requestId: 'newer-request' }),
       }),
     ]));
-
     await expect(runner.runOnce()).resolves.toEqual({
       claimed: 1,
       succeeded: 1,

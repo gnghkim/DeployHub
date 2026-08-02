@@ -95,6 +95,8 @@ export async function coalesceSnapshotCaptureJob(
           attempts = 0,
           max_attempts = ${maxAttempts},
           last_error = NULL,
+          trailing_payload = NULL,
+          trailing_max_attempts = NULL,
           updated_at = now()
       WHERE id = ${active.id}
     `);
@@ -103,69 +105,57 @@ export async function coalesceSnapshotCaptureJob(
   if (active?.status === 'running') {
     await executor.execute(sql`
       UPDATE jobs
-      SET dedupe_key = NULL,
-          max_attempts = LEAST(max_attempts, attempts),
+      SET trailing_payload = ${payload}::jsonb,
+          trailing_max_attempts = ${maxAttempts},
           updated_at = now()
       WHERE id = ${active.id}
     `);
+    return true;
   }
 
-  const inserted = await executor.execute<{ id: string }>(sql`
-    INSERT INTO jobs (type, dedupe_key, payload, max_attempts)
-    VALUES ('snapshot.capture', ${dedupeKey}, ${payload}::jsonb, ${maxAttempts})
-    ON CONFLICT (type, dedupe_key)
-      WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running')
-      DO NOTHING
-    RETURNING id
-  `);
-  if (inserted.rows.length > 0) return true;
-
-  const [conflict] = (await executor.execute<{
-    id: string;
+  const inserted = await executor.execute<{
+    inserted: boolean;
     status: 'pending' | 'running';
   }>(sql`
-    SELECT id, status
-    FROM jobs
-    WHERE type = 'snapshot.capture'
-      AND dedupe_key = ${dedupeKey}
-      AND status IN ('pending', 'running')
-    FOR UPDATE
-    LIMIT 1
-  `)).rows;
-  if (!conflict) throw new Error('snapshot trailing enqueue failed');
-  if (conflict.status === 'pending') {
-    await executor.execute(sql`
-      UPDATE jobs
-      SET payload = ${payload}::jsonb,
-          run_at = now(),
-          attempts = 0,
-          max_attempts = ${maxAttempts},
-          last_error = NULL,
-          updated_at = now()
-      WHERE id = ${conflict.id}
-    `);
-    return active?.status === 'running';
-  }
-
-  await executor.execute(sql`
-    UPDATE jobs
-    SET dedupe_key = NULL,
-        max_attempts = LEAST(max_attempts, attempts),
-        updated_at = now()
-    WHERE id = ${conflict.id}
-  `);
-  const trailing = await executor.execute<{ id: string }>(sql`
     INSERT INTO jobs (type, dedupe_key, payload, max_attempts)
     VALUES ('snapshot.capture', ${dedupeKey}, ${payload}::jsonb, ${maxAttempts})
     ON CONFLICT (type, dedupe_key)
       WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running')
-      DO NOTHING
-    RETURNING id
+      DO UPDATE SET
+        payload = CASE
+          WHEN jobs.status = 'pending' THEN EXCLUDED.payload
+          ELSE jobs.payload
+        END,
+        run_at = CASE
+          WHEN jobs.status = 'pending' THEN now()
+          ELSE jobs.run_at
+        END,
+        attempts = CASE
+          WHEN jobs.status = 'pending' THEN 0
+          ELSE jobs.attempts
+        END,
+        max_attempts = CASE
+          WHEN jobs.status = 'pending' THEN EXCLUDED.max_attempts
+          ELSE jobs.max_attempts
+        END,
+        last_error = CASE
+          WHEN jobs.status = 'pending' THEN NULL
+          ELSE jobs.last_error
+        END,
+        trailing_payload = CASE
+          WHEN jobs.status = 'running' THEN EXCLUDED.payload
+          ELSE NULL
+        END,
+        trailing_max_attempts = CASE
+          WHEN jobs.status = 'running' THEN EXCLUDED.max_attempts
+          ELSE NULL
+        END,
+        updated_at = now()
+    RETURNING (xmax = 0) AS inserted, status
   `);
-  if (trailing.rows.length === 0) {
-    throw new Error('snapshot trailing enqueue failed');
-  }
-  return true;
+  const result = inserted.rows[0];
+  if (!result) throw new Error('snapshot trailing enqueue failed');
+  return result.inserted || result.status === 'running';
 }
 
 export async function enqueueSnapshotCaptureTrailing(
@@ -202,23 +192,124 @@ export async function claim(
   return result.rows.map(toRecord);
 }
 
-export async function complete(db: Db, jobId: string): Promise<void> {
-  await db.execute(sql`
-    UPDATE jobs
-    SET status = 'succeeded', locked_at = NULL, locked_by = NULL, updated_at = now()
+type OwnedJobRow = {
+  id: string;
+  type: string;
+  dedupe_key: string | null;
+  attempts: number;
+  max_attempts: number;
+  trailing_payload: Record<string, unknown> | null;
+  trailing_max_attempts: number | null;
+};
+
+async function lockOwnedJob(
+  executor: SqlExecutor,
+  jobId: string,
+  workerId: string,
+): Promise<OwnedJobRow | undefined> {
+  const [candidate] = (await executor.execute<{
+    type: string;
+    dedupe_key: string | null;
+  }>(sql`
+    SELECT type, dedupe_key
+    FROM jobs
     WHERE id = ${jobId}
+      AND status = 'running'
+      AND locked_by = ${workerId}
+  `)).rows;
+  if (!candidate) return undefined;
+  if (candidate.type === 'snapshot.capture' && candidate.dedupe_key !== null) {
+    await executor.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended(${candidate.dedupe_key}, 0)
+      )
+    `);
+  }
+  const [owned] = (await executor.execute<OwnedJobRow>(sql`
+    SELECT id, type, dedupe_key, attempts, max_attempts,
+           trailing_payload, trailing_max_attempts
+    FROM jobs
+    WHERE id = ${jobId}
+      AND status = 'running'
+      AND locked_by = ${workerId}
+    FOR UPDATE
+  `)).rows;
+  return owned;
+}
+
+async function promoteTrailing(
+  executor: SqlExecutor,
+  job: OwnedJobRow,
+): Promise<void> {
+  if (
+    job.type !== 'snapshot.capture'
+    || job.dedupe_key === null
+    || job.trailing_payload === null
+  ) {
+    return;
+  }
+  await executor.execute(sql`
+    INSERT INTO jobs (type, dedupe_key, payload, max_attempts)
+    VALUES (
+      'snapshot.capture',
+      ${job.dedupe_key},
+      ${JSON.stringify(job.trailing_payload)}::jsonb,
+      ${job.trailing_max_attempts ?? 3}
+    )
   `);
 }
 
-export async function fail(db: Db, jobId: string, error: string): Promise<void> {
-  await db.execute(sql`
-    UPDATE jobs
-    SET status = CASE WHEN attempts >= max_attempts THEN 'failed'::job_status
-                      ELSE 'pending'::job_status END,
-        last_error = ${error},
-        locked_at  = NULL,
-        locked_by  = NULL,
-        updated_at = now()
-    WHERE id = ${jobId}
-  `);
+export async function complete(
+  db: Db,
+  jobId: string,
+  workerId: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const owned = await lockOwnedJob(tx, jobId, workerId);
+    if (!owned) return false;
+    await tx.execute(sql`
+      UPDATE jobs
+      SET status = 'succeeded',
+          trailing_payload = NULL,
+          trailing_max_attempts = NULL,
+          locked_at = NULL,
+          locked_by = NULL,
+          updated_at = now()
+      WHERE id = ${jobId}
+    `);
+    await promoteTrailing(tx, owned);
+    return true;
+  });
+}
+
+export async function fail(
+  db: Db,
+  jobId: string,
+  workerId: string,
+  error: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const owned = await lockOwnedJob(tx, jobId, workerId);
+    if (!owned) return false;
+    const terminal = owned.attempts >= owned.max_attempts;
+    await tx.execute(sql`
+      UPDATE jobs
+      SET status = ${terminal ? 'failed' : 'pending'}::job_status,
+          last_error = ${error},
+          trailing_payload = CASE
+            WHEN ${terminal} THEN NULL
+            ELSE trailing_payload
+          END,
+          trailing_max_attempts = CASE
+            WHEN ${terminal} THEN NULL
+            ELSE trailing_max_attempts
+          END,
+          locked_at = NULL,
+          locked_by = NULL,
+          updated_at = now()
+      WHERE id = ${jobId}
+    `);
+    if (terminal) await promoteTrailing(tx, owned);
+    return true;
+  });
 }

@@ -16,6 +16,11 @@ const projectSnapshotsMigrationUrl = new URL(
   import.meta.url,
 );
 
+const snapshotTrailingMigrationUrl = new URL(
+  '../../../../drizzle/0010_typical_moondragon.sql',
+  import.meta.url,
+);
+
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n?/g, '\n').replace(/\n$/, '');
 }
@@ -92,5 +97,21 @@ describe('project snapshots migration', () => {
       /CREATE UNIQUE INDEX "jobs_active_dedupe_unique" ON "jobs" USING btree \("type","dedupe_key"\) WHERE .*"dedupe_key" IS NOT NULL AND .*"status" IN \('pending', 'running'\);/,
     );
     expect(migration).not.toMatch(/\b(?:DROP TABLE|DROP COLUMN|TRUNCATE)\b/i);
+  });
+});
+
+describe('snapshot trailing migration', () => {
+  it('adds only nullable trailing job fields', async () => {
+    const migration = await readFile(snapshotTrailingMigrationUrl, 'utf8');
+
+    expect(migration).toContain(
+      'ALTER TABLE "jobs" ADD COLUMN "trailing_payload" jsonb;',
+    );
+    expect(migration).toContain(
+      'ALTER TABLE "jobs" ADD COLUMN "trailing_max_attempts" integer;',
+    );
+    expect(migration).not.toMatch(
+      /\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE|UPDATE)\b/i,
+    );
   });
 });

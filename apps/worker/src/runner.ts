@@ -21,18 +21,22 @@ export function createRunner(
     for (const job of jobs) {
       const handler = handlers[job.type];
       if (!handler) {
-        await fail(db, job.id, `등록된 핸들러가 없습니다: ${job.type}`);
-        failed += 1;
+        if (await fail(
+          db,
+          job.id,
+          workerId,
+          `등록된 핸들러가 없습니다: ${job.type}`,
+        )) {
+          failed += 1;
+        }
         continue;
       }
       try {
         await handler(job);
-        await complete(db, job.id);
-        succeeded += 1;
+        if (await complete(db, job.id, workerId)) succeeded += 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await fail(db, job.id, message);
-        failed += 1;
+        if (await fail(db, job.id, workerId, message)) failed += 1;
       }
     }
 

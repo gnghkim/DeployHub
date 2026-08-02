@@ -156,6 +156,50 @@ describe('project snapshot repository', () => {
     }
   });
 
+  it('rejects image and failure writes from an older pending attempt', async () => {
+    const project = await insertProject();
+    const older = await markSnapshotPendingAttempt(
+      db,
+      project.id,
+      'https://example.com/app',
+    );
+    const newer = await markSnapshotPendingAttempt(
+      db,
+      project.id,
+      'https://example.com/app',
+    );
+    if (!older || !newer) throw new Error('pending attempt was rejected');
+
+    await expect(saveAutomaticSnapshot(db, {
+      ...automaticInput(project.id, {
+        imageData: Buffer.from('older-image'),
+        checksum: 'older-checksum',
+      }),
+      attemptedAt: older.attemptedAt,
+    })).resolves.toBe(false);
+    await expect(markSnapshotFailed(
+      db,
+      project.id,
+      'https://example.com/app',
+      'render_failed',
+      older.attemptedAt,
+    )).resolves.toBe(false);
+    await expect(saveAutomaticSnapshot(db, {
+      ...automaticInput(project.id, {
+        imageData: Buffer.from('newer-image'),
+        checksum: 'newer-checksum',
+      }),
+      attemptedAt: newer.attemptedAt,
+    })).resolves.toBe(true);
+
+    expect(await getSnapshotState(db, project.id)).toMatchObject({
+      imageData: Buffer.from('newer-image'),
+      checksum: 'newer-checksum',
+      lastAttemptStatus: 'success',
+      lastError: null,
+    });
+  });
+
   it('marks an attempt pending without requiring an existing snapshot row', async () => {
     const project = await insertProject();
 

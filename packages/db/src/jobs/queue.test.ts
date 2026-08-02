@@ -36,7 +36,7 @@ describe('enqueueUnique', () => {
     ]);
   });
 
-  it('moves a running snapshot aside and guarantees one trailing job', async () => {
+  it('stores trailing payload on a running snapshot without making it claimable', async () => {
     const projectId = crypto.randomUUID();
     await enqueueSnapshotCaptureTrailing(db, {
       projectId,
@@ -50,20 +50,19 @@ describe('enqueueUnique', () => {
       payload: { projectId, url: 'https://latest.example' },
     })).resolves.toBe(true);
 
-    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+    expect(await db.select().from(schema.jobs)).toEqual([
       expect.objectContaining({
         id: running.id,
         status: 'running',
-        dedupeKey: null,
-        attempts: 1,
-        maxAttempts: 1,
-      }),
-      expect.objectContaining({
-        status: 'pending',
         dedupeKey: `snapshot:${projectId}`,
-        payload: { projectId, url: 'https://latest.example' },
+        attempts: 1,
+        maxAttempts: 3,
+        payload: { projectId, url: 'https://old.example' },
+        trailingPayload: { projectId, url: 'https://latest.example' },
+        trailingMaxAttempts: 3,
       }),
-    ]));
+    ]);
+    await expect(claim(db, 'other-worker', 10, 60)).resolves.toEqual([]);
   });
 
   it('keeps at most one active keyed snapshot across parallel calls', async () => {
@@ -86,7 +85,7 @@ describe('enqueueUnique', () => {
     });
   });
 
-  it('does not retry a superseded transient job alongside its trailing job', async () => {
+  it('keeps trailing payload dormant during a transient retry', async () => {
     const projectId = crypto.randomUUID();
     await enqueueSnapshotCaptureTrailing(db, {
       projectId,
@@ -99,10 +98,81 @@ describe('enqueueUnique', () => {
       payload: { projectId, url: 'https://latest.example' },
     });
 
-    await fail(db, running.id, 'snapshot capture failed: navigation_failed');
+    await expect(fail(
+      db,
+      running.id,
+      'snapshot-worker',
+      'snapshot capture failed: navigation_failed',
+    )).resolves.toBe(true);
 
     const rows = await db.select().from(schema.jobs);
-    expect(rows).toEqual(expect.arrayContaining([
+    expect(rows).toEqual([
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: { projectId, url: 'https://old.example' },
+        trailingPayload: { projectId, url: 'https://latest.example' },
+      }),
+    ]);
+    const retry = await claim(db, 'next-worker', 10, 60);
+    expect(retry).toHaveLength(1);
+    expect(retry[0]?.payload).toEqual({
+      projectId,
+      url: 'https://old.example',
+    });
+  });
+
+  it('promotes trailing payload only after successful completion', async () => {
+    const projectId = crypto.randomUUID();
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://old.example' },
+    });
+    const [running] = await claim(db, 'snapshot-worker', 1, 60);
+    if (!running) throw new Error('expected a running snapshot job');
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://latest.example' },
+    });
+
+    await expect(complete(db, running.id, 'snapshot-worker')).resolves.toBe(true);
+
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: running.id,
+        status: 'succeeded',
+        trailingPayload: null,
+      }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: { projectId, url: 'https://latest.example' },
+      }),
+    ]));
+  });
+
+  it('promotes trailing payload after a terminal failure', async () => {
+    const projectId = crypto.randomUUID();
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://old.example' },
+      maxAttempts: 1,
+    });
+    const [running] = await claim(db, 'snapshot-worker', 1, 60);
+    if (!running) throw new Error('expected a running snapshot job');
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://latest.example' },
+    });
+
+    await expect(fail(
+      db,
+      running.id,
+      'snapshot-worker',
+      'snapshot capture failed: render_failed',
+    )).resolves.toBe(true);
+
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: running.id, status: 'failed' }),
       expect.objectContaining({
         status: 'pending',
@@ -110,12 +180,6 @@ describe('enqueueUnique', () => {
         payload: { projectId, url: 'https://latest.example' },
       }),
     ]));
-    const retry = await claim(db, 'next-worker', 10, 60);
-    expect(retry).toHaveLength(1);
-    expect(retry[0]?.payload).toEqual({
-      projectId,
-      url: 'https://latest.example',
-    });
   });
 
   it('allows only one concurrent pending job for the same type and dedupe key', async () => {
@@ -183,7 +247,7 @@ describe('enqueueUnique', () => {
     });
     const [succeeded] = await claim(db, 'worker-1', 1, 60);
     if (!succeeded) throw new Error('expected a claimed job');
-    await complete(db, succeeded.id);
+    await complete(db, succeeded.id, 'worker-1');
 
     await expect(enqueueUnique(db, {
       type: 'snapshot.capture',
@@ -204,13 +268,13 @@ describe('enqueueUnique', () => {
     await enqueueUnique(db, { type: 'sync.github' });
     const [succeeded] = await claim(db, 'worker-1', 1, 60);
     if (!succeeded) throw new Error('expected a claimed job');
-    await complete(db, succeeded.id);
+    await complete(db, succeeded.id, 'worker-1');
 
     await enqueueUnique(db, { type: 'sync.github', maxAttempts: 1 });
     await claim(db, 'worker-1', 1, 60);
     const [running] = await db.select().from(schema.jobs).where(eq(schema.jobs.status, 'running'));
     if (!running) throw new Error('expected a running job');
-    await fail(db, running.id, 'test failure');
+    await fail(db, running.id, 'worker-1', 'test failure');
 
     await expect(enqueueUnique(db, { type: 'sync.github' })).resolves.toBe(true);
     expect(await db.select().from(schema.jobs)).toHaveLength(3);
@@ -292,6 +356,33 @@ describe('job 큐', () => {
     expect(reclaimed[0]?.attempts).toBe(2);
   });
 
+  it('rejects complete and fail writes from a stale lease owner', async () => {
+    const job = await enqueue(db, { type: 'sync.github' });
+    await claim(db, 'stale-worker', 1, 60);
+    await db
+      .update(schema.jobs)
+      .set({ lockedAt: new Date(Date.now() - 120_000) })
+      .where(eq(schema.jobs.id, job.id));
+    await claim(db, 'current-worker', 1, 60);
+
+    await expect(complete(db, job.id, 'stale-worker')).resolves.toBe(false);
+    await expect(fail(
+      db,
+      job.id,
+      'stale-worker',
+      'stale failure',
+    )).resolves.toBe(false);
+
+    expect(await db.select().from(schema.jobs)).toEqual([
+      expect.objectContaining({
+        id: job.id,
+        status: 'running',
+        lockedBy: 'current-worker',
+        attempts: 2,
+      }),
+    ]);
+  });
+
   it('claim은 attempts를 증가시킨다', async () => {
     await enqueue(db, { type: 'sync.github' });
     const claimed = await claim(db, 'worker-1', 10, 60);
@@ -301,7 +392,7 @@ describe('job 큐', () => {
   it('complete한 job은 다시 claim되지 않는다', async () => {
     const job = await enqueue(db, { type: 'sync.github' });
     await claim(db, 'worker-1', 10, 60);
-    await complete(db, job.id);
+    await complete(db, job.id, 'worker-1');
 
     const again = await claim(db, 'worker-1', 10, 60);
     expect(again).toHaveLength(0);
@@ -313,7 +404,7 @@ describe('job 큐', () => {
   it('maxAttempts에 도달하지 않은 실패는 pending으로 되돌린다', async () => {
     const job = await enqueue(db, { type: 'sync.github', maxAttempts: 3 });
     await claim(db, 'worker-1', 10, 60);
-    await fail(db, job.id, '502 Bad Gateway');
+    await fail(db, job.id, 'worker-1', '502 Bad Gateway');
 
     const [row] = await db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id));
     expect(row?.status).toBe('pending');
@@ -327,7 +418,7 @@ describe('job 큐', () => {
   it('maxAttempts에 도달한 실패는 failed로 확정하고 다시 claim하지 않는다', async () => {
     const job = await enqueue(db, { type: 'sync.github', maxAttempts: 1 });
     await claim(db, 'worker-1', 10, 60);
-    await fail(db, job.id, '401 Unauthorized');
+    await fail(db, job.id, 'worker-1', '401 Unauthorized');
 
     const [row] = await db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id));
     expect(row?.status).toBe('failed');

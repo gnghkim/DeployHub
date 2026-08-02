@@ -273,10 +273,17 @@ async function captureImage(
 async function recordFailure(
   db: Db,
   payload: SnapshotCapturePayload,
+  attemptedAt: Date,
   code: SnapshotErrorCode,
 ): Promise<boolean> {
   try {
-    return await markSnapshotFailed(db, payload.projectId, payload.url, code);
+    return await markSnapshotFailed(
+      db,
+      payload.projectId,
+      payload.url,
+      code,
+      attemptedAt,
+    );
   } catch (error) {
     if (error instanceof SnapshotProjectNotFoundError) return false;
     throw retryError(code);
@@ -290,7 +297,7 @@ async function finishFailure(
   attemptedAt: Date,
   code: SnapshotErrorCode,
 ): Promise<void> {
-  const current = await recordFailure(db, payload, code);
+  const current = await recordFailure(db, payload, attemptedAt, code);
   if (!current) {
     await reconcileStaleAttempt(db, jobId, payload, attemptedAt);
     return;
@@ -373,6 +380,7 @@ export function createSnapshotCaptureHandler(
         projectId: payload.projectId,
         url: payload.url,
         deploymentId: payload.deploymentId,
+        attemptedAt,
         imageData,
         width: CAPTURE_WIDTH,
         height: CAPTURE_HEIGHT,

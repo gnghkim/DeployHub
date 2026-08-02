@@ -18,6 +18,8 @@ export const jobs = pgTable(
     lockedAt: timestamp('locked_at', { withTimezone: true }),
     lockedBy: text('locked_by'),
     lastError: text('last_error'),
+    trailingPayload: jsonb('trailing_payload').$type<Record<string, unknown>>(),
+    trailingMaxAttempts: integer('trailing_max_attempts'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
