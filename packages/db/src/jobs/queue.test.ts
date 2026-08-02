@@ -2,12 +2,122 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startTestDb } from '../../test/helpers/pg';
 import { schema, type Db } from '../index';
-import { claim, complete, enqueue, enqueueUnique, fail } from './queue';
+import {
+  claim,
+  complete,
+  enqueue,
+  enqueueSnapshotCaptureTrailing,
+  enqueueUnique,
+  fail,
+} from './queue';
 
 let db: Db;
 let stop: () => Promise<void>;
 
 describe('enqueueUnique', () => {
+  it('coalesces a pending snapshot job to the latest payload', async () => {
+    const projectId = crypto.randomUUID();
+    await expect(enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://old.example' },
+    })).resolves.toBe(true);
+
+    await expect(enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://latest.example' },
+    })).resolves.toBe(false);
+
+    expect(await db.select().from(schema.jobs)).toEqual([
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: { projectId, url: 'https://latest.example' },
+      }),
+    ]);
+  });
+
+  it('moves a running snapshot aside and guarantees one trailing job', async () => {
+    const projectId = crypto.randomUUID();
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://old.example' },
+    });
+    const [running] = await claim(db, 'snapshot-worker', 1, 60);
+    if (!running) throw new Error('expected a running snapshot job');
+
+    await expect(enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://latest.example' },
+    })).resolves.toBe(true);
+
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: running.id,
+        status: 'running',
+        dedupeKey: null,
+        attempts: 1,
+        maxAttempts: 1,
+      }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: { projectId, url: 'https://latest.example' },
+      }),
+    ]));
+  });
+
+  it('keeps at most one active keyed snapshot across parallel calls', async () => {
+    const projectId = crypto.randomUUID();
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, index) => (
+        enqueueSnapshotCaptureTrailing(db, {
+          projectId,
+          payload: { projectId, url: `https://${index}.example` },
+        })
+      )),
+    );
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const active = await db.select().from(schema.jobs);
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      status: 'pending',
+      dedupeKey: `snapshot:${projectId}`,
+    });
+  });
+
+  it('does not retry a superseded transient job alongside its trailing job', async () => {
+    const projectId = crypto.randomUUID();
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://old.example' },
+    });
+    const [running] = await claim(db, 'snapshot-worker', 1, 60);
+    if (!running) throw new Error('expected a running snapshot job');
+    await enqueueSnapshotCaptureTrailing(db, {
+      projectId,
+      payload: { projectId, url: 'https://latest.example' },
+    });
+
+    await fail(db, running.id, 'snapshot capture failed: navigation_failed');
+
+    const rows = await db.select().from(schema.jobs);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: running.id, status: 'failed' }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: { projectId, url: 'https://latest.example' },
+      }),
+    ]));
+    const retry = await claim(db, 'next-worker', 10, 60);
+    expect(retry).toHaveLength(1);
+    expect(retry[0]?.payload).toEqual({
+      projectId,
+      url: 'https://latest.example',
+    });
+  });
+
   it('allows only one concurrent pending job for the same type and dedupe key', async () => {
     await db.execute(`
       CREATE FUNCTION delay_job_insert() RETURNS trigger AS $$

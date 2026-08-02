@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '../client';
+import { coalesceSnapshotCaptureJob } from '../jobs/queue';
 import { projectSnapshots, projects } from '../schema/projects';
 import { jobs } from '../schema/jobs';
 
@@ -143,6 +144,9 @@ export async function reconcileStaleSnapshotCapture(
     }
 
     const dedupeKey = `snapshot:${input.projectId}`;
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${dedupeKey}, 0))
+    `);
     const [activeJob] = await tx
       .select({ id: jobs.id })
       .from(jobs)
@@ -150,7 +154,6 @@ export async function reconcileStaleSnapshotCapture(
         eq(jobs.id, input.jobId),
         eq(jobs.type, 'snapshot.capture'),
         eq(jobs.status, 'running'),
-        eq(jobs.dedupeKey, dedupeKey),
       ))
       .for('update');
     if (!activeJob) return false;
@@ -172,24 +175,24 @@ export async function reconcileStaleSnapshotCapture(
         ));
     }
 
-    await tx
-      .update(jobs)
-      .set({ dedupeKey: null, updatedAt: reconciledAt })
-      .where(eq(jobs.id, activeJob.id));
-
     if (project.snapshotMode === 'automatic' && project.snapshotUrl !== null) {
-      const payload = JSON.stringify({
+      await coalesceSnapshotCaptureJob(tx, {
         projectId: input.projectId,
-        url: project.snapshotUrl,
-        requestId: randomUUID(),
+        payload: {
+          projectId: input.projectId,
+          url: project.snapshotUrl,
+          requestId: randomUUID(),
+        },
       });
-      await tx.execute(sql`
-        INSERT INTO jobs (type, dedupe_key, payload, max_attempts)
-        VALUES ('snapshot.capture', ${dedupeKey}, ${payload}::jsonb, 3)
-        ON CONFLICT (type, dedupe_key)
-          WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running')
-          DO NOTHING
-      `);
+    } else {
+      await tx
+        .update(jobs)
+        .set({
+          dedupeKey: null,
+          maxAttempts: jobs.attempts,
+          updatedAt: reconciledAt,
+        })
+        .where(eq(jobs.id, activeJob.id));
     }
     return true;
   });

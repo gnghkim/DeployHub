@@ -125,7 +125,7 @@ function deferred<T>(): {
 }
 
 describe('snapshot capture enqueue', () => {
-  it('deduplicates active jobs per project while allowing different projects', async () => {
+  it('coalesces active jobs per project while allowing different projects', async () => {
     const firstProjectId = randomUUID();
     const secondProjectId = randomUUID();
 
@@ -151,8 +151,7 @@ describe('snapshot capture enqueue', () => {
         dedupeKey: `snapshot:${firstProjectId}`,
         payload: {
           projectId: firstProjectId,
-          url: 'https://first.example',
-          requestId: 'request-one',
+          url: 'https://changed.example',
         },
         maxAttempts: 3,
       }),
@@ -215,6 +214,56 @@ describe('snapshot capture handler', () => {
     });
   });
 
+  it('guarantees a trailing job after save and before runner completion', async () => {
+    const projectId = await insertProject();
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    const terminalSave = deferred<void>();
+    const allowCompletion = deferred<void>();
+    const captureHandler = createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+      fetch: vi.fn().mockResolvedValue(successResponse()),
+    });
+    const runner = createRunner(db, {
+      'snapshot.capture': async (captureJob) => {
+        await captureHandler(captureJob);
+        terminalSave.resolve(undefined);
+        await allowCompletion.promise;
+      },
+    }, 'snapshot-terminal-race-worker');
+    const running = runner.runOnce();
+    await terminalSave.promise;
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      source: 'automatic',
+      sourceUrl: SNAPSHOT_URL,
+      lastAttemptStatus: 'success',
+    });
+
+    const latestUrl = 'https://terminal-race.example/app';
+    await db
+      .update(schema.projects)
+      .set({ snapshotUrl: latestUrl })
+      .where(eq(schema.projects.id, projectId));
+    await expect(enqueueSnapshotCapture(db, {
+      projectId,
+      url: latestUrl,
+      requestId: 'terminal-race-request',
+    })).resolves.toBe(true);
+    allowCompletion.resolve(undefined);
+
+    await expect(running).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'succeeded', dedupeKey: null }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: expect.objectContaining({ url: latestUrl }),
+      }),
+    ]));
+  });
+
   it.each([
     ['disabled mode', { snapshotMode: 'disabled' as const }],
     ['manual mode', { snapshotMode: 'manual' as const }],
@@ -230,6 +279,33 @@ describe('snapshot capture handler', () => {
 
     expect(fetchFn).not.toHaveBeenCalled();
     expect(await getSnapshotState(db, projectId)).toBeUndefined();
+  });
+
+  it('does not trail a running job after automatic mode is disabled', async () => {
+    const projectId = await insertProject();
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    await db
+      .update(schema.projects)
+      .set({ snapshotMode: 'disabled' })
+      .where(eq(schema.projects.id, projectId));
+    const fetchFn = vi.fn();
+    const runner = createRunner(db, {
+      'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+        fetch: fetchFn,
+      }),
+    }, 'snapshot-disabled-worker');
+
+    await expect(runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(await getSnapshotState(db, projectId)).toBeUndefined();
+    expect(await db.select().from(schema.jobs)).toEqual([
+      expect.objectContaining({ status: 'succeeded', dedupeKey: null }),
+    ]);
   });
 
   it('completes without a request when the project was deleted', async () => {
@@ -387,7 +463,7 @@ describe('snapshot capture handler', () => {
       projectId,
       url: latestUrl,
       requestId: 'enqueue-that-loses-the-race',
-    })).resolves.toBe(false);
+    })).resolves.toBe(true);
     response.resolve(successResponse());
 
     await expect(running).resolves.toEqual({
@@ -508,6 +584,54 @@ describe('snapshot capture handler', () => {
     expect(await getSnapshotState(db, projectId)).toMatchObject({
       lastAttemptStatus: 'failed',
       lastError: code,
+    });
+  });
+
+  it('lets a trailing job replace a superseded transient retry', async () => {
+    const projectId = await insertProject();
+    const response = deferred<Response>();
+    const fetchFn = vi.fn()
+      .mockImplementationOnce(() => response.promise)
+      .mockResolvedValueOnce(successResponse());
+    await enqueueSnapshotCapture(db, { projectId, url: SNAPSHOT_URL });
+    const runner = createRunner(db, {
+      'snapshot.capture': createSnapshotCaptureHandler(db, SNAPSHOTTER_URL, {
+        fetch: fetchFn,
+      }),
+    }, 'snapshot-transient-trailing-worker');
+    const firstRun = runner.runOnce();
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledOnce());
+
+    await expect(enqueueSnapshotCapture(db, {
+      projectId,
+      url: SNAPSHOT_URL,
+      requestId: 'newer-request',
+    })).resolves.toBe(true);
+    response.resolve(errorResponse('navigation_failed', 502));
+
+    await expect(firstRun).resolves.toEqual({
+      claimed: 1,
+      succeeded: 0,
+      failed: 1,
+    });
+    expect(await db.select().from(schema.jobs)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ status: 'failed', dedupeKey: null }),
+      expect.objectContaining({
+        status: 'pending',
+        dedupeKey: `snapshot:${projectId}`,
+        payload: expect.objectContaining({ requestId: 'newer-request' }),
+      }),
+    ]));
+
+    await expect(runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+    });
+    expect(await getSnapshotState(db, projectId)).toMatchObject({
+      source: 'automatic',
+      sourceUrl: SNAPSHOT_URL,
+      lastAttemptStatus: 'success',
     });
   });
 

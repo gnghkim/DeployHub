@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
-  enqueueUnique,
+  enqueueSnapshotCaptureTrailing,
   markSnapshotFailed,
   markSnapshotPendingAttempt,
   reconcileStaleSnapshotCapture,
@@ -393,9 +393,8 @@ export async function enqueueSnapshotCapture(
   db: Db,
   payload: SnapshotCapturePayload,
 ): Promise<boolean> {
-  return enqueueUnique(db, {
-    type: 'snapshot.capture',
-    dedupeKey: `snapshot:${payload.projectId}`,
+  return enqueueSnapshotCaptureTrailing(db, {
+    projectId: payload.projectId,
     payload: { ...payload },
     maxAttempts: 3,
   });
