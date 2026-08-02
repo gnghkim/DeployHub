@@ -233,6 +233,17 @@ function ProjectSnapshotPreview({ project }: { project: ProjectSheetProject }) {
   );
 }
 
+function ProjectNameLink({ project }: { project: ProjectSheetProject }) {
+  return (
+    <Link
+      href={`/projects/${project.slug}`}
+      className="min-w-0 break-words text-base font-semibold text-[var(--line)] transition-colors hover:text-white hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
+    >
+      {project.name}
+    </Link>
+  );
+}
+
 export function ProjectSheet({
   project,
   tone,
@@ -245,15 +256,11 @@ export function ProjectSheet({
       <ProjectSheetCollapse
         projectId={project.id}
         projectName={project.name}
+        collapsedHeader={<ProjectNameLink project={project} />}
         header={(
           <>
             <StatusDot tone={tone} />
-            <Link
-              href={`/projects/${project.slug}`}
-              className="min-w-0 break-words text-base font-semibold text-[var(--line)] transition-colors hover:text-white hover:underline focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
-            >
-              {project.name}
-            </Link>
+            <ProjectNameLink project={project} />
             <Badge tone={tone}>{project.judgement}</Badge>
           </>
         )}

@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 type ProjectSheetCollapseProps = {
   projectId: string;
   projectName: string;
+  collapsedHeader: ReactNode;
   header: ReactNode;
   trailing?: ReactNode;
   children: ReactNode;
@@ -17,11 +18,13 @@ function storageKey(projectId: string) {
 export function ProjectSheetCollapse({
   projectId,
   projectName,
+  collapsedHeader,
   header,
   trailing = null,
   children,
 }: ProjectSheetCollapseProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [restored, setRestored] = useState(false);
   const detailsId = `project-card-details-${projectId}`;
 
   useEffect(() => {
@@ -30,7 +33,10 @@ export function ProjectSheetCollapse({
     } catch {
       setCollapsed(false);
     }
+    setRestored(true);
   }, [projectId]);
+
+  const expanded = restored && !collapsed;
 
   function toggle() {
     const nextCollapsed = !collapsed;
@@ -53,27 +59,27 @@ export function ProjectSheetCollapse({
       <header className="flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           <button
-            aria-controls={collapsed ? undefined : detailsId}
-            aria-expanded={!collapsed}
-            aria-label={`${projectName} ${collapsed ? '펼치기' : '접기'}`}
+            aria-controls={expanded ? detailsId : undefined}
+            aria-expanded={expanded}
+            aria-label={`${projectName} ${expanded ? '접기' : '펼치기'}`}
             className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded text-[var(--absent)] hover:bg-[var(--rule)] hover:text-[var(--line)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--line)]"
             onClick={toggle}
             type="button"
           >
-            {collapsed ? '▸' : '▾'}
+            {expanded ? '▾' : '▸'}
           </button>
           <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-            {header}
+            {expanded ? header : collapsedHeader}
           </div>
         </div>
-        {trailing}
+        {expanded ? trailing : null}
       </header>
 
-      {collapsed ? null : (
+      {expanded ? (
         <div id={detailsId}>
           {children}
         </div>
-      )}
+      ) : null}
     </>
   );
 }
