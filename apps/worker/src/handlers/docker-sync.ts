@@ -22,7 +22,7 @@ import {
 } from '@deployhub/db';
 import type { JobHandler } from '../runner';
 import { isSuccessfulProductionDeployment } from './deployment-snapshot';
-import { enqueueSnapshotCapture } from './snapshot-capture';
+import { enqueueSnapshotCaptureInTransaction } from './snapshot-capture';
 
 const SYNC_ERROR = 'Docker 동기화에 실패했습니다.';
 const SNAPSHOT_RETENTION_DAYS = 14;
@@ -30,6 +30,7 @@ const CHANGE_EVENT_RETENTION_DAYS = 90;
 
 type DockerSyncDependencies = {
   createCollector?: (baseUrl: string) => DockerCollector;
+  enqueueCapture?: typeof enqueueSnapshotCaptureInTransaction;
 };
 
 function configuredBaseUrl(baseUrl: string | undefined): string | null {
@@ -70,6 +71,8 @@ export function createDockerSyncHandler(
 ): JobHandler {
   const createCollector = dependencies.createCollector
     ?? createDockerCollector;
+  const enqueueCapture = dependencies.enqueueCapture
+    ?? enqueueSnapshotCaptureInTransaction;
 
   return async () => {
     const configuredUrl = configuredBaseUrl(baseUrl);
@@ -86,7 +89,7 @@ export function createDockerSyncHandler(
         (resource) => resource.externalId,
       );
 
-      const captureCandidates = await db.transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         const candidates: Array<{
           projectId: string;
           url: string;
@@ -299,11 +302,10 @@ export function createDockerSyncHandler(
             });
           }
         }
-        return candidates;
+        for (const candidate of candidates) {
+          await enqueueCapture(tx, candidate);
+        }
       });
-      for (const candidate of captureCandidates) {
-        await enqueueSnapshotCapture(db, candidate);
-      }
     } catch (error) {
       throw new Error(safeSyncError(error));
     }

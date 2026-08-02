@@ -168,6 +168,39 @@ describe('Docker sync handler', () => {
     });
   });
 
+  it('rolls back a new deployment when capture enqueue fails and retries cleanly', async () => {
+    await seedDockerSnapshotProject({
+      slug: 'docker-enqueue-retry',
+      externalId: 'docker-enqueue-retry',
+    });
+    const createCollector = () => collector(
+      [dockerResource('docker-enqueue-retry')],
+      [dockerDeployment({ externalId: 'docker-enqueue-retry' })],
+      [],
+    );
+
+    await expect(createDockerSyncHandler(
+      db,
+      'http://socket-proxy:2375',
+      {
+        createCollector,
+        enqueueCapture: async () => {
+          throw new Error('injected queue failure');
+        },
+      },
+    )(job())).rejects.toThrow();
+
+    expect(await db.select().from(schema.deployments)).toEqual([]);
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+
+    await createDockerSyncHandler(db, 'http://socket-proxy:2375', {
+      createCollector,
+    })(job());
+
+    expect(await db.select().from(schema.deployments)).toHaveLength(1);
+    expect(await db.select().from(schema.jobs)).toHaveLength(1);
+  });
+
   it('does not enqueue for an existing deployment status update', async () => {
     const project = await seedDockerSnapshotProject({
       slug: 'docker-existing',
@@ -256,10 +289,19 @@ describe('Docker sync handler', () => {
     })(job());
 
     const queued = await db.select().from(schema.jobs);
+    const deploymentRows = await db.select().from(schema.deployments);
+    const latestDeployment = deploymentRows.find(
+      (deployment) => deployment.externalDeploymentId === 'dpl-docker-second',
+    );
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({
       type: 'snapshot.capture',
       dedupeKey: `snapshot:${project.id}`,
+      payload: {
+        projectId: project.id,
+        url: 'https://docker-coalesced.example.com',
+        deploymentId: latestDeployment!.id,
+      },
       status: 'pending',
     });
   });

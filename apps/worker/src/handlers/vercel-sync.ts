@@ -22,7 +22,7 @@ import {
 import { decrypt } from '@deployhub/shared';
 import type { JobHandler } from '../runner';
 import { isSuccessfulProductionDeployment } from './deployment-snapshot';
-import { enqueueSnapshotCapture } from './snapshot-capture';
+import { enqueueSnapshotCaptureInTransaction } from './snapshot-capture';
 
 const SYNC_ERROR = 'Vercel 동기화에 실패했습니다.';
 const ZERO_PROJECTS_WARNING =
@@ -33,6 +33,7 @@ type VercelSyncDependencies = {
     token: string,
     teamId?: string,
   ) => VercelCollector;
+  enqueueCapture?: typeof enqueueSnapshotCaptureInTransaction;
 };
 
 function safeSyncError(error: unknown): string {
@@ -59,6 +60,8 @@ export function createVercelSyncHandler(
 ): JobHandler {
   const createCollector = dependencies.createCollector
     ?? createVercelCollector;
+  const enqueueCapture = dependencies.enqueueCapture
+    ?? enqueueSnapshotCaptureInTransaction;
 
   return async (job) => {
     const accountId = typeof job.payload.accountId === 'string'
@@ -91,7 +94,7 @@ export function createVercelSyncHandler(
       const deployments = await collector.listDeployments();
       const externalIds = resources.map((resource) => resource.externalId);
 
-      const captureCandidates = await db.transaction(async (tx) => {
+      await db.transaction(async (tx) => {
         const candidates: Array<{
           projectId: string;
           url: string;
@@ -275,11 +278,10 @@ export function createVercelSyncHandler(
               : null,
           })
           .where(eq(schema.providerAccounts.id, account.id));
-        return candidates;
+        for (const candidate of candidates) {
+          await enqueueCapture(tx, candidate);
+        }
       });
-      for (const candidate of captureCandidates) {
-        await enqueueSnapshotCapture(db, candidate);
-      }
     } catch (error) {
       const message = safeSyncError(error);
       await db

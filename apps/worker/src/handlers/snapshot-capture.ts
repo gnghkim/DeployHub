@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
-  enqueueSnapshotCaptureTrailing,
+  coalesceSnapshotCaptureJob,
   markSnapshotFailed,
   markSnapshotPendingAttempt,
   reconcileStaleSnapshotCapture,
@@ -401,7 +401,16 @@ export async function enqueueSnapshotCapture(
   db: Db,
   payload: SnapshotCapturePayload,
 ): Promise<boolean> {
-  return enqueueSnapshotCaptureTrailing(db, {
+  return db.transaction((tx) =>
+    enqueueSnapshotCaptureInTransaction(tx, payload)
+  );
+}
+
+export async function enqueueSnapshotCaptureInTransaction(
+  executor: Pick<Db, 'execute'>,
+  payload: SnapshotCapturePayload,
+): Promise<boolean> {
+  return coalesceSnapshotCaptureJob(executor, {
     projectId: payload.projectId,
     payload: { ...payload },
     maxAttempts: 3,

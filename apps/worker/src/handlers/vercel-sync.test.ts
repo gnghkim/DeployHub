@@ -11,6 +11,7 @@ import {
 import { asc, eq } from 'drizzle-orm';
 import { startTestDb } from '@deployhub/db/test/helpers/pg.js';
 import {
+  coalesceSnapshotCaptureJob,
   schema,
   type Db,
   type JobRecord,
@@ -196,6 +197,67 @@ describe('Vercel sync handler', () => {
     })(job(accountId));
 
     expect(await db.select().from(schema.jobs)).toEqual([]);
+  });
+
+  it('rolls back all deployments when the second capture enqueue fails', async () => {
+    const accountId = await insertAccount();
+    const project = await seedVercelSnapshotProject({
+      slug: 'vercel-atomic',
+      externalId: 'vercel-atomic',
+    });
+    const deployments = [
+      vercelDeployment({
+        externalId: 'vercel-atomic',
+        deploymentId: 'dpl-vercel-first',
+      }),
+      vercelDeployment({
+        externalId: 'vercel-atomic',
+        deploymentId: 'dpl-vercel-second',
+      }),
+    ];
+    const createCollector = () => collector(
+      [vercelResource('vercel-atomic')],
+      deployments,
+    );
+    let enqueueCalls = 0;
+
+    await expect(createVercelSyncHandler(db, encryptionKey, {
+      createCollector,
+      enqueueCapture: async (executor, payload) => {
+        enqueueCalls += 1;
+        if (enqueueCalls === 2) {
+          throw new Error('injected second queue failure');
+        }
+        return coalesceSnapshotCaptureJob(executor, {
+          projectId: payload.projectId,
+          payload: { ...payload },
+          maxAttempts: 3,
+        });
+      },
+    })(job(accountId))).rejects.toThrow();
+
+    expect(await db.select().from(schema.deployments)).toEqual([]);
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector,
+    })(job(accountId));
+
+    const deploymentRows = await db.select().from(schema.deployments);
+    const queued = await db.select().from(schema.jobs);
+    const latestDeployment = deploymentRows.find(
+      (deployment) => deployment.externalDeploymentId === 'dpl-vercel-second',
+    );
+    expect(deploymentRows).toHaveLength(2);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      dedupeKey: `snapshot:${project.id}`,
+      payload: {
+        projectId: project.id,
+        url: 'https://vercel-atomic.example.com',
+        deploymentId: latestDeployment!.id,
+      },
+    });
   });
 
   it('ignores preview, non-ready, manual, disabled, and missing URL deployments', async () => {
