@@ -16,7 +16,10 @@ vi.mock('next/image', () => ({
 }));
 
 import { SnapshotPanel, type SnapshotPanelProps } from './snapshot-panel';
-import { SnapshotSettingsForm } from './snapshot-settings-form';
+import {
+  SnapshotSettingsForm,
+  validateSnapshotUrl,
+} from './snapshot-settings-form';
 
 const baseProps: SnapshotPanelProps = {
   slug: 'yield',
@@ -53,6 +56,8 @@ function button(label: string) {
 }
 
 beforeEach(() => {
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+    .IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
   container = document.createElement('div');
   document.body.append(container);
@@ -181,6 +186,30 @@ describe('SnapshotPanel', () => {
 });
 
 describe('SnapshotSettingsForm', () => {
+  function urlInput() {
+    return container.querySelector<HTMLInputElement>('input[name="snapshotUrl"]')!;
+  }
+
+  async function setUrl(value: string) {
+    const input = urlInput();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+        ?.set?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  async function submitSettings() {
+    await act(async () => {
+      container.querySelector('form')?.dispatchEvent(new Event('submit', {
+        bubbles: true,
+        cancelable: true,
+      }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
   it('exposes the representative URL and automatic toggle without promising authenticated capture', async () => {
     await render(<SnapshotSettingsForm
       slug="yield"
@@ -207,14 +236,7 @@ describe('SnapshotSettingsForm', () => {
     const toggle = container.querySelector<HTMLInputElement>('input[name="automatic"]')!;
     toggle.click();
 
-    await act(async () => {
-      container.querySelector('form')?.dispatchEvent(new Event('submit', {
-        bubbles: true,
-        cancelable: true,
-      }));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await submitSettings();
 
     expect(fetch).toHaveBeenCalledWith(
       '/api/projects/yield/snapshot/settings',
@@ -230,4 +252,110 @@ describe('SnapshotSettingsForm', () => {
     expect(mocks.refresh).toHaveBeenCalledOnce();
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain('저장');
   });
+
+  it.each([
+    ['missing URL', '', '대표 URL'],
+    ['non-HTTP protocol', 'ftp://example.com/', 'HTTP'],
+    ['credentials', 'https://user:secret@example.com/', 'HTTP'],
+    ['wrong HTTP port', 'http://example.com:443/', '80'],
+    ['wrong HTTPS port', 'https://example.com:80/', '443'],
+    ['nonstandard port', 'https://example.com:8443/', '443'],
+    ['fragment', 'https://example.com/app#private', '조각'],
+    ['invalid URL', 'not a URL', 'HTTP'],
+    ['overlong URL', `https://example.com/${'a'.repeat(2_100)}`, '2,048'],
+  ])('rejects automatic %s before fetch and focuses the described field', async (
+    _name,
+    value,
+    expectedError,
+  ) => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    await render(<SnapshotSettingsForm
+      slug="yield"
+      mode="automatic"
+      snapshotUrl="https://yield.example.com/"
+    />);
+    await setUrl(value);
+    await submitSettings();
+
+    const input = urlInput();
+    const errorId = input.getAttribute('aria-describedby')?.split(' ').at(-1);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(errorId).toBeTruthy();
+    expect(document.getElementById(errorId!)?.textContent).toContain(expectedError);
+    expect(document.activeElement).toBe(input);
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe('');
+  });
+
+  it('rejects surrounding whitespace using the same raw-value policy as the server', () => {
+    expect(validateSnapshotUrl(' https://example.com/ ', true)).toEqual({
+      ok: false,
+      error: '대표 URL 앞뒤에 공백을 입력할 수 없습니다.',
+    });
+  });
+
+  it.each([
+    ['http://example.com:80/app', 'http://example.com/app'],
+    ['https://example.com:443/app', 'https://example.com/app'],
+  ])('accepts and normalizes a valid default-port URL', async (value, normalized) => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal('fetch', fetch);
+    await render(<SnapshotSettingsForm slug="yield" mode="automatic" snapshotUrl={value} />);
+    await submitSettings();
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/projects/yield/snapshot/settings',
+      expect.objectContaining({
+        body: JSON.stringify({ mode: 'automatic', url: normalized }),
+      }),
+    );
+    expect(urlInput().getAttribute('aria-invalid')).toBe('false');
+  });
+
+  it('allows an empty URL while disabled but validates a supplied disabled URL', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal('fetch', fetch);
+    await render(<SnapshotSettingsForm slug="yield" mode="disabled" snapshotUrl={null} />);
+
+    await submitSettings();
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/projects/yield/snapshot/settings',
+      expect.objectContaining({
+        body: JSON.stringify({ mode: 'disabled', url: null }),
+      }),
+    );
+
+    fetch.mockClear();
+    await setUrl('https://example.com:8443/');
+    await submitSettings();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(urlInput().getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it.each(['invalid_settings', 'Invalid settings'])(
+    'maps server %s to a safe URL field error',
+    async (serverError) => {
+      const fetch = vi.fn().mockResolvedValue(Response.json(
+        { error: serverError, internal: 'https://secret.example/token' },
+        { status: 400 },
+      ));
+      vi.stubGlobal('fetch', fetch);
+      await render(<SnapshotSettingsForm
+        slug="yield"
+        mode="automatic"
+        snapshotUrl="https://yield.example.com/"
+      />);
+      await submitSettings();
+
+      const input = urlInput();
+      const describedBy = input.getAttribute('aria-describedby') ?? '';
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(container.textContent).toContain('HTTP');
+      expect(describedBy).toContain('snapshot-url-error');
+      expect(document.activeElement).toBe(input);
+      expect(container.textContent).not.toContain('secret.example');
+      expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe('');
+    },
+  );
 });
