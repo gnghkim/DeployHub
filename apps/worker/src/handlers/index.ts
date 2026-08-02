@@ -25,3 +25,8 @@ export {
   enqueueSslCheckJob,
   SSL_CHECK_INTERVAL_MS,
 } from './ssl-check';
+export {
+  createSnapshotCaptureHandler,
+  enqueueSnapshotCapture,
+} from './snapshot-capture';
+export type { SnapshotCapturePayload } from './snapshot-capture';
