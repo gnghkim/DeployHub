@@ -12,6 +12,16 @@ import {
   normalizeScreenshot,
 } from './capture.js';
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 function request(url: string, redirectedFrom: BrowserRequestLike | null = null): BrowserRequestLike {
   return {
     url: () => url,
@@ -403,6 +413,86 @@ describe('captureSnapshot', () => {
       new Promise<string>((resolve) => setTimeout(() => resolve('hung'), 50)),
     ]);
     expect(result).toBe('timeout');
+  });
+
+  it('closes a proxy that starts after capture is aborted', async () => {
+    const fixture = browserFixture();
+    const pendingProxy = deferred<typeof fixture.proxy>();
+    let listening = true;
+    fixture.proxy.close.mockImplementation(async () => {
+      listening = false;
+    });
+    const startProxy = vi.fn(() => pendingProxy.promise);
+    const controller = new AbortController();
+    const capture = captureSnapshot(
+      'https://example.com/',
+      dependencies(fixture, {
+        signal: controller.signal,
+        startProxy,
+      }),
+    );
+    await vi.waitFor(() => expect(startProxy).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await expect(capture).rejects.toEqual(new SnapshotCaptureError('timeout'));
+    pendingProxy.resolve(fixture.proxy);
+
+    await vi.waitFor(() => expect(fixture.proxy.close).toHaveBeenCalledOnce());
+    expect(listening).toBe(false);
+  });
+
+  it('closes a browser that launches after capture is aborted', async () => {
+    const fixture = browserFixture();
+    const pendingBrowser = deferred<typeof fixture.browser>();
+    fixture.launchBrowser.mockImplementation(() => pendingBrowser.promise);
+    const controller = new AbortController();
+    const capture = captureSnapshot(
+      'https://example.com/',
+      dependencies(fixture, { signal: controller.signal }),
+    );
+    await vi.waitFor(() => expect(fixture.launchBrowser).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await expect(capture).rejects.toEqual(new SnapshotCaptureError('timeout'));
+    pendingBrowser.resolve(fixture.browser);
+
+    await vi.waitFor(() => expect(fixture.browser.close).toHaveBeenCalledOnce());
+  });
+
+  it('closes a context created after capture is aborted', async () => {
+    const fixture = browserFixture();
+    const pendingContext = deferred<typeof fixture.context>();
+    fixture.browser.newContext = vi.fn(() => pendingContext.promise);
+    const controller = new AbortController();
+    const capture = captureSnapshot(
+      'https://example.com/',
+      dependencies(fixture, { signal: controller.signal }),
+    );
+    await vi.waitFor(() => expect(fixture.browser.newContext).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await expect(capture).rejects.toEqual(new SnapshotCaptureError('timeout'));
+    pendingContext.resolve(fixture.context);
+
+    await vi.waitFor(() => expect(fixture.context.close).toHaveBeenCalledOnce());
+  });
+
+  it('closes a page created after capture is aborted', async () => {
+    const fixture = browserFixture();
+    const pendingPage = deferred<typeof fixture.page>();
+    fixture.context.newPage = vi.fn(() => pendingPage.promise);
+    const controller = new AbortController();
+    const capture = captureSnapshot(
+      'https://example.com/',
+      dependencies(fixture, { signal: controller.signal }),
+    );
+    await vi.waitFor(() => expect(fixture.context.newPage).toHaveBeenCalledOnce());
+
+    controller.abort();
+    await expect(capture).rejects.toEqual(new SnapshotCaptureError('timeout'));
+    pendingPage.resolve(fixture.page);
+
+    await vi.waitFor(() => expect(fixture.page.close).toHaveBeenCalledOnce());
   });
 
   it('rejects normalized images over 1.5 MB', async () => {

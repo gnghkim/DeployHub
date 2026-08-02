@@ -45,6 +45,21 @@ async function proxyHttpRequest(proxyUrl: string, target: string) {
 }
 
 describe('startValidatingProxy', () => {
+  it('does not start listening when its signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    const outcome = await startValidatingProxy({ signal: controller.signal }).then(
+      (proxy) => {
+        proxies.push(proxy);
+        return proxy;
+      },
+      (error: unknown) => error,
+    );
+
+    expect(outcome).toEqual(new SnapshotCaptureError('timeout'));
+  });
+
   it('validates HTTP targets and forwards through a pinned public address', async () => {
     const addressResolver = resolver(['93.184.216.34']);
     const forwardHttp = vi.fn(async ({ request, response }) => {

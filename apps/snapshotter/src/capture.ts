@@ -174,6 +174,43 @@ async function closeQuietly(
   }
 }
 
+async function acquireResource<T extends { close(): Promise<void> }>(
+  acquire: () => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) throw new SnapshotCaptureError('timeout');
+
+  const operation = acquire();
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      reject(new SnapshotCaptureError('timeout'));
+    };
+    operation.then(
+      (resource) => {
+        signal.removeEventListener('abort', onAbort);
+        if (settled || signal.aborted) {
+          settled = true;
+          void closeQuietly(resource, signal);
+          return;
+        }
+        settled = true;
+        resolve(resource);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        if (settled) return;
+        settled = true;
+        reject(error);
+      },
+    );
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+}
+
 export async function captureSnapshot(
   target: string,
   dependencies: CaptureDependencies = {},
@@ -223,8 +260,8 @@ export async function captureSnapshot(
       throw new SnapshotCaptureError('blocked_target');
     }
 
-    proxy = await withAbort(
-      beginProxy({
+    const startedProxy = await acquireResource(
+      () => beginProxy({
         addressResolver: dependencies.resolver,
         signal,
         onFailure: (error) => {
@@ -233,10 +270,11 @@ export async function captureSnapshot(
       }),
       signal,
     );
-    browser = await withAbort(
-      launchBrowser({
+    proxy = startedProxy;
+    const launchedBrowser = await acquireResource(
+      () => launchBrowser({
         headless: true,
-        proxy: { server: proxy.url },
+        proxy: { server: startedProxy.url },
         args: [
           '--disable-quic',
           '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
@@ -246,8 +284,9 @@ export async function captureSnapshot(
       }),
       signal,
     );
-    context = await withAbort(
-      browser.newContext({
+    browser = launchedBrowser;
+    const createdContext = await acquireResource(
+      () => launchedBrowser.newContext({
         viewport: { width: CAPTURE_WIDTH, height: CAPTURE_HEIGHT },
         acceptDownloads: false,
         ignoreHTTPSErrors: false,
@@ -255,6 +294,7 @@ export async function captureSnapshot(
       }),
       signal,
     );
+    context = createdContext;
     const routeHttp = async (route: RouteLike) => {
       const browserRequest = route.request();
       const depth = redirectDepth(browserRequest);
@@ -317,7 +357,7 @@ export async function captureSnapshot(
     // retained as the primary interception path required by the service policy.
     await withAbort(context.route('**/*', routePopup), signal);
     await withAbort(context.routeWebSocket('**/*', routeWebSocket), signal);
-    page = await withAbort(context.newPage(), signal);
+    page = await acquireResource(() => createdContext.newPage(), signal);
     page.on('request', (browserRequest) => {
       if (redirectDepth(browserRequest) <= 5) return;
       markRoutedFailure(new SnapshotCaptureError('blocked_target'));

@@ -289,13 +289,31 @@ export async function startValidatingProxy(
     if (failure) socket.destroy();
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      server.removeListener('error', reject);
-      resolve();
+  if (failure) {
+    options.signal?.removeEventListener('abort', onExternalAbort);
+    throw failure;
+  }
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        server.removeListener('error', reject);
+        resolve();
+      });
     });
-  });
+  } catch (error) {
+    options.signal?.removeEventListener('abort', onExternalAbort);
+    controller.abort();
+    destroyStreams();
+    throw error;
+  }
+  if (failure) {
+    options.signal?.removeEventListener('abort', onExternalAbort);
+    destroyStreams();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw failure;
+  }
   const address = server.address() as AddressInfo;
 
   return {
