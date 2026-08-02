@@ -174,6 +174,7 @@ describe('project detail status', () => {
     expect(editPage.indexOf('<ProjectForm project={project} />'))
       .toBeLessThan(editPage.indexOf('<SnapshotSettingsForm'));
     expect(page).not.toContain('<SnapshotSettingsForm');
+    expect(editPage).toContain('key={`${project.snapshotMode}:${project.snapshotUrl ??');
   });
 
   it('selects snapshot metadata without image bytes and renders the detail panel', () => {

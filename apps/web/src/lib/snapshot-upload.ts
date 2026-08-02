@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
+import { MAX_SNAPSHOT_UPLOAD_BYTES } from './snapshot-constants';
 
-const MAX_INPUT_BYTES = 5_000_000;
 const MAX_OUTPUT_BYTES = 1_500_000;
 const OUTPUT_WIDTH = 1440;
 const OUTPUT_HEIGHT = 900;
@@ -56,7 +56,7 @@ export async function normalizeSnapshotUpload(
   file: File,
   dependencies: NormalizeDependencies = {},
 ): Promise<NormalizedSnapshotUpload> {
-  if (file.size > MAX_INPUT_BYTES) {
+  if (file.size > MAX_SNAPSHOT_UPLOAD_BYTES) {
     throw new SnapshotUploadError('input_too_large');
   }
 

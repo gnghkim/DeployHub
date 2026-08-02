@@ -4,8 +4,8 @@ import {
   normalizeSnapshotUpload,
   SnapshotUploadError,
 } from './snapshot-upload';
+import { MAX_SNAPSHOT_UPLOAD_BYTES } from './snapshot-constants';
 
-const MAX_INPUT_BYTES = 5_000_000;
 const MAX_OUTPUT_BYTES = 1_500_000;
 
 const fixtures = new Map<'png' | 'jpeg' | 'webp', Buffer>();
@@ -70,7 +70,10 @@ describe('normalizeSnapshotUpload', () => {
 
   it('rejects inputs over the 5 MB byte limit before decoding', async () => {
     await expect(
-      normalizeSnapshotUpload(upload(Buffer.alloc(MAX_INPUT_BYTES + 1), 'image/png')),
+      normalizeSnapshotUpload(upload(
+        Buffer.alloc(MAX_SNAPSHOT_UPLOAD_BYTES + 1),
+        'image/png',
+      )),
     ).rejects.toMatchObject({ code: 'input_too_large' });
   });
 

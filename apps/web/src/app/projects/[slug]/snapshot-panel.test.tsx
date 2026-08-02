@@ -109,6 +109,18 @@ describe('SnapshotPanel', () => {
     expect(container.textContent).toContain('5 MB');
   });
 
+  it('gives keyboard focus on the hidden file input a visible high-contrast label outline', async () => {
+    await render(<SnapshotPanel {...baseProps} />);
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const label = input.closest('label');
+
+    input.focus();
+
+    expect(document.activeElement).toBe(input);
+    expect(label?.className).toContain('focus-within:outline-2');
+    expect(label?.className).toContain('focus-within:outline-[var(--accent)]');
+  });
+
   it('disables controls while pending, announces success, and refreshes', async () => {
     let resolve!: (response: Response) => void;
     const request = new Promise<Response>((settle) => { resolve = settle; });
@@ -182,6 +194,51 @@ describe('SnapshotPanel', () => {
     await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
     expect(fetch).not.toHaveBeenCalled();
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain('5 MB');
+  });
+
+  it('accepts 5,000,000 upload bytes and rejects 5,000,001 bytes', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ ok: true }, { status: 201 }));
+    vi.stubGlobal('fetch', fetch);
+    await render(<SnapshotPanel {...baseProps} />);
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+
+    const accepted = new File([new Uint8Array(5_000_000)], 'limit.png', {
+      type: 'image/png',
+    });
+    Object.defineProperty(input, 'files', { configurable: true, value: [accepted] });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    const acceptedBody = fetch.mock.calls[0]?.[1]?.body as FormData;
+    expect((acceptedBody.get('file') as File).size).toBe(5_000_000);
+
+    fetch.mockClear();
+    const rejected = new File([new Uint8Array(5_000_001)], 'too-large.png', {
+      type: 'image/png',
+    });
+    Object.defineProperty(input, 'files', { configurable: true, value: [rejected] });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain('5 MB');
+  });
+
+  it('visibly explains and links settings when manual mode has no resume URL', async () => {
+    await render(<SnapshotPanel {...baseProps} mode="manual" snapshotUrl={null} />);
+    const resume = button('자동 캡처 재개');
+    const descriptionId = resume.getAttribute('aria-describedby');
+
+    expect(resume.disabled).toBe(true);
+    expect(descriptionId).toBe('snapshot-resume-unavailable-yield');
+    expect(document.getElementById(descriptionId!)?.textContent).toContain('대표 URL');
+    expect(document.getElementById(descriptionId!)?.querySelector('a')?.getAttribute('href'))
+      .toBe('/projects/yield/edit');
+    expect(resume.getAttribute('title')).toBeNull();
   });
 });
 

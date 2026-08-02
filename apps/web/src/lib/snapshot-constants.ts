@@ -1,0 +1,1 @@
+export const MAX_SNAPSHOT_UPLOAD_BYTES = 5_000_000;

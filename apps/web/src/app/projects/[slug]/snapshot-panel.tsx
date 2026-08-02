@@ -6,8 +6,8 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '../../../components/ui/button';
 import { Card } from '../../../components/ui/card';
+import { MAX_SNAPSHOT_UPLOAD_BYTES } from '../../../lib/snapshot-constants';
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const FALLBACK_ERROR = '스냅샷 작업을 완료하지 못했습니다. 다시 시도해 주세요.';
 
@@ -95,7 +95,7 @@ export function SnapshotPanel({ slug, mode, snapshotUrl, snapshot }: SnapshotPan
       event.currentTarget.value = '';
       return;
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
+    if (file.size > MAX_SNAPSHOT_UPLOAD_BYTES) {
       setIsError(true);
       setMessage('이미지는 5 MB 이하여야 합니다.');
       event.currentTarget.value = '';
@@ -108,6 +108,7 @@ export function SnapshotPanel({ slug, mode, snapshotUrl, snapshot }: SnapshotPan
   }
 
   const uploadLabel = mode === 'manual' ? '이미지 교체' : '이미지 업로드';
+  const resumeDescriptionId = `snapshot-resume-unavailable-${slug}`;
 
   return (
     <Card>
@@ -193,7 +194,7 @@ export function SnapshotPanel({ slug, mode, snapshotUrl, snapshot }: SnapshotPan
           <Button
             variant="primary"
             disabled={pending !== null || snapshotUrl === null}
-            title={snapshotUrl === null ? '먼저 대표 URL을 설정해 주세요' : undefined}
+            aria-describedby={snapshotUrl === null ? resumeDescriptionId : undefined}
             onClick={() => request(
               'resume',
               `${baseEndpoint}/resume`,
@@ -205,7 +206,20 @@ export function SnapshotPanel({ slug, mode, snapshotUrl, snapshot }: SnapshotPan
           </Button>
         ) : null}
 
-        <label className={`inline-flex h-9 cursor-pointer items-center justify-center rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm font-medium text-[var(--line)] transition-colors hover:bg-white/[0.02] ${pending !== null ? 'pointer-events-none opacity-50' : ''}`}>
+        {mode === 'manual' && snapshotUrl === null ? (
+          <p id={resumeDescriptionId} className="w-full text-xs text-[var(--annotation)]">
+            자동 캡처를 재개하려면 먼저{' '}
+            <Link
+              href={`/projects/${slug}/edit`}
+              className="font-medium text-[var(--line-mute)] underline underline-offset-2 hover:text-[var(--line)]"
+            >
+              설정에서 대표 URL을 입력해 주세요
+            </Link>
+            .
+          </p>
+        ) : null}
+
+        <label className={`inline-flex h-9 cursor-pointer items-center justify-center rounded-[var(--radius-button)] border border-[var(--rule)] bg-[var(--paper)] px-3 text-sm font-medium text-[var(--line)] transition-colors hover:bg-white/[0.02] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--accent)] ${pending !== null ? 'pointer-events-none opacity-50' : ''}`}>
           {pending === 'upload' ? '업로드 중…' : uploadLabel}
           <input
             ref={fileInput}

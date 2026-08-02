@@ -52,6 +52,7 @@ export default async function EditProjectPage({
             스냅샷 설정
           </h3>
           <SnapshotSettingsForm
+            key={`${project.snapshotMode}:${project.snapshotUrl ?? ''}`}
             slug={project.slug}
             mode={project.snapshotMode}
             snapshotUrl={project.snapshotUrl}
