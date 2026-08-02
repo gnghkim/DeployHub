@@ -11,6 +11,16 @@ export type SnapshotErrorCode =
   | 'render_failed'
   | 'image_too_large';
 
+export class SnapshotProjectNotFoundError extends Error {
+  readonly projectId: string;
+
+  constructor(projectId: string) {
+    super(`snapshot project not found: ${projectId}`);
+    this.name = 'SnapshotProjectNotFoundError';
+    this.projectId = projectId;
+  }
+}
+
 type SnapshotImageInput = {
   projectId: string;
   imageData: Buffer;
@@ -38,26 +48,49 @@ export async function getSnapshotState(
   return snapshot;
 }
 
-export async function markSnapshotPending(db: Db, projectId: string): Promise<void> {
-  const attemptedAt = new Date();
-  await db
-    .insert(projectSnapshots)
-    .values({
-      projectId,
-      lastAttemptAt: attemptedAt,
-      lastAttemptStatus: 'pending',
-      lastError: null,
-      updatedAt: attemptedAt,
-    })
-    .onConflictDoUpdate({
-      target: projectSnapshots.projectId,
-      set: {
+export async function markSnapshotPending(
+  db: Db,
+  projectId: string,
+  expectedUrl: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({
+        snapshotMode: projects.snapshotMode,
+        snapshotUrl: projects.snapshotUrl,
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update');
+    if (!project) throw new SnapshotProjectNotFoundError(projectId);
+    if (
+      project.snapshotMode !== 'automatic'
+      || project.snapshotUrl !== expectedUrl
+    ) {
+      return false;
+    }
+
+    const attemptedAt = new Date();
+    await tx
+      .insert(projectSnapshots)
+      .values({
+        projectId,
         lastAttemptAt: attemptedAt,
         lastAttemptStatus: 'pending',
         lastError: null,
         updatedAt: attemptedAt,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: projectSnapshots.projectId,
+        set: {
+          lastAttemptAt: attemptedAt,
+          lastAttemptStatus: 'pending',
+          lastError: null,
+          updatedAt: attemptedAt,
+        },
+      });
+    return true;
+  });
 }
 
 export async function saveAutomaticSnapshot(
@@ -74,8 +107,9 @@ export async function saveAutomaticSnapshot(
       .where(eq(projects.id, input.projectId))
       .for('update');
 
+    if (!project) throw new SnapshotProjectNotFoundError(input.projectId);
     if (
-      project?.snapshotMode !== 'automatic'
+      project.snapshotMode !== 'automatic'
       || project.snapshotUrl !== input.url
     ) {
       return false;
@@ -120,7 +154,7 @@ export async function saveManualSnapshot(
       .from(projects)
       .where(eq(projects.id, input.projectId))
       .for('update');
-    if (!project) throw new Error('project not found');
+    if (!project) throw new SnapshotProjectNotFoundError(input.projectId);
 
     const capturedAt = input.capturedAt ?? new Date();
     const attemptedAt = new Date();
@@ -157,50 +191,93 @@ export async function saveManualSnapshot(
 export async function markSnapshotFailed(
   db: Db,
   projectId: string,
+  expectedUrl: string,
   errorCode: SnapshotErrorCode,
-): Promise<void> {
-  const attemptedAt = new Date();
-  await db
-    .insert(projectSnapshots)
-    .values({
-      projectId,
-      lastAttemptAt: attemptedAt,
-      lastAttemptStatus: 'failed',
-      lastError: errorCode,
-      updatedAt: attemptedAt,
-    })
-    .onConflictDoUpdate({
-      target: projectSnapshots.projectId,
-      set: {
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({
+        snapshotMode: projects.snapshotMode,
+        snapshotUrl: projects.snapshotUrl,
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update');
+    if (!project) throw new SnapshotProjectNotFoundError(projectId);
+    if (
+      project.snapshotMode !== 'automatic'
+      || project.snapshotUrl !== expectedUrl
+    ) {
+      return false;
+    }
+
+    const attemptedAt = new Date();
+    await tx
+      .insert(projectSnapshots)
+      .values({
+        projectId,
         lastAttemptAt: attemptedAt,
         lastAttemptStatus: 'failed',
         lastError: errorCode,
         updatedAt: attemptedAt,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: projectSnapshots.projectId,
+        set: {
+          lastAttemptAt: attemptedAt,
+          lastAttemptStatus: 'failed',
+          lastError: errorCode,
+          updatedAt: attemptedAt,
+        },
+      });
+    return true;
+  });
 }
 
-export async function resumeAutomaticSnapshot(db: Db, projectId: string): Promise<void> {
-  await db
-    .update(projects)
-    .set({ snapshotMode: 'automatic', updatedAt: new Date() })
-    .where(eq(projects.id, projectId));
+export async function resumeAutomaticSnapshot(db: Db, projectId: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({
+        snapshotMode: projects.snapshotMode,
+        snapshotUrl: projects.snapshotUrl,
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update');
+    if (!project) throw new SnapshotProjectNotFoundError(projectId);
+    if (!project.snapshotUrl || project.snapshotMode === 'automatic') return false;
+
+    await tx
+      .update(projects)
+      .set({ snapshotMode: 'automatic', updatedAt: new Date() })
+      .where(eq(projects.id, projectId));
+    return true;
+  });
 }
 
 export async function deleteSnapshotImage(db: Db, projectId: string): Promise<void> {
-  await db
-    .update(projectSnapshots)
-    .set({
-      imageData: null,
-      contentType: null,
-      width: null,
-      height: null,
-      source: null,
-      sourceUrl: null,
-      deploymentId: null,
-      checksum: null,
-      capturedAt: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectSnapshots.projectId, projectId));
+  await db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .for('update');
+    if (!project) throw new SnapshotProjectNotFoundError(projectId);
+
+    await tx
+      .update(projectSnapshots)
+      .set({
+        imageData: null,
+        contentType: null,
+        width: null,
+        height: null,
+        source: null,
+        sourceUrl: null,
+        deploymentId: null,
+        checksum: null,
+        capturedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectSnapshots.projectId, projectId));
+  });
 }

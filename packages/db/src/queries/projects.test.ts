@@ -15,6 +15,7 @@ let stop: () => Promise<void>;
 let countedDb: Db;
 let closeCountedDb: () => Promise<void>;
 let queryCount = 0;
+let queryLog: string[] = [];
 
 beforeAll(async () => {
   const s = await startTestDb();
@@ -24,8 +25,9 @@ beforeAll(async () => {
   countedDb = drizzle(pool, {
     schema: databaseSchema,
     logger: {
-      logQuery() {
+      logQuery(query) {
         queryCount += 1;
+        queryLog.push(query);
       },
     },
   });
@@ -199,7 +201,8 @@ describe('프로젝트 조회', () => {
       lastAttemptStatus: 'success',
     });
 
-    const [summary] = await listProjectsWithSummaryData(db);
+    queryLog = [];
+    const [summary] = await listProjectsWithSummaryData(countedDb);
 
     expect(summary?.snapshot).toEqual({
       hasImage: true,
@@ -209,6 +212,12 @@ describe('프로젝트 조회', () => {
       lastAttemptStatus: 'success',
     });
     expect(summary?.snapshot).not.toHaveProperty('imageData');
+    const snapshotQuery = queryLog.find((query) => query.includes('from "project_snapshots"'));
+    expect(snapshotQuery).toBeDefined();
+    expect(snapshotQuery).toContain('"image_data" is not null');
+    expect(snapshotQuery).toMatch(
+      /^select "project_id", "image_data" is not null, "source", "captured_at", "checksum", "last_attempt_status" from "project_snapshots"/,
+    );
   });
 
   it('스냅샷 행이 없으면 빈 스냅샷 메타데이터를 반환한다', async () => {
