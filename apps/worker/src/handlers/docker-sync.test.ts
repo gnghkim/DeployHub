@@ -87,7 +87,183 @@ async function runEmptySync() {
   )(job());
 }
 
+async function seedDockerSnapshotProject(input: {
+  slug: string;
+  externalId: string;
+  snapshotMode?: 'automatic' | 'manual' | 'disabled';
+  snapshotUrl?: string | null;
+}) {
+  const [project] = await db.insert(schema.projects).values({
+    name: input.slug,
+    slug: input.slug,
+    snapshotMode: input.snapshotMode ?? 'automatic',
+    snapshotUrl: input.snapshotUrl === undefined
+      ? `https://${input.slug}.example.com`
+      : input.snapshotUrl,
+  }).returning();
+  await db.insert(schema.components).values({
+    projectId: project!.id,
+    name: `${input.slug}-web`,
+    slug: `${input.slug}-web`,
+    componentType: 'frontend',
+    provider: 'docker',
+    containerName: input.externalId,
+  });
+  return project!;
+}
+
+function dockerResource(externalId: string): ExternalResource {
+  return {
+    provider: 'docker',
+    externalId,
+    resourceType: 'docker_container',
+    name: externalId,
+    metadata: {},
+    observedAt: '2026-08-02T00:00:00.000Z',
+  };
+}
+
+function dockerDeployment(input: {
+  externalId: string;
+  deploymentId?: string;
+  environment?: string;
+  status?: string;
+}): ExternalDeployment {
+  return {
+    resourceExternalId: input.externalId,
+    externalDeploymentId: input.deploymentId ?? `dpl-${input.externalId}`,
+    environment: input.environment ?? 'production',
+    status: input.status ?? 'running',
+    metadata: {},
+  };
+}
+
 describe('Docker sync handler', () => {
+  it('enqueues a capture for a newly observed running production deployment', async () => {
+    const project = await seedDockerSnapshotProject({
+      slug: 'docker-automatic',
+      externalId: 'docker-automatic',
+    });
+
+    await createDockerSyncHandler(db, 'http://socket-proxy:2375', {
+      createCollector: () => collector(
+        [dockerResource('docker-automatic')],
+        [dockerDeployment({ externalId: 'docker-automatic' })],
+        [],
+      ),
+    })(job());
+
+    const queued = await db.select().from(schema.jobs);
+    const [deployment] = await db.select().from(schema.deployments);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      type: 'snapshot.capture',
+      dedupeKey: `snapshot:${project.id}`,
+      payload: {
+        projectId: project.id,
+        url: 'https://docker-automatic.example.com',
+        deploymentId: deployment!.id,
+      },
+      status: 'pending',
+    });
+  });
+
+  it('does not enqueue for an existing deployment status update', async () => {
+    const project = await seedDockerSnapshotProject({
+      slug: 'docker-existing',
+      externalId: 'docker-existing',
+    });
+    await db.insert(schema.deployments).values({
+      projectId: project.id,
+      provider: 'docker',
+      externalDeploymentId: 'dpl-docker-existing',
+      environment: 'production',
+      status: 'starting',
+    });
+
+    await createDockerSyncHandler(db, 'http://socket-proxy:2375', {
+      createCollector: () => collector(
+        [dockerResource('docker-existing')],
+        [dockerDeployment({ externalId: 'docker-existing' })],
+        [],
+      ),
+    })(job());
+
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+  });
+
+  it('ignores ineligible deployments and projects', async () => {
+    const cases: Array<{
+      slug: string;
+      environment?: string;
+      status?: string;
+      snapshotMode?: 'automatic' | 'manual' | 'disabled';
+      snapshotUrl?: string | null;
+    }> = [
+      { slug: 'docker-preview', environment: 'preview' },
+      { slug: 'docker-staging', environment: 'staging' },
+      { slug: 'docker-stopped', status: 'stopped' },
+      { slug: 'docker-failed', status: 'failed' },
+      { slug: 'docker-manual', snapshotMode: 'manual' as const },
+      { slug: 'docker-disabled', snapshotMode: 'disabled' as const },
+      { slug: 'docker-no-url', snapshotUrl: null },
+    ];
+    for (const input of cases) {
+      await seedDockerSnapshotProject({
+        slug: input.slug,
+        externalId: input.slug,
+        snapshotMode: input.snapshotMode,
+        snapshotUrl: input.snapshotUrl,
+      });
+    }
+
+    await createDockerSyncHandler(db, 'http://socket-proxy:2375', {
+      createCollector: () => collector(
+        cases.map((input) => dockerResource(input.slug)),
+        cases.map((input) => dockerDeployment({
+          externalId: input.slug,
+          environment: input.environment,
+          status: input.status,
+        })),
+        [],
+      ),
+    })(job());
+
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+  });
+
+  it('coalesces two new deployments for one project into one active job', async () => {
+    const project = await seedDockerSnapshotProject({
+      slug: 'docker-coalesced',
+      externalId: 'docker-coalesced',
+    });
+
+    await createDockerSyncHandler(db, 'http://socket-proxy:2375', {
+      createCollector: () => collector(
+        [dockerResource('docker-coalesced')],
+        [
+          dockerDeployment({
+            externalId: 'docker-coalesced',
+            deploymentId: 'dpl-docker-first',
+          }),
+          dockerDeployment({
+            externalId: 'docker-coalesced',
+            deploymentId: 'dpl-docker-second',
+          }),
+        ],
+        [],
+      ),
+    })(job());
+
+    const queued = await db.select().from(schema.jobs);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      type: 'snapshot.capture',
+      dedupeKey: `snapshot:${project.id}`,
+      status: 'pending',
+    });
+  });
+
   it('links only exact manifest or label targets and preserves user decisions', async () => {
     const [project] = await db.insert(schema.projects).values({
       name: 'DeployHub',

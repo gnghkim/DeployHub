@@ -18,8 +18,11 @@ import {
   linkDeclaredResources,
   schema,
   type Db,
+  upsertDeployment,
 } from '@deployhub/db';
 import type { JobHandler } from '../runner';
+import { isSuccessfulProductionDeployment } from './deployment-snapshot';
+import { enqueueSnapshotCapture } from './snapshot-capture';
 
 const SYNC_ERROR = 'Docker 동기화에 실패했습니다.';
 const SNAPSHOT_RETENTION_DAYS = 14;
@@ -83,7 +86,12 @@ export function createDockerSyncHandler(
         (resource) => resource.externalId,
       );
 
-      await db.transaction(async (tx) => {
+      const captureCandidates = await db.transaction(async (tx) => {
+        const candidates: Array<{
+          projectId: string;
+          url: string;
+          deploymentId: string;
+        }> = [];
         for (const resource of resources) {
           await tx
             .insert(schema.resources)
@@ -145,6 +153,8 @@ export function createDockerSyncHandler(
               externalId: schema.resources.externalId,
               componentId: schema.componentResources.componentId,
               projectId: schema.components.projectId,
+              snapshotMode: schema.projects.snapshotMode,
+              snapshotUrl: schema.projects.snapshotUrl,
             })
             .from(schema.resources)
             .leftJoin(
@@ -160,6 +170,10 @@ export function createDockerSyncHandler(
                 schema.components.id,
                 schema.componentResources.componentId,
               ),
+            )
+            .leftJoin(
+              schema.projects,
+              eq(schema.projects.id, schema.components.projectId),
             )
             .where(
               and(
@@ -177,6 +191,8 @@ export function createDockerSyncHandler(
             id: string;
             componentId: string | null;
             projectId: string | null;
+            snapshotMode: 'disabled' | 'automatic' | 'manual' | null;
+            snapshotUrl: string | null;
           }
         >();
         for (const link of links) {
@@ -185,6 +201,8 @@ export function createDockerSyncHandler(
               id: link.id,
               componentId: link.componentId,
               projectId: link.projectId,
+              snapshotMode: link.snapshotMode,
+              snapshotUrl: link.snapshotUrl,
             });
           }
         }
@@ -261,18 +279,31 @@ export function createDockerSyncHandler(
             completedAt: deploymentDate(deployment.completedAt),
             metadata: deployment.metadata,
           };
-          await tx
-            .insert(schema.deployments)
-            .values(values)
-            .onConflictDoUpdate({
-              target: [
-                schema.deployments.provider,
-                schema.deployments.externalDeploymentId,
-              ],
-              set: values,
+          const saved = await upsertDeployment(tx, values);
+          if (
+            saved.inserted
+            && resource?.projectId !== null
+            && resource?.projectId !== undefined
+            && resource.snapshotMode === 'automatic'
+            && resource.snapshotUrl !== null
+            && isSuccessfulProductionDeployment({
+              provider: 'docker',
+              environment: deployment.environment,
+              status: deployment.status,
+            })
+          ) {
+            candidates.push({
+              projectId: resource.projectId,
+              url: resource.snapshotUrl,
+              deploymentId: saved.id,
             });
+          }
         }
+        return candidates;
       });
+      for (const candidate of captureCandidates) {
+        await enqueueSnapshotCapture(db, candidate);
+      }
     } catch (error) {
       throw new Error(safeSyncError(error));
     }

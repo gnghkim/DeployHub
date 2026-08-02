@@ -17,9 +17,12 @@ import {
   linkDeclaredResources,
   schema,
   type Db,
+  upsertDeployment,
 } from '@deployhub/db';
 import { decrypt } from '@deployhub/shared';
 import type { JobHandler } from '../runner';
+import { isSuccessfulProductionDeployment } from './deployment-snapshot';
+import { enqueueSnapshotCapture } from './snapshot-capture';
 
 const SYNC_ERROR = 'Vercel 동기화에 실패했습니다.';
 const ZERO_PROJECTS_WARNING =
@@ -88,7 +91,12 @@ export function createVercelSyncHandler(
       const deployments = await collector.listDeployments();
       const externalIds = resources.map((resource) => resource.externalId);
 
-      await db.transaction(async (tx) => {
+      const captureCandidates = await db.transaction(async (tx) => {
+        const candidates: Array<{
+          projectId: string;
+          url: string;
+          deploymentId: string;
+        }> = [];
         for (const resource of resources) {
           await tx
             .insert(schema.resources)
@@ -159,6 +167,8 @@ export function createVercelSyncHandler(
               componentId: schema.componentResources.componentId,
               projectId: schema.components.projectId,
               isPrimary: schema.componentResources.isPrimary,
+              snapshotMode: schema.projects.snapshotMode,
+              snapshotUrl: schema.projects.snapshotUrl,
             })
             .from(schema.resources)
             .leftJoin(
@@ -175,6 +185,10 @@ export function createVercelSyncHandler(
                 schema.componentResources.componentId,
               ),
             )
+            .leftJoin(
+              schema.projects,
+              eq(schema.projects.id, schema.components.projectId),
+            )
             .where(
               and(
                 eq(schema.resources.provider, 'vercel'),
@@ -190,17 +204,25 @@ export function createVercelSyncHandler(
             );
         const linkByExternalId = new Map<
           string,
-          { componentId: string; projectId: string }
+          {
+            componentId: string;
+            projectId: string;
+            snapshotMode: 'disabled' | 'automatic' | 'manual';
+            snapshotUrl: string | null;
+          }
         >();
         for (const link of links) {
           if (
             !linkByExternalId.has(link.externalId)
             && link.componentId !== null
             && link.projectId !== null
+            && link.snapshotMode !== null
           ) {
             linkByExternalId.set(link.externalId, {
               componentId: link.componentId,
               projectId: link.projectId,
+              snapshotMode: link.snapshotMode,
+              snapshotUrl: link.snapshotUrl,
             });
           }
         }
@@ -224,16 +246,24 @@ export function createVercelSyncHandler(
             completedAt: deploymentDate(deployment.completedAt),
             metadata: deployment.metadata,
           };
-          await tx
-            .insert(schema.deployments)
-            .values(values)
-            .onConflictDoUpdate({
-              target: [
-                schema.deployments.provider,
-                schema.deployments.externalDeploymentId,
-              ],
-              set: values,
+          const saved = await upsertDeployment(tx, values);
+          if (
+            saved.inserted
+            && link !== undefined
+            && link.snapshotMode === 'automatic'
+            && link.snapshotUrl !== null
+            && isSuccessfulProductionDeployment({
+              provider: 'vercel',
+              environment: deployment.environment,
+              status: deployment.status,
+            })
+          ) {
+            candidates.push({
+              projectId: link.projectId,
+              url: link.snapshotUrl,
+              deploymentId: saved.id,
             });
+          }
         }
 
         await tx
@@ -245,7 +275,11 @@ export function createVercelSyncHandler(
               : null,
           })
           .where(eq(schema.providerAccounts.id, account.id));
+        return candidates;
       });
+      for (const candidate of captureCandidates) {
+        await enqueueSnapshotCapture(db, candidate);
+      }
     } catch (error) {
       const message = safeSyncError(error);
       await db

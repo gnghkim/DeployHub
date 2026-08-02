@@ -56,24 +56,34 @@ export async function pruneSnapshots(
 export async function upsertDeployment(
   db: Db,
   input: DeploymentInput,
-): Promise<void> {
-  await db
+): Promise<{ id: string; inserted: boolean }> {
+  const [inserted] = await db
     .insert(deployments)
     .values(input)
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [deployments.provider, deployments.externalDeploymentId],
-      set: {
-        projectId: input.projectId,
-        componentId: input.componentId,
-        environment: input.environment,
-        version: input.version,
-        commitSha: input.commitSha,
-        imageName: input.imageName,
-        status: input.status,
-        deploymentUrl: input.deploymentUrl,
-        startedAt: input.startedAt,
-        completedAt: input.completedAt,
-        metadata: input.metadata,
-      },
-    });
+    })
+    .returning({ id: deployments.id });
+  if (inserted !== undefined) return { id: inserted.id, inserted: true };
+
+  const [updated] = await db
+    .update(deployments)
+    .set({
+      projectId: input.projectId,
+      componentId: input.componentId,
+      environment: input.environment,
+      version: input.version,
+      commitSha: input.commitSha,
+      imageName: input.imageName,
+      status: input.status,
+      deploymentUrl: input.deploymentUrl,
+      startedAt: input.startedAt,
+      completedAt: input.completedAt,
+      metadata: input.metadata,
+    })
+    .where(sql`${deployments.provider} = ${input.provider}
+      and ${deployments.externalDeploymentId} = ${input.externalDeploymentId}`)
+    .returning({ id: deployments.id });
+  if (updated === undefined) throw new Error('deployment upsert failed');
+  return { id: updated.id, inserted: false };
 }

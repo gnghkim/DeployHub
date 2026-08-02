@@ -148,14 +148,14 @@ describe('observation queries', () => {
   });
 
   it('upserts a deployment by provider and external deployment id', async () => {
-    await upsertDeployment(db, {
+    const inserted = await upsertDeployment(db, {
       provider: 'vercel',
       externalDeploymentId: 'dpl_123',
       environment: 'production',
       status: 'building',
       version: 'v1',
     });
-    await upsertDeployment(db, {
+    const updated = await upsertDeployment(db, {
       provider: 'vercel',
       externalDeploymentId: 'dpl_123',
       environment: 'production',
@@ -166,6 +166,8 @@ describe('observation queries', () => {
     const rows = await db.select().from(schema.deployments);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: 'ready', version: 'v2' });
+    expect(inserted).toEqual({ id: rows[0]!.id, inserted: true });
+    expect(updated).toEqual({ id: rows[0]!.id, inserted: false });
   });
 
   it('allows a deployment without a project id', async () => {

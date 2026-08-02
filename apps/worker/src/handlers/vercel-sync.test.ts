@@ -90,7 +90,152 @@ function collector(
   };
 }
 
+async function seedVercelSnapshotProject(input: {
+  slug: string;
+  externalId: string;
+  snapshotMode?: 'automatic' | 'manual' | 'disabled';
+  snapshotUrl?: string | null;
+}) {
+  const [project] = await db.insert(schema.projects).values({
+    name: input.slug,
+    slug: input.slug,
+    snapshotMode: input.snapshotMode ?? 'automatic',
+    snapshotUrl: input.snapshotUrl === undefined
+      ? `https://${input.slug}.example.com`
+      : input.snapshotUrl,
+  }).returning();
+  await db.insert(schema.components).values({
+    projectId: project!.id,
+    name: `${input.slug}-web`,
+    slug: `${input.slug}-web`,
+    componentType: 'frontend',
+    provider: 'vercel',
+    externalRef: input.externalId,
+  });
+  return project!;
+}
+
+function vercelResource(externalId: string): ExternalResource {
+  return {
+    provider: 'vercel',
+    externalId,
+    resourceType: 'vercel_project',
+    name: externalId,
+    metadata: {},
+    observedAt: '2026-08-02T00:00:00.000Z',
+  };
+}
+
+function vercelDeployment(input: {
+  externalId: string;
+  deploymentId?: string;
+  environment?: string;
+  status?: string;
+}): ExternalDeployment {
+  return {
+    resourceExternalId: input.externalId,
+    externalDeploymentId: input.deploymentId ?? `dpl-${input.externalId}`,
+    environment: input.environment ?? 'production',
+    status: input.status ?? 'READY',
+    metadata: {},
+  };
+}
+
 describe('Vercel sync handler', () => {
+  it('enqueues a capture for a newly observed READY production deployment', async () => {
+    const accountId = await insertAccount();
+    const project = await seedVercelSnapshotProject({
+      slug: 'vercel-automatic',
+      externalId: 'vercel-automatic',
+    });
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector: () => collector(
+        [vercelResource('vercel-automatic')],
+        [vercelDeployment({
+          externalId: 'vercel-automatic',
+          environment: 'PRODUCTION',
+        })],
+      ),
+    })(job(accountId));
+
+    const queued = await db.select().from(schema.jobs);
+    const [deployment] = await db.select().from(schema.deployments);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      type: 'snapshot.capture',
+      dedupeKey: `snapshot:${project.id}`,
+      payload: {
+        projectId: project.id,
+        url: 'https://vercel-automatic.example.com',
+        deploymentId: deployment!.id,
+      },
+      status: 'pending',
+    });
+  });
+
+  it('does not enqueue for an existing deployment status update', async () => {
+    const accountId = await insertAccount();
+    const project = await seedVercelSnapshotProject({
+      slug: 'vercel-existing',
+      externalId: 'vercel-existing',
+    });
+    await db.insert(schema.deployments).values({
+      projectId: project.id,
+      provider: 'vercel',
+      externalDeploymentId: 'dpl-vercel-existing',
+      environment: 'production',
+      status: 'BUILDING',
+    });
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector: () => collector(
+        [vercelResource('vercel-existing')],
+        [vercelDeployment({ externalId: 'vercel-existing' })],
+      ),
+    })(job(accountId));
+
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+  });
+
+  it('ignores preview, non-ready, manual, disabled, and missing URL deployments', async () => {
+    const accountId = await insertAccount();
+    const cases: Array<{
+      slug: string;
+      environment?: string;
+      status?: string;
+      snapshotMode?: 'automatic' | 'manual' | 'disabled';
+      snapshotUrl?: string | null;
+    }> = [
+      { slug: 'vercel-preview', environment: 'preview' },
+      { slug: 'vercel-building', status: 'BUILDING' },
+      { slug: 'vercel-manual', snapshotMode: 'manual' },
+      { slug: 'vercel-disabled', snapshotMode: 'disabled' },
+      { slug: 'vercel-no-url', snapshotUrl: null },
+    ];
+    for (const input of cases) {
+      await seedVercelSnapshotProject({
+        slug: input.slug,
+        externalId: input.slug,
+        snapshotMode: input.snapshotMode,
+        snapshotUrl: input.snapshotUrl,
+      });
+    }
+
+    await createVercelSyncHandler(db, encryptionKey, {
+      createCollector: () => collector(
+        cases.map((input) => vercelResource(input.slug)),
+        cases.map((input) => vercelDeployment({
+          externalId: input.slug,
+          environment: input.environment,
+          status: input.status,
+        })),
+      ),
+    })(job(accountId));
+
+    expect(await db.select().from(schema.jobs)).toEqual([]);
+  });
+
   it('passes the stored external account ID to the collector', async () => {
     const accountId = await insertAccount(undefined, 'team_123');
     const createCollector = vi.fn(() => collector([], []));
