@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import {
   insertDraft,
   schema,
@@ -37,7 +37,11 @@ vi.mock('../auth/config', () => ({ auth: authMock }));
 vi.mock('../lib/db', () => ({ db: dbProxy }));
 vi.mock('next/cache', () => ({ revalidatePath: revalidatePathMock }));
 
-import { approveDraft, rejectDraft } from './drafts';
+import {
+  approveDraft,
+  enqueueApprovedDraftRefreshes,
+  rejectDraft,
+} from './drafts';
 
 const MANIFEST = `apiVersion: deployhub.io/v1
 kind: Project
@@ -72,6 +76,32 @@ spec:
       environment: production
 `;
 
+const RECONCILIATION_MANIFEST = `apiVersion: deployhub.io/v1
+kind: Project
+metadata:
+  name: LinkVault
+  slug: linkvault
+spec:
+  lifecycle: production
+  components:
+    - name: web
+      type: frontend
+      provider: vercel
+      externalRef: prj_linkvault
+    - name: worker
+      type: worker
+      provider: hostinger
+      container: linkvault-worker
+    - name: database
+      type: database
+      provider: supabase
+      externalRef: supabase-linkvault
+    - name: authentication
+      type: authentication
+      provider: supabase
+      externalRef: supabase-linkvault
+`;
+
 let db: Db;
 let stop: () => Promise<void>;
 let reviewerId: string;
@@ -88,6 +118,10 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  await db.delete(schema.componentResources);
+  await db.delete(schema.resources);
+  await db.delete(schema.providerAccounts);
+  await db.delete(schema.jobs);
   await db.delete(schema.projectDrafts);
   await db.delete(schema.domains);
   await db.delete(schema.components);
@@ -292,6 +326,131 @@ describe('approveDraft', () => {
     )).toContain('legacy-api');
   });
 
+  it('reconciles declared resources, preserves user links, and queues refreshes', async () => {
+    const [project] = await db
+      .insert(schema.projects)
+      .values({ name: 'LinkVault', slug: 'linkvault' })
+      .returning();
+    if (!project) throw new Error('project insert failed');
+    const components = await db
+      .insert(schema.components)
+      .values([
+        { projectId: project.id, name: 'web', slug: 'web', componentType: 'frontend' },
+        { projectId: project.id, name: 'worker', slug: 'worker', componentType: 'worker' },
+        { projectId: project.id, name: 'database', slug: 'database', componentType: 'database' },
+        { projectId: project.id, name: 'authentication', slug: 'authentication', componentType: 'authentication' },
+        { projectId: project.id, name: 'legacy-api', slug: 'legacy-api', componentType: 'api' },
+      ])
+      .returning();
+    const componentByName = new Map(
+      components.map((component) => [component.name, component]),
+    );
+    const resources = await db
+      .insert(schema.resources)
+      .values([
+        { provider: 'vercel', externalId: 'prj_linkvault', resourceType: 'vercel_project', name: 'linkvault' },
+        { provider: 'docker', externalId: 'container-worker', resourceType: 'docker_container', name: 'linkvault-worker' },
+        { provider: 'supabase', externalId: 'supabase-linkvault', resourceType: 'supabase_project', name: 'LinkVault' },
+        { provider: 'docker', externalId: 'stale-manifest', resourceType: 'docker_container', name: 'old-manifest' },
+        { provider: 'docker', externalId: 'stale-label', resourceType: 'docker_container', name: 'old-label' },
+        { provider: 'vercel', externalId: 'manual-vercel', resourceType: 'vercel_project', name: 'manual' },
+      ])
+      .returning();
+    const resourceByExternalId = new Map(
+      resources.map((resource) => [resource.externalId, resource]),
+    );
+    const legacy = componentByName.get('legacy-api');
+    const manualResource = resourceByExternalId.get('manual-vercel');
+    if (!legacy || !manualResource) throw new Error('link fixture missing');
+    await db.insert(schema.componentResources).values([
+      {
+        componentId: legacy.id,
+        resourceId: resourceByExternalId.get('stale-manifest')!.id,
+        relationType: 'deployed_to',
+        linkedBy: 'manifest',
+      },
+      {
+        componentId: legacy.id,
+        resourceId: resourceByExternalId.get('stale-label')!.id,
+        relationType: 'deployed_to',
+        linkedBy: 'label',
+      },
+      {
+        componentId: legacy.id,
+        resourceId: manualResource.id,
+        relationType: 'deployed_to',
+        linkedBy: 'user',
+      },
+    ]);
+    const [userLinkBefore] = await db
+      .select()
+      .from(schema.componentResources)
+      .where(eq(schema.componentResources.resourceId, manualResource.id));
+    await db.insert(schema.providerAccounts).values([
+      { provider: 'vercel', name: 'team', encryptedToken: 'encrypted-vercel' },
+      { provider: 'supabase', name: 'supabase', encryptedToken: 'encrypted-supabase' },
+    ]);
+    const draft = await pendingDraft({
+      projectId: project.id,
+      manifestYaml: RECONCILIATION_MANIFEST,
+    });
+
+    await approveDraft(draft.id);
+
+    const links = await db
+      .select({
+        id: schema.componentResources.id,
+        componentId: schema.componentResources.componentId,
+        componentName: schema.components.name,
+        provider: schema.resources.provider,
+        externalId: schema.resources.externalId,
+        linkedBy: schema.componentResources.linkedBy,
+      })
+      .from(schema.componentResources)
+      .innerJoin(
+        schema.components,
+        eq(schema.components.id, schema.componentResources.componentId),
+      )
+      .innerJoin(
+        schema.resources,
+        eq(schema.resources.id, schema.componentResources.resourceId),
+      );
+    expect(links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ componentName: 'web', provider: 'vercel', linkedBy: 'manifest' }),
+      expect.objectContaining({ componentName: 'worker', provider: 'docker', linkedBy: 'manifest' }),
+      expect.objectContaining({ componentName: 'database', provider: 'supabase', linkedBy: 'manifest' }),
+      expect.objectContaining({ componentName: 'authentication', provider: 'supabase', linkedBy: 'manifest' }),
+    ]));
+    expect(links).not.toContainEqual(
+      expect.objectContaining({ externalId: 'stale-manifest' }),
+    );
+    expect(links).not.toContainEqual(
+      expect.objectContaining({ externalId: 'stale-label' }),
+    );
+    expect(links).toContainEqual(expect.objectContaining({
+      id: userLinkBefore?.id,
+      componentId: legacy.id,
+      externalId: 'manual-vercel',
+      linkedBy: 'user',
+    }));
+
+    const jobs = await db
+      .select({
+        type: schema.jobs.type,
+        dedupeKey: schema.jobs.dedupeKey,
+        status: schema.jobs.status,
+      })
+      .from(schema.jobs)
+      .orderBy(asc(schema.jobs.type));
+    expect(jobs).toEqual([
+      { type: 'docker.sync', dedupeKey: 'docker:global', status: 'pending' },
+      { type: 'supabase.sync', dedupeKey: expect.stringMatching(/^supabase:/), status: 'pending' },
+      { type: 'vercel.sync', dedupeKey: expect.stringMatching(/^vercel:/), status: 'pending' },
+    ]);
+    expect(revalidatePathMock).toHaveBeenCalledWith('/projects/linkvault');
+    expect(revalidatePathMock).toHaveBeenCalledWith('/settings/providers');
+  });
+
   it('does not allow an approved Draft to be approved again', async () => {
     const draft = await pendingDraft();
     await approveDraft(draft.id);
@@ -306,6 +465,31 @@ describe('approveDraft', () => {
       status: 'approved',
       reviewedBy: reviewerId,
     });
+  });
+});
+
+describe('enqueueApprovedDraftRefreshes', () => {
+  it('keeps approval successful and logs only safe job metadata on enqueue failure', async () => {
+    const enqueueRefresh = vi
+      .fn()
+      .mockRejectedValue(new Error('provider-secret'));
+    const logError = vi.fn();
+
+    await expect(enqueueApprovedDraftRefreshes({
+      accounts: [{ id: 'account-1', provider: 'supabase' }],
+      docker: true,
+    }, enqueueRefresh, logError)).resolves.toBeUndefined();
+
+    expect(enqueueRefresh).toHaveBeenCalledTimes(2);
+    expect(logError).toHaveBeenCalledWith(
+      '[draft] supabase.sync refresh job 등록 실패',
+    );
+    expect(logError).toHaveBeenCalledWith(
+      '[draft] docker.sync refresh job 등록 실패',
+    );
+    expect(JSON.stringify(logError.mock.calls)).not.toContain(
+      'provider-secret',
+    );
   });
 });
 

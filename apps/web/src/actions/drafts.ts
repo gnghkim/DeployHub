@@ -1,11 +1,58 @@
 'use server';
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
-import { schema } from '@deployhub/db';
+import {
+  enqueueUnique,
+  linkDeclaredResources,
+  schema,
+} from '@deployhub/db';
 import { parseManifest } from '@deployhub/manifest';
 import { auth } from '../auth/config';
 import { db } from '../lib/db';
+
+type ApprovedDraftRefreshPlan = {
+  accounts: Array<{ id: string; provider: 'vercel' | 'supabase' }>;
+  docker: boolean;
+};
+
+type ApprovedDraftResult = ApprovedDraftRefreshPlan & {
+  projectSlug: string;
+};
+
+type EnqueueRefresh = typeof enqueueUnique;
+
+export async function enqueueApprovedDraftRefreshes(
+  plan: ApprovedDraftRefreshPlan,
+  enqueueRefresh: EnqueueRefresh = (database, options) => (
+    enqueueUnique(database, options)
+  ),
+  logError: (message: string) => void = (message) => console.error(message),
+): Promise<void> {
+  const requests: Array<{
+    type: string;
+    dedupeKey: string;
+    payload: Record<string, unknown>;
+  }> = plan.accounts.map((account) => ({
+    type: `${account.provider}.sync`,
+    dedupeKey: `${account.provider}:${account.id}`,
+    payload: { accountId: account.id },
+  }));
+  if (plan.docker) {
+    requests.push({
+      type: 'docker.sync',
+      dedupeKey: 'docker:global',
+      payload: {},
+    });
+  }
+  for (const request of requests) {
+    try {
+      await enqueueRefresh(db, request);
+    } catch {
+      logError(`[draft] ${request.type} refresh job 등록 실패`);
+    }
+  }
+}
 
 function componentFieldSources(
   sources: unknown,
@@ -23,7 +70,7 @@ export async function approveDraft(id: string): Promise<void> {
   const reviewerId = session?.user?.id;
   if (!reviewerId) throw new Error('인증이 필요합니다.');
 
-  await db.transaction(async (tx) => {
+  const approved = await db.transaction(async (tx) => {
     const [draft] = await tx
       .update(schema.projectDrafts)
       .set({
@@ -141,11 +188,48 @@ export async function approveDraft(id: string): Promise<void> {
         environment: domain.environment,
       })));
     }
+
+    for (const provider of ['vercel', 'docker', 'supabase'] as const) {
+      await linkDeclaredResources(tx, { provider });
+    }
+    const declaredProviders = new Set(
+      manifest.spec.components.flatMap((component) => (
+        component.provider === 'vercel' || component.provider === 'supabase'
+          ? [component.provider]
+          : []
+      )),
+    );
+    const accounts = declaredProviders.size === 0
+      ? []
+      : await tx
+        .select({
+          id: schema.providerAccounts.id,
+          provider: schema.providerAccounts.provider,
+        })
+        .from(schema.providerAccounts)
+        .where(inArray(
+          schema.providerAccounts.provider,
+          [...declaredProviders],
+        ));
+    return {
+      accounts: accounts.filter((account): account is {
+        id: string;
+        provider: 'vercel' | 'supabase';
+      } => account.provider === 'vercel' || account.provider === 'supabase'),
+      docker: manifest.spec.components.some(
+        (component) => component.container !== undefined,
+      ),
+      projectSlug: manifest.metadata.slug,
+    } satisfies ApprovedDraftResult;
   });
+
+  await enqueueApprovedDraftRefreshes(approved);
 
   revalidatePath('/settings/drafts');
   revalidatePath(`/settings/drafts/${id}`);
   revalidatePath('/projects');
+  revalidatePath(`/projects/${approved.projectSlug}`);
+  revalidatePath('/settings/providers');
 }
 
 export async function rejectDraft(id: string): Promise<void> {
