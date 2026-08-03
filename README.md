@@ -148,6 +148,7 @@ node packages/cli/dist/index.js sync --draft
 | 문서 | 내용 |
 | --- | --- |
 | [운영 배포 가이드](./docs/deployment.md) | Hostinger VPS, Docker Compose, Caddy, 마이그레이션과 배포 검증 |
+| [AI 프로젝트 등록 위임 매뉴얼](./docs/ai-project-registration-manual.md) | AI에게 신규 등록·정보 갱신을 맡기는 요청문과 Draft 검토 절차 |
 | [프로젝트 등록 가이드](./docs/project-registration.md) | 토큰 발급, manifest 생성·검증, Draft 제출과 승인 |
 | [CLI npm 게시 절차](./docs/cli-npm-publishing.md) | `@deployhub/cli` 패키지 검증과 게시 |
 | [DeployHub AGENTS 템플릿](./templates/AGENTS.deployhub.md) | 다른 저장소에서 AI 에이전트가 따라야 할 등록 절차 |
