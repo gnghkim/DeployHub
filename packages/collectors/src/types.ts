@@ -44,3 +44,4 @@ export interface DeploymentCollector extends ProviderCollector {
 }
 
 export type VercelCollector = DeploymentCollector;
+export type SupabaseCollector = ProviderCollector;

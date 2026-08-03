@@ -7,6 +7,10 @@ export {
 } from './vercel';
 export type { VercelEnvironmentVariable } from './vercel';
 export {
+  createSupabaseCollector,
+  normalizeSupabaseProject,
+} from './supabase';
+export {
   createDockerCollector,
   extractContainerHealth,
   normalizeDockerContainer,
@@ -30,5 +34,6 @@ export type {
   ExternalDeployment,
   ExternalResource,
   ProviderCollector,
+  SupabaseCollector,
   VercelCollector,
 } from './types';
