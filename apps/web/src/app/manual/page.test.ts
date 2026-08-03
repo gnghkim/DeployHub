@@ -134,6 +134,32 @@ describe('in-app manual page', () => {
     }
   });
 
+  it('documents safe environment handoff, recovery, and cleanup', () => {
+    const requiredGuidance = [
+      "Read-Host 'DEPLOYHUB_TOKEN' -AsSecureString",
+      "SetEnvironmentVariable('DEPLOYHUB_TOKEN', $plainToken, 'User')",
+      '이미 실행 중인 Orca/AI',
+      '완전히 종료하고 새로 시작',
+      'DEPLOYHUB_URL_PRESENT=$urlPresent',
+      'DEPLOYHUB_TOKEN_PRESENT=$tokenPresent',
+      '값, 길이, 접두사 또는 일부 문자열',
+      '동일한 PowerShell 호출',
+      "SetEnvironmentVariable('DEPLOYHUB_TOKEN', $null, 'User')",
+      '즉시 폐기하고 새 토큰을 발급',
+    ];
+
+    for (const source of [page, markdown]) {
+      for (const guidance of requiredGuidance) {
+        expect(source).toContain(guidance);
+      }
+    }
+
+    expect(page).toContain('const ENVIRONMENT_RECOVERY_PROMPT');
+    expect(page).toContain(
+      '<CopyablePrompt>{ENVIRONMENT_RECOVERY_PROMPT}</CopyablePrompt>',
+    );
+  });
+
   it('preserves the deployment and secret-handling boundaries', () => {
     expect(page).toContain('대상 프로젝트의 실제 서비스 배포는 다루지');
     expect(page).toContain(

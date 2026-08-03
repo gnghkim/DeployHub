@@ -69,6 +69,15 @@ DEPLOYHUB_URL 설정, 네트워크 접근, 토큰 만료·권한·저장소 제�
 토큰을 대화나 명령 인자로 요구하지 말고, 오류 원인과 사용자가 해야 할 조치만 보고해.
 연결 문제가 해결될 때까지 Draft를 다시 제출하지 마.`;
 
+const ENVIRONMENT_RECOVERY_PROMPT = `현재 AI 세션에서 DEPLOYHUB_URL과 DEPLOYHUB_TOKEN이 보이지 않는 문제만 안전하게 복구해줘.
+
+- 토큰을 대화로 요구하지 말고 값, 길이, 접두사 또는 일부 문자열을 출력하지 마.
+- 현재 PowerShell 프로세스의 값이 비어 있을 때만 User 범위 환경변수에서 읽어 $env:DEPLOYHUB_URL과 $env:DEPLOYHUB_TOKEN에 복사해.
+- 각 npx @deployhub/cli 명령을 실행하는 동일한 PowerShell 호출 안에서 환경변수를 불러와. 다음 도구 호출까지 유지된다고 가정하지 마.
+- 확인 결과는 DEPLOYHUB_URL_PRESENT와 DEPLOYHUB_TOKEN_PRESENT의 True/False만 보고해.
+- User 범위에도 값이 없으면 CLI와 Draft 제출을 실행하지 말고 Orca/AI를 완전히 종료하고 새로 시작해야 한다고 보고해.
+- Draft 제출에 실패했거나 결과가 불확실하면 자동으로 재시도하지 마.`;
+
 const COMPLETION_REPORT = `결과: Draft 제출 완료
 검증: 성공
 Draft URL: https://deployhub.example.com/settings/drafts/확인할-Draft-ID
@@ -187,11 +196,13 @@ function renderManualSections() {
 
       <Section id="quick-start" title="5분 빠른 시작">
         <ol className="list-decimal space-y-2 pl-6">
-          <li>등록할 프로젝트의 저장소를 AI 작업 공간으로 엽니다.</li>
           <li>
-            터미널에 <code>DEPLOYHUB_URL</code>과 <code>DEPLOYHUB_TOKEN</code>을
-            환경변수로 준비합니다. 토큰 값은 AI 대화에 붙여 넣지 않습니다.
+            Windows에서는 AI 세션을 열기 전에 <code>DEPLOYHUB_URL</code>과
+            <code className="ml-1">DEPLOYHUB_TOKEN</code>을 User 범위 환경변수로
+            준비합니다. 토큰 값은 AI 대화에 붙여 넣지 않습니다.
           </li>
+          <li>이미 실행 중인 Orca/AI를 완전히 종료하고 새로 시작합니다.</li>
+          <li>새 AI 세션에서 등록할 프로젝트 저장소를 열고 환경변수 존재 여부만 확인합니다.</li>
           <li>처음 등록하면 신규 등록 요청문을, 이미 등록했다면 정보 갱신 요청문을 복사해 AI에게 보냅니다.</li>
           <li>AI가 조사·검증을 마치고 Draft URL을 보고할 때까지 기다립니다.</li>
           <li>Draft 화면에서 변경 내용을 확인한 뒤 직접 승인하거나 반려합니다.</li>
@@ -217,21 +228,49 @@ function renderManualSections() {
         <Subheading>터미널 환경변수 설정</Subheading>
         <p>
           <code>DEPLOYHUB_URL</code>은 공개 가능한 서버 주소지만,
-          <code className="ml-1">DEPLOYHUB_TOKEN</code>은 비밀값입니다. 토큰을 가려서
-          입력하면 대화나 명령 기록에 실제 값이 남는 일을 줄일 수 있습니다.
+          <code className="ml-1">DEPLOYHUB_TOKEN</code>은 비밀값입니다. Windows에서는
+          새 Orca/AI 프로세스가 값을 상속할 수 있도록 User 범위에 일시적으로 저장합니다.
         </p>
-        <p className="font-medium text-[var(--line)]">PowerShell 7</p>
-        <CodeBlock>{`$env:DEPLOYHUB_URL = 'https://deployhub.example.com'
-$deployHubTokenInput = Read-Host 'DEPLOYHUB_TOKEN' -MaskInput
-Set-Item -Path Env:DEPLOYHUB_TOKEN -Value $deployHubTokenInput
-Remove-Variable deployHubTokenInput`}</CodeBlock>
+        <p className="font-medium text-[var(--line)]">PowerShell 7 — 화면에 노출하지 않고 User 범위에 저장</p>
+        <CodeBlock>{`[Environment]::SetEnvironmentVariable(
+  'DEPLOYHUB_URL',
+  'https://deployhub.example.com',
+  'User'
+)
+
+$secureToken = Read-Host 'DEPLOYHUB_TOKEN' -AsSecureString
+$plainToken = [Net.NetworkCredential]::new('', $secureToken).Password
+[Environment]::SetEnvironmentVariable('DEPLOYHUB_TOKEN', $plainToken, 'User')
+Remove-Variable secureToken, plainToken`}</CodeBlock>
+        <Note>
+          User 범위 값은 같은 사용자 계정의 다른 프로세스도 읽을 수 있는 지속 설정입니다.
+          토큰 보관소가 아니라 등록 작업을 위한 일시적인 전달 수단으로만 사용하세요.
+          이미 실행 중인 Orca/AI는 나중에 바뀐 환경을 받지 못하므로 완전히 종료하고 새로 시작해야 합니다.
+        </Note>
+        <p className="font-medium text-[var(--line)]">PowerShell 7 — 새 AI 세션에서 존재 여부만 확인</p>
+        <CodeBlock>{`$urlPresent = -not [string]::IsNullOrWhiteSpace($env:DEPLOYHUB_URL)
+$tokenPresent = -not [string]::IsNullOrWhiteSpace($env:DEPLOYHUB_TOKEN)
+"DEPLOYHUB_URL_PRESENT=$urlPresent"
+"DEPLOYHUB_TOKEN_PRESENT=$tokenPresent"`}</CodeBlock>
+        <p>
+          값, 길이, 접두사 또는 일부 문자열은 출력하지 않습니다. 둘 중 하나라도
+          <code className="mx-1">False</code>면 CLI 제출 명령을 실행하지 않습니다.
+        </p>
         <p className="font-medium text-[var(--line)]">macOS 또는 Linux</p>
         <CodeBlock>{`export DEPLOYHUB_URL='https://deployhub.example.com'
 read -rsp 'DEPLOYHUB_TOKEN: ' DEPLOYHUB_TOKEN; echo
 export DEPLOYHUB_TOKEN`}</CodeBlock>
         <p>
-          서버 주소는 관리자가 알려준 실제 주소로 바꿉니다. 토큰 자체는 문서, 저장소
-          파일, AI 대화 또는 명령 인자에 적지 않습니다.
+          macOS와 Linux의 값도 프로세스 범위입니다. 해당 환경에서 AI를 시작하거나
+          호스트 애플리케이션을 완전히 재시작해야 합니다. 서버 주소는 관리자가 알려준
+          실제 주소로 바꾸고 토큰은 문서, 저장소 파일, AI 대화 또는 명령 인자에 적지 않습니다.
+        </p>
+        <p className="font-medium text-[var(--line)]">Draft 제출 후 PowerShell User 범위 토큰 제거</p>
+        <CodeBlock>{`[Environment]::SetEnvironmentVariable('DEPLOYHUB_TOKEN', $null, 'User')
+Remove-Item Env:DEPLOYHUB_TOKEN -ErrorAction SilentlyContinue`}</CodeBlock>
+        <p>
+          이미 실행 중인 다른 프로세스에는 상속된 토큰이 남아 있을 수 있습니다.
+          등록에 사용한 AI와 터미널 프로세스도 종료합니다.
         </p>
         <Subheading>대상 저장소에 AI 지침 추가하기</Subheading>
         <p>
@@ -335,7 +374,7 @@ npx @deployhub/cli sync --draft`}</CodeBlock>
           <li>토큰, 사용자 비밀번호, Provider Secret을 AI 대화에 붙여 넣지 않습니다.</li>
           <li>비밀값을 <code>deployhub.yaml</code>, 문서 또는 소스 코드에 저장하지 않습니다.</li>
           <li>비밀값을 CLI 명령 인자에 넣거나 로그로 출력하지 않습니다.</li>
-          <li>완료 보고에 토큰 일부라도 포함되면 폐기하고 새 토큰을 발급받습니다.</li>
+          <li>토큰 전체나 일부가 터미널 출력, 로그, AI 대화, 스크린샷 또는 화면 공유에 나타나면 해당 토큰을 즉시 폐기하고 새 토큰을 발급합니다. 노출된 토큰은 다시 사용하지 않습니다.</li>
         </ul>
         <Subheading>추측하면 안 되는 값</Subheading>
         <ul className="list-disc space-y-1 pl-6">
@@ -355,6 +394,8 @@ npx @deployhub/cli sync --draft`}</CodeBlock>
         <CopyablePrompt>{REINVESTIGATE_PROMPT}</CopyablePrompt>
         <Subheading>검증 오류 진단하기</Subheading>
         <CopyablePrompt>{VALIDATION_ERROR_PROMPT}</CopyablePrompt>
+        <Subheading>환경변수가 AI 세션에서 보이지 않을 때</Subheading>
+        <CopyablePrompt>{ENVIRONMENT_RECOVERY_PROMPT}</CopyablePrompt>
         <Subheading>401, 403 또는 서버 연결 오류 진단하기</Subheading>
         <CopyablePrompt>{CONNECTION_ERROR_PROMPT}</CopyablePrompt>
         <p>
