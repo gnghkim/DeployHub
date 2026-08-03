@@ -7,6 +7,10 @@ export {
   enqueueVercelSyncJobs,
 } from './vercel-sync';
 export {
+  createSupabaseSyncHandler,
+  enqueueSupabaseSyncJobs,
+} from './supabase-sync';
+export {
   createDockerSyncHandler,
   enqueueDockerSyncJob,
 } from './docker-sync';
