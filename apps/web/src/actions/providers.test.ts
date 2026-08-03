@@ -3,13 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   createGithubCollector: vi.fn(),
+  createSupabaseCollector: vi.fn(),
   createVercelCollector: vi.fn(),
   encrypt: vi.fn(),
   loadEncryptionKey: vi.fn(),
   enqueue: vi.fn(),
+  enqueueUnique: vi.fn(),
   insert: vi.fn(),
   values: vi.fn(),
   onConflictDoUpdate: vi.fn(),
+  returning: vi.fn(),
 }));
 
 vi.mock('../auth/config', () => ({ auth: mocks.auth }));
@@ -18,6 +21,7 @@ vi.mock('../lib/db', () => ({
 }));
 vi.mock('@deployhub/collectors', () => ({
   createGithubCollector: mocks.createGithubCollector,
+  createSupabaseCollector: mocks.createSupabaseCollector,
   createVercelCollector: mocks.createVercelCollector,
 }));
 vi.mock('@deployhub/shared', () => ({
@@ -27,13 +31,16 @@ vi.mock('@deployhub/shared', () => ({
 vi.mock('@deployhub/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@deployhub/db')>()),
   enqueue: mocks.enqueue,
+  enqueueUnique: mocks.enqueueUnique,
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 import {
   enqueueGithubSync,
+  enqueueSupabaseSync,
   enqueueVercelSync,
   saveGithubProvider,
+  saveSupabaseProvider,
   saveVercelProvider,
 } from './providers';
 import { schema } from '@deployhub/db';
@@ -47,7 +54,10 @@ beforeEach(() => {
   mocks.values.mockReturnValue({
     onConflictDoUpdate: mocks.onConflictDoUpdate,
   });
-  mocks.onConflictDoUpdate.mockResolvedValue(undefined);
+  mocks.onConflictDoUpdate.mockReturnValue({
+    returning: mocks.returning,
+  });
+  mocks.returning.mockResolvedValue([]);
   mocks.loadEncryptionKey.mockReturnValue(Buffer.alloc(32));
   mocks.encrypt.mockReturnValue('encrypted-payload');
 });
@@ -250,5 +260,140 @@ describe('Vercel Provider Server Actions', () => {
         payload: { accountId: 'vercel-account-id' },
       },
     );
+  });
+});
+
+describe('Supabase Provider Server Actions', () => {
+  it('throws when saving without an authenticated session', async () => {
+    await expect(
+      saveSupabaseProvider(emptyState, new FormData()),
+    ).rejects.toThrow(/인증/);
+  });
+
+  it('rejects a blank PAT without testing or storing it', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    const formData = new FormData();
+    formData.set('token', '   ');
+
+    const result = await saveSupabaseProvider(emptyState, formData);
+
+    expect(result).toEqual({
+      status: 'error',
+      message: 'Supabase PAT를 입력해 주세요.',
+    });
+    expect(mocks.createSupabaseCollector).not.toHaveBeenCalled();
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it('does not save or expose a PAT when connection verification fails', async () => {
+    const token = 'supabase-connection-failure-secret';
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    mocks.createSupabaseCollector.mockReturnValue({
+      testConnection: vi.fn().mockResolvedValue({
+        ok: false,
+        error: `Bad credentials: ${token}`,
+      }),
+    });
+    const formData = new FormData();
+    formData.set('token', token);
+
+    const result = await saveSupabaseProvider(emptyState, formData);
+
+    expect(result.status).toBe('error');
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it('does not expose a PAT when connection verification throws', async () => {
+    const token = 'supabase-thrown-connection-secret';
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    mocks.createSupabaseCollector.mockReturnValue({
+      testConnection: vi.fn().mockRejectedValue(
+        new Error(`Connection failed for ${token}`),
+      ),
+    });
+    const formData = new FormData();
+    formData.set('token', token);
+
+    const result = await saveSupabaseProvider(emptyState, formData);
+
+    expect(result.status).toBe('error');
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it('verifies, encrypts, stores, and immediately queues one account', async () => {
+    const token = 'supabase-save-secret';
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    mocks.createSupabaseCollector.mockReturnValue({
+      testConnection: vi.fn().mockResolvedValue({
+        ok: true,
+        account: 'supabase',
+      }),
+    });
+    mocks.returning.mockResolvedValue([{ id: 'supabase-account-id' }]);
+    const formData = new FormData();
+    formData.set('token', ` ${token} `);
+
+    const result = await saveSupabaseProvider(emptyState, formData);
+
+    expect(result.status).toBe('success');
+    expect(mocks.createSupabaseCollector).toHaveBeenCalledWith(token);
+    expect(mocks.encrypt).toHaveBeenCalledWith(token, Buffer.alloc(32));
+    expect(mocks.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'supabase',
+        name: 'supabase',
+        encryptedToken: 'encrypted-payload',
+      }),
+    );
+    expect(mocks.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: [
+          schema.providerAccounts.provider,
+          schema.providerAccounts.name,
+        ],
+        set: expect.objectContaining({
+          encryptedToken: 'encrypted-payload',
+        }),
+      }),
+    );
+    expect(mocks.enqueueUnique).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        type: 'supabase.sync',
+        dedupeKey: 'supabase:supabase-account-id',
+        payload: { accountId: 'supabase-account-id' },
+      },
+    );
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(JSON.stringify(mocks.values.mock.calls[0]?.[0])).not.toContain(
+      token,
+    );
+  });
+
+  it('queues a manual deduplicated sync for an authenticated administrator', async () => {
+    mocks.auth.mockResolvedValue({ user: { id: 'user-id' } });
+    const formData = new FormData();
+    formData.set('accountId', 'supabase-account-id');
+
+    await enqueueSupabaseSync(formData);
+
+    expect(mocks.enqueueUnique).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        type: 'supabase.sync',
+        dedupeKey: 'supabase:supabase-account-id',
+        payload: { accountId: 'supabase-account-id' },
+      },
+    );
+  });
+
+  it('rejects a manual sync without authentication', async () => {
+    const formData = new FormData();
+    formData.set('accountId', 'supabase-account-id');
+
+    await expect(enqueueSupabaseSync(formData)).rejects.toThrow(/인증/);
+    expect(mocks.enqueueUnique).not.toHaveBeenCalled();
   });
 });
