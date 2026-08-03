@@ -18,6 +18,7 @@ export function SidebarShell({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const manualActive = pathname === '/manual';
 
   useEffect(() => {
     setOpen(false);
@@ -111,8 +112,22 @@ export function SidebarShell({
             </Link>
           ))}
         </nav>
-        <div className="mt-auto border-t border-[var(--rule)] px-3 pt-4 text-xs text-[var(--annotation)]">
-          System status
+        <div className="mt-auto border-t border-[var(--rule)] px-3 pt-4 text-xs">
+          <Link
+            href="/manual"
+            aria-current={manualActive ? 'page' : undefined}
+            onClick={() => setOpen(false)}
+            className={`block rounded-[var(--radius-button)] px-2 py-2 transition-colors ${
+              manualActive
+                ? 'bg-white/[0.04] text-[var(--line)]'
+                : 'text-[var(--line-mute)] hover:bg-white/[0.02] hover:text-[var(--line)]'
+            }`}
+          >
+            사용 매뉴얼
+          </Link>
+          <div className="px-2 pt-3 text-[var(--annotation)]">
+            System status
+          </div>
         </div>
       </aside>
     </>

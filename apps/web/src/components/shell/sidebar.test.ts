@@ -38,6 +38,21 @@ it('keeps the four everyday top-level navigation items in product order', () => 
   expect(shellSource).not.toContain("href: '/settings/tokens'");
 });
 
+it('places the manual in the footer without changing primary navigation', () => {
+  const navEnd = shellSource.indexOf('</nav>');
+  const manual = shellSource.indexOf('href="/manual"');
+  const systemStatus = shellSource.indexOf('System status');
+
+  expect(manual).toBeGreaterThan(navEnd);
+  expect(manual).toBeLessThan(systemStatus);
+  expect(shellSource).toContain('사용 매뉴얼');
+  expect(shellSource).toContain("pathname === '/manual'");
+  expect(shellSource).toContain(
+    "aria-current={manualActive ? 'page' : undefined}",
+  );
+  expect(shellSource).toContain('onClick={() => setOpen(false)}');
+});
+
 it('shows only the pending review Draft count beside 설정', () => {
   expect(source).toContain(
     "listDrafts(db, { status: 'pending_review' })",
