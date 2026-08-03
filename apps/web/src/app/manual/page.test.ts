@@ -30,6 +30,29 @@ const sections = [
   ['references', '더 자세한 문서'],
 ] as const;
 
+function sliceBetween(source: string, start: string, end: string) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+
+  expect(startIndex).toBeGreaterThanOrEqual(0);
+  expect(endIndex).toBeGreaterThan(startIndex);
+
+  return source.slice(startIndex, endIndex);
+}
+
+function fencedTextBetweenHeadings(
+  source: string,
+  startHeading: string,
+  endHeading: string,
+) {
+  const section = sliceBetween(source, startHeading, endHeading);
+  const match = section.match(/```text\r?\n([\s\S]*?)\r?\n```/);
+
+  expect(match).not.toBeNull();
+
+  return match?.[1] ?? '';
+}
+
 describe('in-app manual page', () => {
   it('renders every approved section with a matching table-of-contents anchor', () => {
     for (const [id, title] of sections) {
@@ -56,6 +79,59 @@ describe('in-app manual page', () => {
       expect(markdown).toContain(content);
     }
     expect(page.match(/<CopyablePrompt/g)?.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('makes both copied prompts self-contained and avoids CLI discovery detours', () => {
+    const promptPairs = [
+      {
+        pagePrompt: sliceBetween(
+          page,
+          'const NEW_PROJECT_PROMPT',
+          'const EXISTING_PROJECT_PROMPT',
+        ),
+        markdownPrompt: fencedTextBetweenHeadings(
+          markdown,
+          '## 신규 프로젝트 등록 맡기기',
+          '## 기존 프로젝트 정보 갱신 맡기기',
+        ),
+        commands: [
+          'npx @deployhub/cli init --detect',
+          'npx @deployhub/cli validate',
+          'npx @deployhub/cli register --draft',
+        ],
+      },
+      {
+        pagePrompt: sliceBetween(
+          page,
+          'const EXISTING_PROJECT_PROMPT',
+          'const REINVESTIGATE_PROMPT',
+        ),
+        markdownPrompt: fencedTextBetweenHeadings(
+          markdown,
+          '## 기존 프로젝트 정보 갱신 맡기기',
+          '## AI가 따라야 하는 절차',
+        ),
+        commands: [
+          'npx @deployhub/cli status',
+          'npx @deployhub/cli diff',
+          'npx @deployhub/cli validate',
+          'npx @deployhub/cli sync --draft',
+        ],
+      },
+    ] as const;
+
+    for (const { pagePrompt, markdownPrompt, commands } of promptPairs) {
+      for (const prompt of [pagePrompt, markdownPrompt]) {
+        for (const command of commands) {
+          expect(prompt).toContain(command);
+        }
+        expect(prompt).toContain('웹에서 검색하지 마');
+        expect(prompt).toContain('전역 설치하지 마');
+        expect(prompt).toContain('현재 터미널 환경변수만 사용');
+        expect(prompt).toContain('기존 작업 파일을 수정하거나 커밋하지 마');
+        expect(prompt).toContain('자동으로 재시도하지 마');
+      }
+    }
   });
 
   it('preserves the deployment and secret-handling boundaries', () => {

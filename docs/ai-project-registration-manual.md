@@ -90,11 +90,18 @@ DeployHub에 아직 없는 프로젝트에 사용합니다. AI는 저장소를 �
 이 저장소의 실제 기술 구성과 운영 배포 설정을 조사해서 DeployHub 신규 등록을 준비해줘.
 
 - 작업 범위는 DeployHub 프로젝트 등록까지야. 실제 서비스 배포는 하지 마.
-- 저장소 루트에서 DeployHub CLI를 사용해 deployhub.yaml을 생성해.
-- CLI가 출력한 INFERRED FIELDS와 UNKNOWN FIELDS를 검토하고, 파일에서 확인되는 값만 보완해.
+- 전역 deployhub 명령을 찾거나 CLI 사용법을 웹에서 검색하지 마. CLI를 전역 설치하지 마.
+- 등록 대상 저장소 루트에서 아래 명령을 순서대로 실행해.
+  npx @deployhub/cli init --detect
+- CLI가 출력한 INFERRED FIELDS와 UNKNOWN FIELDS를 검토하고, 파일에서 확인되는 값만 deployhub.yaml에 보완해.
 - provider, externalRef, container, 운영 URL은 추측하지 마.
-- 비밀값을 파일, 명령 인자, 로그 또는 대화에 출력하지 마.
-- validate에 성공한 뒤 register --draft까지만 실행해.
+- DEPLOYHUB_URL과 DEPLOYHUB_TOKEN은 현재 터미널 환경변수만 사용하고 값을 출력하지 마.
+- 등록과 무관한 기존 작업 파일을 수정하거나 커밋하지 마.
+- manifest를 보완한 뒤 아래 명령으로 검증해.
+  npx @deployhub/cli validate
+- validate에 성공한 경우에만 아래 Draft 제출 명령을 한 번 실행해.
+  npx @deployhub/cli register --draft
+- 제출에 실패하거나 결과가 불확실하면 자동으로 재시도하지 마.
 - 최종 승인은 하지 말고 Draft URL, 확인된 내용, 확인하지 못한 내용을 보고해줘.
 ```
 
@@ -113,10 +120,19 @@ AI가 `UNKNOWN FIELDS`를 보고하면 그 값을 억지로 채우게 하지 마
 이 저장소의 현재 기술 구성과 운영 배포 설정을 조사해서 DeployHub 등록 정보와 비교해줘.
 
 - 작업 범위는 DeployHub 정보 갱신까지야. 실제 서비스 배포는 하지 마.
-- 먼저 status와 diff를 실행해 현재 상태와 차이를 확인해.
-- 필요한 변경만 deployhub.yaml에 반영하고, 확인되지 않은 값은 추측하지 마.
-- 비밀값을 파일, 명령 인자, 로그 또는 대화에 출력하지 마.
-- validate에 성공한 뒤 sync --draft까지만 실행해.
+- 전역 deployhub 명령을 찾거나 CLI 사용법을 웹에서 검색하지 마. CLI를 전역 설치하지 마.
+- DEPLOYHUB_URL과 DEPLOYHUB_TOKEN은 현재 터미널 환경변수만 사용하고 값을 출력하지 마.
+- 등록과 무관한 기존 작업 파일을 수정하거나 커밋하지 마.
+- 등록 대상 저장소 루트에서 아래 명령을 순서대로 실행해 현재 상태와 차이를 확인해.
+  npx @deployhub/cli status
+  npx @deployhub/cli diff
+- 필요한 변경만 deployhub.yaml에 반영하고, provider, externalRef, container, 운영 URL은 추측하지 마.
+- 차이가 없으면 Draft를 만들지 말고 변경 없음으로 보고해.
+- 변경이 있으면 아래 명령으로 검증해.
+  npx @deployhub/cli validate
+- validate에 성공한 경우에만 아래 Draft 제출 명령을 한 번 실행해.
+  npx @deployhub/cli sync --draft
+- 제출에 실패하거나 결과가 불확실하면 자동으로 재시도하지 마.
 - 최종 승인은 하지 말고 Draft URL, 변경 요약, 확인하지 못한 내용을 보고해줘.
 ```
 
