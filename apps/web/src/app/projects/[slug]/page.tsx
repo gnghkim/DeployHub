@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   computeDrift,
   getProjectBySlug,
@@ -37,6 +37,7 @@ import {
   buildComposition,
   isComponentObservationResource,
 } from './composition';
+import type { ObservationContext } from './observation-state';
 import { SnapshotPanel, type SnapshotPanelProps } from './snapshot-panel';
 
 export const dynamic = 'force-dynamic';
@@ -99,6 +100,9 @@ export default async function ProjectDetailPage({
     drift,
     deployments,
     snapshotRows,
+    providerAccounts,
+    activeJobs,
+    dockerSyncRows,
     {
       status,
       evidenceEvents,
@@ -131,6 +135,40 @@ export default async function ProjectDetailPage({
       })
       .from(schema.projectSnapshots)
       .where(eq(schema.projectSnapshots.projectId, project.id)),
+    db
+      .select({
+        id: schema.providerAccounts.id,
+        provider: schema.providerAccounts.provider,
+        lastSyncAt: schema.providerAccounts.lastSyncAt,
+        lastError: schema.providerAccounts.lastError,
+      })
+      .from(schema.providerAccounts)
+      .where(inArray(
+        schema.providerAccounts.provider,
+        ['vercel', 'supabase'],
+      )),
+    db
+      .select({
+        type: schema.jobs.type,
+        payload: schema.jobs.payload,
+      })
+      .from(schema.jobs)
+      .where(and(
+        inArray(
+          schema.jobs.type,
+          ['vercel.sync', 'supabase.sync', 'docker.sync'],
+        ),
+        inArray(schema.jobs.status, ['pending', 'running']),
+      )),
+    db
+      .select({ updatedAt: schema.jobs.updatedAt })
+      .from(schema.jobs)
+      .where(and(
+        eq(schema.jobs.type, 'docker.sync'),
+        eq(schema.jobs.status, 'succeeded'),
+      ))
+      .orderBy(desc(schema.jobs.updatedAt))
+      .limit(1),
     historyPromise,
   ]);
   const snapshotRow = snapshotRows[0];
@@ -154,6 +192,23 @@ export default async function ProjectDetailPage({
       .filter(isComponentObservationResource)
       .map((resource) => resource.provider),
   }).deployment;
+  const observationContext: ObservationContext = {
+    accounts: providerAccounts.filter((account): account is {
+      id: string;
+      provider: 'vercel' | 'supabase';
+      lastSyncAt: Date | null;
+      lastError: string | null;
+    } => account.provider === 'vercel' || account.provider === 'supabase'),
+    activeJobs: activeJobs.map((job) => ({
+      type: job.type,
+      payload: typeof job.payload === 'object'
+        && job.payload !== null
+        && !Array.isArray(job.payload)
+        ? job.payload as Record<string, unknown>
+        : {},
+    })),
+    dockerLastSyncAt: dockerSyncRows[0]?.updatedAt ?? null,
+  };
   const composition = buildComposition({
     components: project.components.map((component) => ({
       id: component.id,
@@ -163,7 +218,9 @@ export default async function ProjectDetailPage({
       runtime: component.runtime,
       language: component.language,
       provider: component.provider,
+      externalRef: component.externalRef,
       containerName: component.containerName,
+      updatedAt: component.updatedAt,
     })),
     resources: linkedResources.map((resource) => ({
       id: resource.linkId,
@@ -173,6 +230,7 @@ export default async function ProjectDetailPage({
       name: resource.name,
       status: resource.status,
     })),
+    observationContext,
   });
   const latestDeployments = [
     ...deployments.reduce((latest, item) => {

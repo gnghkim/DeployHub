@@ -92,13 +92,15 @@ export function ArchitectureComposition({
                   {row.observations.map((observation) => (
                     <div className="min-w-0 break-all" key={observation.key}>
                       <Annotation
-                        value={observation.name === null
-                          ? null
-                          : [
-                            observation.name,
-                            observation.provider,
-                            observation.status,
-                          ].filter(Boolean).join(' · ')}
+                        value={observation.message ?? (
+                          observation.name === null
+                            ? null
+                            : [
+                              observation.name,
+                              observation.provider,
+                              observation.status,
+                            ].filter(Boolean).join(' · ')
+                        )}
                       />
                     </div>
                   ))}

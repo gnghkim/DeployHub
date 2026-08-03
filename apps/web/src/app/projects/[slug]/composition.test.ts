@@ -6,12 +6,19 @@ import {
   type CompositionInput,
 } from './composition-model';
 
+const updatedAt = new Date('2026-08-04T00:00:00.000Z');
+
 function input(
   overrides: Partial<CompositionInput> = {},
 ): CompositionInput {
   return {
     components: [],
     resources: [],
+    observationContext: {
+      accounts: [],
+      activeJobs: [],
+      dockerLastSyncAt: null,
+    },
     ...overrides,
   };
 }
@@ -27,7 +34,9 @@ describe('buildComposition', () => {
         runtime: 'nodejs',
         language: 'typescript',
         provider: 'hostinger',
+        externalRef: null,
         containerName: 'deployhub-worker',
+        updatedAt,
       }],
     }));
 
@@ -58,7 +67,9 @@ describe('buildComposition', () => {
         runtime: 'postgresql',
         language: null,
         provider: 'self-hosted',
+        externalRef: null,
         containerName: 'deployhub-postgres',
+        updatedAt,
       },
       {
         id: 'worker',
@@ -68,7 +79,9 @@ describe('buildComposition', () => {
         runtime: 'nodejs',
         language: 'typescript',
         provider: 'hostinger',
+        externalRef: null,
         containerName: 'deployhub-worker',
+        updatedAt,
       },
       {
         id: 'web',
@@ -78,7 +91,9 @@ describe('buildComposition', () => {
         runtime: 'nodejs',
         language: 'typescript',
         provider: 'hostinger',
+        externalRef: null,
         containerName: 'deployhub-web',
+        updatedAt,
       },
     ];
 
@@ -105,7 +120,9 @@ describe('buildComposition', () => {
         runtime: 'nodejs',
         language: 'typescript',
         provider: 'hostinger',
+        externalRef: null,
         containerName: 'declared-web',
+        updatedAt,
       }],
       resources: [{
         id: 'resource-web',
@@ -141,7 +158,9 @@ describe('buildComposition', () => {
         runtime: 'nodejs',
         language: 'typescript',
         provider: 'hostinger',
+        externalRef: null,
         containerName: 'deployhub-web',
+        updatedAt,
       }],
       resources: [{
         id: 'repository',
@@ -158,6 +177,57 @@ describe('buildComposition', () => {
         name: null,
       }),
     ]);
+  });
+
+  it('explains every missing-observation state in the observation column', () => {
+    const baseComponent: CompositionInput['components'][number] = {
+      id: 'service',
+      name: 'service',
+      componentType: 'backend',
+      framework: null,
+      runtime: 'nodejs',
+      language: 'typescript',
+      provider: 'supabase',
+      externalRef: 'project-ref',
+      containerName: null,
+      updatedAt,
+    };
+    const message = (
+      component: CompositionInput['components'][number],
+      observationContext: CompositionInput['observationContext'],
+    ) => buildComposition(input({
+      components: [component],
+      observationContext,
+    })).rows[0]?.observations[0]?.message;
+
+    expect(message(baseComponent, {
+      accounts: [],
+      activeJobs: [],
+      dockerLastSyncAt: null,
+    })).toBe('연결 필요');
+    expect(message({ ...baseComponent, provider: 'vercel' }, {
+      accounts: [{
+        id: 'vercel-1',
+        provider: 'vercel',
+        lastSyncAt: null,
+        lastError: null,
+      }],
+      activeJobs: [{
+        type: 'vercel.sync',
+        payload: { accountId: 'vercel-1' },
+      }],
+      dockerLastSyncAt: null,
+    })).toBe('동기화 대기');
+    expect(message({ ...baseComponent, containerName: 'service' }, {
+      accounts: [],
+      activeJobs: [],
+      dockerLastSyncAt: null,
+    })).toBe('동기화 필요');
+    expect(message({ ...baseComponent, containerName: 'service' }, {
+      accounts: [],
+      activeJobs: [],
+      dockerLastSyncAt: new Date('2026-08-04T00:01:00.000Z'),
+    })).toBe('관측되지 않음');
   });
 });
 

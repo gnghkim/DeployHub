@@ -1,3 +1,8 @@
+import {
+  describeMissingObservation,
+  type ObservationContext,
+} from './observation-state';
+
 export type CompositionComponentInput = {
   id: string;
   name: string;
@@ -6,7 +11,9 @@ export type CompositionComponentInput = {
   runtime: string | null;
   language: string | null;
   provider: string | null;
+  externalRef: string | null;
   containerName: string | null;
+  updatedAt: Date;
 };
 
 export type CompositionResourceInput = {
@@ -21,6 +28,7 @@ export type CompositionResourceInput = {
 export type CompositionInput = {
   components: CompositionComponentInput[];
   resources: CompositionResourceInput[];
+  observationContext: ObservationContext;
 };
 
 export type CompositionObservation = {
@@ -28,6 +36,7 @@ export type CompositionObservation = {
   name: string | null;
   provider: string | null;
   status: string | null;
+  message: string | null;
 };
 
 export type CompositionRow = {
@@ -113,6 +122,7 @@ function compareResources(
 export function buildComposition({
   components,
   resources,
+  observationContext,
 }: CompositionInput): Composition {
   const rows = [...components].sort(compareComponents).map((component) => {
     const observed = resources
@@ -126,7 +136,13 @@ export function buildComposition({
         name: resource.name,
         provider: resource.provider,
         status: resource.status,
+        message: null,
       }));
+
+    const missing = describeMissingObservation(
+      component,
+      observationContext,
+    );
 
     return {
       key: component.id,
@@ -141,6 +157,9 @@ export function buildComposition({
           name: null,
           provider: null,
           status: null,
+          message: missing.detail === null
+            ? missing.label
+            : `${missing.label} · ${missing.detail}`,
         }],
     };
   });

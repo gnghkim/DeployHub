@@ -161,9 +161,18 @@ beforeEach(() => {
   mocks.select.mockReset();
   mocks.select.mockImplementation((selection?: Record<string, unknown>) => ({
     from: () => ({
-      where: () => selection?.hasImage
-        ? Promise.resolve([])
-        : ({ orderBy: async () => [] }),
+      where: () => {
+        if (selection?.hasImage) return Promise.resolve([]);
+        if (selection?.lastSyncAt || selection?.payload) {
+          return Promise.resolve([]);
+        }
+        if (selection?.updatedAt) {
+          return {
+            orderBy: () => ({ limit: async () => [] }),
+          };
+        }
+        return { orderBy: async () => [] };
+      },
     }),
   }));
 });
@@ -182,6 +191,19 @@ describe('project detail status', () => {
     expect(page).toContain('hasImage: sql<boolean>');
     expect(page).not.toContain('imageData: schema.projectSnapshots.imageData');
     expect(page).toContain('lastError: schema.projectSnapshots.lastError');
+  });
+
+  it('binds missing observations to provider and sync facts', () => {
+    expect(page).toContain('schema.providerAccounts.lastSyncAt');
+    expect(page).toContain('schema.providerAccounts.lastError');
+    expect(page).toContain(
+      "['vercel.sync', 'supabase.sync', 'docker.sync']",
+    );
+    expect(page).toContain("eq(schema.jobs.status, 'succeeded')");
+    expect(page).toContain("eq(schema.jobs.type, 'docker.sync')");
+    expect(page).toContain('observationContext');
+    expect(page).toContain('externalRef: component.externalRef');
+    expect(page).toContain('updatedAt: component.updatedAt');
   });
 
   it('구성도가 Annotation 으로 관측을 그린다', () => {
