@@ -3,8 +3,10 @@ import { schema } from '@deployhub/db';
 import { loadEncryptionKey } from '@deployhub/shared';
 import {
   enqueueGithubSync,
+  enqueueSupabaseSync,
   enqueueVercelSync,
   saveGithubProvider,
+  saveSupabaseProvider,
   saveVercelProvider,
 } from '../../../actions/providers';
 import { Topbar } from '../../../components/shell/topbar';
@@ -25,6 +27,11 @@ async function connectGithub(formData: FormData): Promise<void> {
 async function connectVercel(formData: FormData): Promise<void> {
   'use server';
   await saveVercelProvider({ status: 'idle' }, formData);
+}
+
+async function connectSupabase(formData: FormData): Promise<void> {
+  'use server';
+  await saveSupabaseProvider({ status: 'idle' }, formData);
 }
 
 function displayTokenSuffix(encryptedToken: string): string {
@@ -55,6 +62,9 @@ export default async function ProvidersPage() {
   );
   const vercelAccounts = accounts.filter(
     (account) => account.provider === 'vercel',
+  );
+  const supabaseAccounts = accounts.filter(
+    (account) => account.provider === 'supabase',
   );
 
   return (
@@ -176,6 +186,58 @@ export default async function ProvidersPage() {
               <Card>
                 <p className="text-sm text-[var(--annotation)]">
                   연결된 Vercel 계정이 없습니다.
+                </p>
+              </Card>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          <div>
+            <h2 className="text-xl font-medium text-[var(--line)]">
+              Supabase 연결
+            </h2>
+            <p className="mt-1 text-sm text-[var(--annotation)]">
+              PAT는 연결된 Supabase 사용자의 권한으로 동작합니다. 프로젝트 조회에
+              필요한 최소 권한 계정을 사용하고 PAT를 비밀값으로 관리하세요.
+            </p>
+          </div>
+
+          <Card>
+            <form action={connectSupabase} className="flex items-end gap-3">
+              <label className="min-w-0 flex-1 text-sm text-[var(--line-mute)]">
+                Personal access token
+                <Input
+                  className="mt-2"
+                  name="token"
+                  type="password"
+                  autoComplete="off"
+                  required
+                />
+              </label>
+              <Button variant="primary" type="submit">
+                연결 테스트 및 저장
+              </Button>
+            </form>
+          </Card>
+
+          <div className="space-y-3">
+            {supabaseAccounts.map((account) => (
+              <ProviderAccountCard
+                key={account.id}
+                id={account.id}
+                name={account.name}
+                tokenSuffix={displayTokenSuffix(account.encryptedToken)}
+                lastVerifiedAt={account.lastVerifiedAt}
+                lastSyncAt={account.lastSyncAt}
+                lastError={account.lastError}
+                syncAction={enqueueSupabaseSync}
+              />
+            ))}
+            {supabaseAccounts.length === 0 ? (
+              <Card>
+                <p className="text-sm text-[var(--annotation)]">
+                  연결된 Supabase 계정이 없습니다.
                 </p>
               </Card>
             ) : null}

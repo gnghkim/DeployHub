@@ -11,7 +11,7 @@ it('각 provider 토큰 입력란에 저장한 값을 되비추는 속성이 없
     /<Input[\s\S]*?name="token"[\s\S]*?\/>/g,
   ) ?? [];
 
-  expect(tokenInputs).toHaveLength(2);
+  expect(tokenInputs).toHaveLength(3);
   for (const tokenInput of tokenInputs) {
     expect(tokenInput).toContain('type="password"');
     expect(tokenInput).not.toMatch(/(?:defaultValue|value)=/);

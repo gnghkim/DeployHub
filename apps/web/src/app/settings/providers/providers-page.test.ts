@@ -15,7 +15,7 @@ function matchingPageSource(pattern: RegExp): string {
 }
 
 describe('provider settings page', () => {
-  it('keeps the page server-rendered and loads accounts for both providers', () => {
+  it('keeps the page server-rendered and loads accounts for all providers', () => {
     expect(page).not.toContain("'use client'");
     expect(page).toContain('provider: schema.providerAccounts.provider');
     expect(page).not.toMatch(
@@ -23,6 +23,7 @@ describe('provider settings page', () => {
     );
     expect(page).toContain("account.provider === 'github'");
     expect(page).toContain("account.provider === 'vercel'");
+    expect(page).toContain("account.provider === 'supabase'");
   });
 
   it('preserves the GitHub connection form and sync behavior', () => {
@@ -91,6 +92,36 @@ describe('provider settings page', () => {
     expect(submitButton).toContain('className="md:mt-6"');
   });
 
+  it('routes a password PAT form and account cards to Supabase actions', () => {
+    const connectSupabase = matchingPageSource(
+      /async function connectSupabase\([\s\S]*?\n\}/,
+    );
+    const supabaseSection = matchingPageSource(
+      /<section\b[^>]*>[\s\S]*?<form\b[^>]*\baction=\{connectSupabase\}[\s\S]*?<\/section>/,
+    );
+    const supabaseForm = matchingPageSource(
+      /<form\b[^>]*\baction=\{connectSupabase\}[^>]*>[\s\S]*?<\/form>/,
+    );
+    const tokenInput = supabaseForm.match(
+      /<Input\b[\s\S]*?name="token"[\s\S]*?\/>/,
+    )?.[0] ?? '';
+
+    expect(supabaseSection).toContain('Supabase 연결');
+    expect(supabaseSection).toContain(
+      'PAT는 연결된 Supabase 사용자의 권한으로 동작합니다.',
+    );
+    expect(supabaseSection).toContain('최소 권한 계정');
+    expect(connectSupabase).toMatch(
+      /await saveSupabaseProvider\(\s*\{ status: 'idle' \},\s*formData,?\s*\)/,
+    );
+    expect(tokenInput).toContain('type="password"');
+    expect(tokenInput).toMatch(/\srequired(?:\s|\/>)/);
+    expect(page).toMatch(
+      /supabaseAccounts\.map[\s\S]*?<ProviderAccountCard[\s\S]*?syncAction=\{enqueueSupabaseSync\}/,
+    );
+    expect(page).toContain('연결된 Supabase 계정이 없습니다.');
+  });
+
   it('shows each empty-state message only through its provider condition', () => {
     const githubEmptyState = matchingPageSource(
       /\{\s*githubAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
@@ -98,14 +129,20 @@ describe('provider settings page', () => {
     const vercelEmptyState = matchingPageSource(
       /\{\s*vercelAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
     );
+    const supabaseEmptyState = matchingPageSource(
+      /\{\s*supabaseAccounts\.length\s*===\s*0\s*\?\s*\([\s\S]*?\)\s*:\s*null\s*\}/,
+    );
 
     expect(githubEmptyState).toContain('연결된 GitHub 계정이 없습니다.');
     expect(vercelEmptyState).toContain('연결된 Vercel 계정이 없습니다.');
+    expect(supabaseEmptyState).toContain(
+      '연결된 Supabase 계정이 없습니다.',
+    );
   });
 
-  it('uses the shared server card for both providers without passing encrypted tokens', () => {
+  it('uses the shared server card for every provider without passing encrypted tokens', () => {
     expect(accountCard).not.toContain("'use client'");
-    expect(page.match(/<ProviderAccountCard/g)).toHaveLength(2);
+    expect(page.match(/<ProviderAccountCard/g)).toHaveLength(3);
     expect(page).toContain(
       'tokenSuffix={displayTokenSuffix(account.encryptedToken)}',
     );
