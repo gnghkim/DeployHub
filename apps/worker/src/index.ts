@@ -8,6 +8,7 @@ import {
   createHealthCheckHandler,
   createSnapshotCaptureHandler,
   createSslCheckHandler,
+  createSupabaseSyncHandler,
   createVercelSyncHandler,
   DOCKER_HEALTH_INTERVAL_MS,
   enqueueDockerHealthJob,
@@ -15,6 +16,7 @@ import {
   enqueueGithubSyncJobs,
   enqueueHealthCheckJob,
   enqueueSslCheckJob,
+  enqueueSupabaseSyncJobs,
   enqueueVercelSyncJobs,
   HEALTH_CHECK_INTERVAL_MS,
   SSL_CHECK_INTERVAL_MS,
@@ -42,6 +44,7 @@ async function main(): Promise<void> {
       'health.check': createHealthCheckHandler(db),
       'snapshot.capture': createSnapshotCaptureHandler(db, env.SNAPSHOTTER_URL),
       'ssl.check': createSslCheckHandler(db),
+      'supabase.sync': createSupabaseSyncHandler(db, encryptionKey),
       'vercel.sync': createVercelSyncHandler(db, encryptionKey),
     },
     workerId,
@@ -56,6 +59,11 @@ async function main(): Promise<void> {
   const vercelSchedule = setInterval(() => {
     void enqueueVercelSyncJobs(db).catch(() => {
       console.error('[worker] Vercel 동기화 job 등록 실패');
+    });
+  }, PROVIDER_SYNC_INTERVAL_MS);
+  const supabaseSchedule = setInterval(() => {
+    void enqueueSupabaseSyncJobs(db).catch(() => {
+      console.error('[worker] Supabase 동기화 job 등록 실패');
     });
   }, PROVIDER_SYNC_INTERVAL_MS);
   const dockerSchedule = setInterval(() => {
@@ -83,6 +91,7 @@ async function main(): Promise<void> {
     running = false;
     clearInterval(githubSchedule);
     clearInterval(vercelSchedule);
+    clearInterval(supabaseSchedule);
     clearInterval(dockerSchedule);
     clearInterval(dockerHealthSchedule);
     clearInterval(healthSchedule);
@@ -93,6 +102,7 @@ async function main(): Promise<void> {
 
   await enqueueGithubSyncJobs(db);
   await enqueueVercelSyncJobs(db);
+  await enqueueSupabaseSyncJobs(db);
   await enqueueDockerSyncJob(db, env.DOCKER_HOST_URL);
   await enqueueDockerHealthJob(db, env.DOCKER_HOST_URL);
   await enqueueHealthCheckJob(db);
