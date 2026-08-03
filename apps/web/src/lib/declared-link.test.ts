@@ -24,6 +24,23 @@ const oldWeb: DeclaredComponent = {
   containerName: null,
 };
 
+const database: DeclaredComponent = {
+  ...web,
+  id: 'component-database',
+  name: 'database',
+  slug: 'database',
+  provider: 'supabase',
+  externalRef: 'abcdefghijklmnopqrst',
+  containerName: null,
+};
+
+const authentication: DeclaredComponent = {
+  ...database,
+  id: 'component-authentication',
+  name: 'authentication',
+  slug: 'authentication',
+};
+
 function dockerResource(
   name: string,
   labels: Record<string, string> = {},
@@ -45,10 +62,12 @@ describe('resolveDeclaredLink', () => {
       [web],
       [],
     )).toEqual({
-      kind: 'link',
-      componentId: web.id,
-      linkedBy: 'manifest',
-      environment: 'production',
+      kind: 'links',
+      links: [{
+        componentId: web.id,
+        linkedBy: 'manifest',
+        environment: 'production',
+      }],
     });
   });
 
@@ -93,5 +112,55 @@ describe('resolveDeclaredLink', () => {
       labelComponentId: oldWeb.id,
       labelComponentName: 'web-old',
     });
+  });
+
+  it('Supabase 프로젝트 하나를 project ref가 같은 모든 구성요소에 연결한다', () => {
+    expect(resolveDeclaredLink({
+      id: 'resource-supabase',
+      provider: 'supabase',
+      resourceType: 'supabase_project',
+      externalId: 'abcdefghijklmnopqrst',
+      name: 'LinkVault',
+      metadata: {},
+    }, [database, authentication], [])).toEqual({
+      kind: 'links',
+      links: [
+        {
+          componentId: database.id,
+          linkedBy: 'manifest',
+          environment: 'production',
+        },
+        {
+          componentId: authentication.id,
+          linkedBy: 'manifest',
+          environment: 'production',
+        },
+      ],
+    });
+  });
+
+  it('Supabase project ref를 부분 일치시키지 않는다', () => {
+    expect(resolveDeclaredLink({
+      id: 'resource-supabase',
+      provider: 'supabase',
+      resourceType: 'supabase_project',
+      externalId: 'abcdefghijklmnopqrst-old',
+      name: 'LinkVault',
+      metadata: {},
+    }, [database], [])).toEqual({ kind: 'none', reason: 'no_match' });
+  });
+
+  it('Supabase 자원에도 기존 user 연결을 우선한다', () => {
+    expect(resolveDeclaredLink({
+      id: 'resource-supabase',
+      provider: 'supabase',
+      resourceType: 'supabase_project',
+      externalId: 'abcdefghijklmnopqrst',
+      name: 'LinkVault',
+      metadata: {},
+    }, [database, authentication], [{
+      componentId: database.id,
+      linkedBy: 'user',
+    }])).toEqual({ kind: 'none', reason: 'user_link' });
   });
 });

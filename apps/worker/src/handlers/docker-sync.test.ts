@@ -499,6 +499,7 @@ describe('Docker sync handler', () => {
       componentType: 'database',
       provider: 'docker',
       externalRef: containerId,
+      containerName: 'deployhub-postgres',
     }).returning();
     const [current] = await db.insert(schema.resources).values({
       provider: 'docker',

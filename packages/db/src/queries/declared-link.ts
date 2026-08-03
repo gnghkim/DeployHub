@@ -39,12 +39,16 @@ export type ExistingResourceLink = {
   linkedBy: 'manifest' | 'label' | 'repository' | 'user' | 'suggested';
 };
 
+export type DeclaredLink = {
+  componentId: string;
+  linkedBy: 'manifest' | 'label';
+  environment: string;
+};
+
 export type DeclaredLinkDecision =
   | {
-    kind: 'link';
-    componentId: string;
-    linkedBy: 'manifest' | 'label';
-    environment: string;
+    kind: 'links';
+    links: DeclaredLink[];
   }
   | {
     kind: 'conflict';
@@ -62,8 +66,8 @@ export type DeclaredLinkDecision =
 type LinkDb = Pick<Db, 'delete' | 'insert' | 'select'>;
 
 export type LinkDeclaredResourcesInput = {
-  provider: 'docker' | 'vercel';
-  externalIds: string[];
+  provider: 'docker' | 'vercel' | 'supabase';
+  externalIds?: string[];
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -90,6 +94,26 @@ export function resolveDeclaredLink(
   }
 
   if (
+    resource.provider === 'supabase'
+    && resource.resourceType === 'supabase_project'
+  ) {
+    const matches = components.filter((component) => (
+      component.provider === 'supabase'
+      && component.externalRef === resource.externalId
+    ));
+    return matches.length === 0
+      ? { kind: 'none', reason: 'no_match' }
+      : {
+        kind: 'links',
+        links: matches.map((component) => ({
+          componentId: component.id,
+          linkedBy: 'manifest',
+          environment: 'production',
+        })),
+      };
+  }
+
+  if (
     resource.provider === 'vercel'
     && resource.resourceType === 'vercel_project'
   ) {
@@ -100,10 +124,12 @@ export function resolveDeclaredLink(
     return manifestComponent === null
       ? { kind: 'none', reason: 'no_match' }
       : {
-        kind: 'link',
-        componentId: manifestComponent.id,
-        linkedBy: 'manifest',
-        environment: 'production',
+        kind: 'links',
+        links: [{
+          componentId: manifestComponent.id,
+          linkedBy: 'manifest',
+          environment: 'production',
+        }],
       };
   }
 
@@ -156,10 +182,12 @@ export function resolveDeclaredLink(
     labels['deployhub.environment'],
   ) ?? 'production';
   return {
-    kind: 'link',
-    componentId: component.id,
-    linkedBy: manifestComponent === null ? 'label' : 'manifest',
-    environment,
+    kind: 'links',
+    links: [{
+      componentId: component.id,
+      linkedBy: manifestComponent === null ? 'label' : 'manifest',
+      environment,
+    }],
   };
 }
 
@@ -167,7 +195,17 @@ export async function linkDeclaredResources(
   db: LinkDb,
   input: LinkDeclaredResourcesInput,
 ): Promise<void> {
-  if (input.externalIds.length === 0) return;
+  if (input.externalIds?.length === 0) return;
+
+  const resourceConditions = [
+    eq(resources.provider, input.provider),
+    isNull(resources.deletedAt),
+  ];
+  if (input.externalIds !== undefined) {
+    resourceConditions.push(
+      inArray(resources.externalId, input.externalIds),
+    );
+  }
 
   const observed = await db
     .select({
@@ -179,13 +217,7 @@ export async function linkDeclaredResources(
       metadata: resources.metadata,
     })
     .from(resources)
-    .where(
-      and(
-        eq(resources.provider, input.provider),
-        inArray(resources.externalId, input.externalIds),
-        isNull(resources.deletedAt),
-      ),
-    );
+    .where(and(...resourceConditions));
   if (observed.length === 0) return;
 
   const declarations = await db
@@ -226,7 +258,9 @@ export async function linkDeclaredResources(
       declarations,
       linksByResource.get(resource.id) ?? [],
     );
-    if (decision.kind === 'none') continue;
+    if (decision.kind === 'none' && decision.reason === 'user_link') {
+      continue;
+    }
 
     await db
       .delete(componentResources)
@@ -236,24 +270,26 @@ export async function linkDeclaredResources(
           inArray(componentResources.linkedBy, ['manifest', 'label']),
         ),
       );
-    if (decision.kind === 'conflict') continue;
+    if (decision.kind !== 'links') continue;
 
-    await db
-      .insert(componentResources)
-      .values({
-        componentId: decision.componentId,
-        resourceId: resource.id,
-        environment: decision.environment,
-        relationType: 'deployed_to',
-        isPrimary: true,
-        linkedBy: decision.linkedBy,
-      })
-      .onConflictDoNothing({
-        target: [
-          componentResources.componentId,
-          componentResources.resourceId,
-          componentResources.environment,
-        ],
-      });
+    for (const link of decision.links) {
+      await db
+        .insert(componentResources)
+        .values({
+          componentId: link.componentId,
+          resourceId: resource.id,
+          environment: link.environment,
+          relationType: 'deployed_to',
+          isPrimary: true,
+          linkedBy: link.linkedBy,
+        })
+        .onConflictDoNothing({
+          target: [
+            componentResources.componentId,
+            componentResources.resourceId,
+            componentResources.environment,
+          ],
+        });
+    }
   }
 }
