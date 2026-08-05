@@ -42,8 +42,10 @@ describe('project overview routes', () => {
 
   it('renders one semantic list of project sheets at every viewport', () => {
     const home = source('./page.tsx');
+    const orderList = source('../components/schematic/project-order-list.tsx');
 
-    expect(home).toContain('<ul className="space-y-4">');
+    expect(home).toContain('<ProjectOrderList');
+    expect(orderList).toContain('<ul ref={listRef} className="space-y-4">');
     expect(home).toContain('<ProjectSheet');
     expect(home).not.toContain('<Table');
     expect(home).not.toContain('md:hidden');

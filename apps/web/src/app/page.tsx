@@ -4,6 +4,7 @@ import {
   listProjectsWithSummaryData,
   type ProjectStatus,
 } from '@deployhub/db';
+import { ProjectOrderList } from '@/components/schematic/project-order-list';
 import { ProjectSheet } from '@/components/schematic/project-sheet';
 import { Topbar } from '@/components/shell/topbar';
 import type { Tone } from '@/components/ui/badge';
@@ -60,16 +61,18 @@ export default async function Home() {
         </h2>
 
         {rows.length > 0 ? (
-          <ul className="space-y-4">
-            {rows.map((project) => (
-              <li key={project.id} className="min-w-0">
+          <ProjectOrderList
+            items={rows.map((project) => ({
+              id: project.id,
+              name: project.name,
+              node: (
                 <ProjectSheet
                   project={project}
                   tone={STATUS_TONES[project.judgement]}
                 />
-              </li>
-            ))}
-          </ul>
+              ),
+            }))}
+          />
         ) : (
           <section className="rounded-[var(--radius-card)] border border-[var(--rule)] bg-[var(--paper)] px-5 py-12 text-center text-sm">
             <p className="font-medium text-[var(--line)]">
