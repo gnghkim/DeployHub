@@ -1,8 +1,9 @@
 'use server';
 
-import { eq } from 'drizzle-orm';
+import { eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { z } from 'zod';
 import { schema } from '@deployhub/db';
 import { auth } from '../auth/config';
 import { db } from '../lib/db';
@@ -139,4 +140,67 @@ export async function archiveProject(id: string): Promise<void> {
   revalidatePath('/projects');
   revalidatePath(`/projects/${archived.slug}`);
   redirect('/projects');
+}
+
+export type ReorderProjectsResult = {
+  status: 'success' | 'stale' | 'error';
+};
+
+const orderedIdsSchema = z.array(z.uuid()).min(1);
+
+/**
+ * 목록 전체 순서를 0..n-1 로 다시 부여한다.
+ *
+ * 쓰기 전에 아카이브되지 않은 프로젝트 id 집합이 요청과 정확히 같은지
+ * 검사한다. 이게 없으면 다른 탭에서 Draft 를 승인한 뒤 낡은 배열로 저장할 때
+ * 새 프로젝트가 순서에서 탈락한다.
+ *
+ * `updatedAt` 은 건드리지 않는다. 순서 변경은 프로젝트 내용 변경이 아니다.
+ */
+export async function reorderProjects(
+  orderedIds: string[],
+): Promise<ReorderProjectsResult> {
+  const session = await auth();
+  if (!session) throw new Error('인증이 필요합니다.');
+
+  const parsed = orderedIdsSchema.safeParse(orderedIds);
+  if (!parsed.success) return { status: 'error' };
+  if (new Set(parsed.data).size !== parsed.data.length) {
+    return { status: 'error' };
+  }
+
+  try {
+    const applied = await db.transaction(async (tx) => {
+      const current = await tx
+        .select({ id: schema.projects.id })
+        .from(schema.projects)
+        .where(isNull(schema.projects.archivedAt));
+
+      const currentIds = new Set(current.map((row) => row.id));
+      if (currentIds.size !== parsed.data.length) return false;
+      if (parsed.data.some((id) => !currentIds.has(id))) return false;
+
+      const positions = sql.join(
+        parsed.data.map(
+          (id, position) => sql`(${id}::uuid, ${position}::integer)`,
+        ),
+        sql`, `,
+      );
+      await tx.execute(sql`
+        update ${schema.projects} as p
+        set display_order = v.position
+        from (values ${positions}) as v(id, position)
+        where p.id = v.id
+      `);
+
+      return true;
+    });
+
+    if (!applied) return { status: 'stale' };
+  } catch {
+    return { status: 'error' };
+  }
+
+  revalidatePath('/');
+  return { status: 'success' };
 }
