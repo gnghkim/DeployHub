@@ -21,6 +21,11 @@ const snapshotTrailingMigrationUrl = new URL(
   import.meta.url,
 );
 
+const projectDisplayOrderMigrationUrl = new URL(
+  '../../../../drizzle/0011_project_display_order.sql',
+  import.meta.url,
+);
+
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n?/g, '\n').replace(/\n$/, '');
 }
@@ -112,6 +117,20 @@ describe('snapshot trailing migration', () => {
     );
     expect(migration).not.toMatch(
       /\b(?:DROP TABLE|DROP COLUMN|TRUNCATE|DELETE|UPDATE)\b/i,
+    );
+  });
+});
+
+describe('project display order migration', () => {
+  it('adds the column and backfills existing rows in name order', async () => {
+    const migration = await readFile(projectDisplayOrderMigrationUrl, 'utf8');
+
+    expect(migration).toContain(
+      'ALTER TABLE "projects" ADD COLUMN "display_order" integer DEFAULT 0 NOT NULL;',
+    );
+    expect(migration).toContain('row_number() OVER (ORDER BY name) - 1');
+    expect(migration).toContain(
+      'UPDATE projects SET display_order = ordered.position',
     );
   });
 });

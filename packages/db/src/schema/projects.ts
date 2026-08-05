@@ -30,6 +30,7 @@ export const projects = pgTable(
     repository: text('repository'),
     snapshotUrl: text('snapshot_url'),
     snapshotMode: snapshotMode('snapshot_mode').notNull().default('disabled'),
+    displayOrder: integer('display_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
