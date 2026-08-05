@@ -47,6 +47,7 @@ const projects: ProjectRow[] = [{
   repository: null,
   snapshotUrl: null,
   snapshotMode: 'disabled',
+  displayOrder: 0,
   createdAt: now,
   updatedAt: now,
   archivedAt: null,

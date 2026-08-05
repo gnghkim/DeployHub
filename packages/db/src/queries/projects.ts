@@ -8,7 +8,7 @@ import {
   ne,
   sql,
 } from 'drizzle-orm';
-import type { Db } from '../client';
+import type { Db, DbExecutor } from '../client';
 import { deployments } from '../schema/observations';
 import {
   components,
@@ -50,10 +50,36 @@ export async function listProjects(db: Db): Promise<ProjectRow[]> {
   return db.select().from(projects).where(isNull(projects.archivedAt)).orderBy(asc(projects.name));
 }
 
+/**
+ * 목록 화면 전용 정렬. `listProjects` 는 드롭다운이 쓰는 이름순이므로
+ * 건드리지 않는다. 이름 타이브레이크는 백필 이전 행이나 동시 삽입으로
+ * 값이 겹칠 때 순서가 요동치지 않게 한다.
+ */
+export async function listProjectsInDisplayOrder(db: Db): Promise<ProjectRow[]> {
+  return db
+    .select()
+    .from(projects)
+    .where(isNull(projects.archivedAt))
+    .orderBy(asc(projects.displayOrder), asc(projects.name));
+}
+
+/**
+ * 새 프로젝트를 목록 맨 위에 놓을 순서 값.
+ * 아카이브된 행까지 포함해 최솟값을 잡아야 복구된 프로젝트와 값이 겹치지 않는다.
+ */
+export async function nextTopDisplayOrder(db: DbExecutor): Promise<number> {
+  const [row] = await db
+    .select({
+      next: sql<number>`coalesce(min(${projects.displayOrder}), 0) - 1`,
+    })
+    .from(projects);
+  return row?.next ?? -1;
+}
+
 export async function listProjectsWithSummaryData(
   db: Db,
 ): Promise<ProjectListSummaryData[]> {
-  const projectRows = await listProjects(db);
+  const projectRows = await listProjectsInDisplayOrder(db);
   if (projectRows.length === 0) return [];
 
   const projectIds = projectRows.map((project) => project.id);

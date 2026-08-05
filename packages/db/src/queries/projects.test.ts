@@ -7,7 +7,9 @@ import * as databaseSchema from '../schema';
 import {
   getProjectBySlug,
   listProjects,
+  listProjectsInDisplayOrder,
   listProjectsWithSummaryData,
+  nextTopDisplayOrder,
 } from './projects';
 
 let db: Db;
@@ -52,6 +54,42 @@ describe('프로젝트 조회', () => {
     ]);
     const rows = await listProjects(db);
     expect(rows.map((r) => r.slug)).toEqual(['a']);
+  });
+
+  it('표시 순서 오름차순으로 목록을 돌려주고 같은 값은 이름으로 가른다', async () => {
+    await db.insert(schema.projects).values([
+      { name: 'C', slug: 'c', displayOrder: 0 },
+      { name: 'A', slug: 'a', displayOrder: 2 },
+      { name: 'B', slug: 'b', displayOrder: 0 },
+      { name: 'D', slug: 'd', displayOrder: 1, archivedAt: new Date() },
+    ]);
+
+    const rows = await listProjectsInDisplayOrder(db);
+
+    expect(rows.map((r) => r.slug)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('요약 목록도 이름순이 아니라 표시 순서를 따른다', async () => {
+    await db.insert(schema.projects).values([
+      { name: 'A', slug: 'a', displayOrder: 1 },
+      { name: 'B', slug: 'b', displayOrder: 0 },
+    ]);
+
+    const rows = await listProjectsWithSummaryData(db);
+
+    expect(rows.map((r) => r.slug)).toEqual(['b', 'a']);
+  });
+
+  it('새 프로젝트 순서 값은 아카이브 포함 현재 최솟값보다 작다', async () => {
+    expect(await nextTopDisplayOrder(db)).toBe(-1);
+
+    await db.insert(schema.projects).values([
+      { name: 'A', slug: 'a', displayOrder: 3 },
+      { name: 'B', slug: 'b', displayOrder: 5, archivedAt: new Date() },
+      { name: 'C', slug: 'c', displayOrder: 1 },
+    ]);
+
+    expect(await nextTopDisplayOrder(db)).toBe(0);
   });
 
   it('slug 로 상세를 가져오고 구성요소를 함께 담는다', async () => {
