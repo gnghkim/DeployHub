@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import {
   enqueueUnique,
   linkDeclaredResources,
+  nextTopDisplayOrder,
   schema,
 } from '@deployhub/db';
 import { parseManifest } from '@deployhub/manifest';
@@ -124,7 +125,10 @@ export async function approveDraft(id: string): Promise<void> {
     } else {
       const [created] = await tx
         .insert(schema.projects)
-        .values(projectValues)
+        .values({
+          ...projectValues,
+          displayOrder: await nextTopDisplayOrder(tx),
+        })
         .returning({ id: schema.projects.id });
       if (!created) throw new Error('프로젝트를 만들지 못했습니다.');
       projectId = created.id;

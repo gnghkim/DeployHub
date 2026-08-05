@@ -184,6 +184,24 @@ describe('approveDraft', () => {
     );
   });
 
+  it('승인으로 만든 프로젝트를 목록 맨 위에 놓는다', async () => {
+    await db.insert(schema.projects).values({
+      name: 'Existing',
+      slug: 'existing',
+      displayOrder: 0,
+    });
+    const draft = await pendingDraft();
+
+    await approveDraft(draft.id);
+
+    const [created] = await db
+      .select({ displayOrder: schema.projects.displayOrder })
+      .from(schema.projects)
+      .where(eq(schema.projects.slug, 'deployhub'));
+
+    expect(created?.displayOrder).toBe(-1);
+  });
+
   it('creates a new project, components, and domains in one approval', async () => {
     const draft = await pendingDraft();
 

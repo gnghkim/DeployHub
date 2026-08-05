@@ -4,7 +4,7 @@ import { eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { schema } from '@deployhub/db';
+import { nextTopDisplayOrder, schema } from '@deployhub/db';
 import { auth } from '../auth/config';
 import { db } from '../lib/db';
 import { projectInputSchema, type ProjectInput } from '../lib/schemas';
@@ -51,12 +51,15 @@ export async function createProject(
   }
 
   try {
-    await db.insert(schema.projects).values({
-      ...parsed.data,
-      description: parsed.data.description ?? null,
-      owner: parsed.data.owner ?? null,
-      repository: parsed.data.repository ?? null,
-      archivedAt: parsed.data.status === 'archived' ? new Date() : null,
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.projects).values({
+        ...parsed.data,
+        description: parsed.data.description ?? null,
+        owner: parsed.data.owner ?? null,
+        repository: parsed.data.repository ?? null,
+        archivedAt: parsed.data.status === 'archived' ? new Date() : null,
+        displayOrder: await nextTopDisplayOrder(tx),
+      });
     });
   } catch (error) {
     if (isUniqueViolation(error)) {

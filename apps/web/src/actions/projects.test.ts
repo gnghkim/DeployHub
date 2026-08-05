@@ -147,3 +147,36 @@ describe('reorderProjects', () => {
     await expect(reorderProjects([b!, a!])).resolves.toEqual({ status: 'success' });
   });
 });
+
+describe('createProject 순서', () => {
+  beforeEach(() => {
+    authMock.mockResolvedValue({ user: { name: 'tester' } });
+  });
+
+  it('수동 등록한 프로젝트도 목록 맨 위에 놓는다', async () => {
+    await seedProjects();
+
+    // 실제 폼은 비어 있는 선택 입력도 빈 문자열로 보낸다. 키를 아예 빼면
+    // formData.get 이 null 을 돌려주고 스키마가 이를 거부한다.
+    const form = new FormData();
+    form.set('name', 'New');
+    form.set('slug', 'new');
+    form.set('status', 'active');
+    form.set('lifecycle', 'development');
+    form.set('importance', '3');
+    form.set('description', '');
+    form.set('owner', '');
+    form.set('repository', '');
+
+    await expect(createProject(emptyState, form)).resolves.toMatchObject({
+      status: 'success',
+    });
+
+    const [created] = await db
+      .select({ displayOrder: schema.projects.displayOrder })
+      .from(schema.projects)
+      .where(eq(schema.projects.slug, 'new'));
+
+    expect(created?.displayOrder).toBe(-1);
+  });
+});
